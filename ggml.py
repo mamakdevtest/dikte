@@ -117,7 +117,7 @@ def human_size(count):
 # --- fetching -------------------------------------------------------------
 
 
-def download(item, target, on_progress=None, should_stop=None):
+def download(item, target, on_progress=None, should_stop=None, require_hash=True):
     """Fetch one hub.Item to `target`. True when it landed, False when stopped.
 
     The bytes go to a `.part` that is renamed only after both the length and the
@@ -125,8 +125,18 @@ def download(item, target, on_progress=None, should_stop=None):
     there looking installed and fail much later, inside a server, as a corrupt
     model; a file that is the right length but the wrong content is worse, and
     this is a program as often as it is a model.
+
+    A file whose index published no hash is refused rather than taken on trust.
+    Everything fetched here is either run or parsed by something written in C++,
+    and GitHub did not always publish a digest: a release old enough to predate
+    that would otherwise install unchecked, which is the one case where this
+    would matter most and say least.
     """
     target = pathlib.Path(target)
+    if require_hash and not item.sha256:
+        raise LocalError(t("{name} is published without a checksum, so there is "
+                           "no way to tell what arrived. Nothing was installed.",
+                           name=item.name))
     part = target.with_name(target.name + ".part")
     try:
         target.parent.mkdir(parents=True, exist_ok=True)

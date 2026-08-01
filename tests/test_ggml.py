@@ -119,12 +119,23 @@ class Download(Local):
                 ggml.download(item("m.bin", data), target)
         self.assertFalse(target.exists())
 
-    def test_a_file_with_no_published_checksum_is_still_taken(self):
-        data = b"a README, say"
-        target = self.path("data", "models", "readme")
+    def test_a_file_with_no_published_checksum_is_refused(self):
+        # Everything fetched here is run or parsed by something written in C++,
+        # and GitHub did not always publish a digest.
+        data = b"a program, say"
+        target = self.path("data", "models", "m.bin")
         with fake_urlopen(body(data)):
-            self.assertTrue(ggml.download(item("readme", data, sha=False), target))
-        self.assertTrue(target.exists())
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.download(item("m.bin", data, sha=False), target)
+        self.assertIn("checksum", str(caught.exception))
+        self.assertFalse(target.exists())
+
+    def test_nothing_is_asked_for_before_it_is_refused(self):
+        # The refusal is not worth a gigabyte of somebody's bandwidth first.
+        with fake_urlopen(body(b"never read")) as calls:
+            with self.assertRaises(ggml.LocalError):
+                ggml.download(item("m.bin", b"x", sha=False), self.path("m.bin"))
+        self.assertEqual(calls, [])
 
     def test_stopping_leaves_nothing_behind(self):
         data = b"x" * (ggml.DOWNLOAD_CHUNK * 3)
@@ -163,21 +174,26 @@ class Download(Local):
 
 
 class InstallProgram(Local):
-    def release(self, *names):
-        return {"tag_name": "v1.9.1", "assets": [
-            {"name": name, "browser_download_url": f"https://example.invalid/{name}",
-             "size": 10, "digest": ""} for name in names]}
-
-    def archive(self):
-        return tarball({
+    def setUp(self):
+        super().setUp()
+        # Built once, because the release listing has to publish its checksum
+        # and a tarball is not the same bytes twice.
+        self.archive = tarball({
             "whisper-bin-ubuntu-x64/whisper-server": b"#!/bin/sh\nexit 0\n",
             "whisper-bin-ubuntu-x64/libwhisper.so": b"not really a library",
         })
 
+    def release(self, *names, archive=None):
+        digest = hashlib.sha256(self.archive if archive is None else archive)
+        return {"tag_name": "v1.9.1", "assets": [
+            {"name": name, "browser_download_url": f"https://example.invalid/{name}",
+             "size": 10, "digest": "sha256:" + digest.hexdigest()}
+            for name in names]}
+
     def install(self, *names, archive=None):
         self.patch_attr(ggml, "_arch", lambda: "x64")
-        with serving(self.release(*names),
-                     self.archive() if archive is None else archive) as calls:
+        blob = self.archive if archive is None else archive
+        with serving(self.release(*names, archive=blob), blob) as calls:
             path = ggml.install_program(ggml.WHISPER)
         return path, [call.args[0].full_url for call in calls.call_args_list]
 
@@ -228,6 +244,55 @@ class InstallProgram(Local):
         with self.assertRaises(ggml.LocalError) as caught:
             self.install("whisper-bin-ubuntu-x64.tar.gz", archive=empty)
         self.assertIn("whisper-server", str(caught.exception))
+
+
+    def test_a_release_without_a_published_checksum_is_refused(self):
+        # GitHub did not always publish one, and whisper.cpp v1.8.0 and older
+        # still have none.
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        listing = {"tag_name": "v1.8.0", "assets": [
+            {"name": "whisper-bin-ubuntu-x64.tar.gz",
+             "browser_download_url": "https://example.invalid/w.tar.gz",
+             "size": 10}]}
+        with serving(listing, self.archive):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.install_program(ggml.WHISPER)
+        self.assertIn("checksum", str(caught.exception))
+        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
+
+    def test_an_archive_that_is_not_what_was_promised_installs_nothing(self):
+        listing = self.release("whisper-bin-ubuntu-x64.tar.gz")
+        other = tarball({"whisper-bin-ubuntu-x64/whisper-server": b"#!/bin/sh\nrm -rf\n"})
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        with serving(listing, other):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.install_program(ggml.WHISPER)
+        self.assertIn("checksum", str(caught.exception))
+        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
+
+    def test_an_archive_cannot_write_outside_the_directory_it_is_opened_in(self):
+        # An archive is not a trusted thing to unpack: a member named ../../ is
+        # how one writes over a file it was never given.
+        escape = tarball({"../../../escaped": b"should not land"})
+        path = self.path("data", "bin", "whisper", "v1.9.1")
+        with self.assertRaises(ggml.LocalError):
+            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=escape)
+        self.assertFalse(self.path("escaped").exists())
+        self.assertFalse((path.parent.parent / "escaped").exists())
+
+    def test_a_symlink_out_of_the_directory_does_not_survive_either(self):
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            info = tarfile.TarInfo("whisper-bin-ubuntu-x64/whisper-server")
+            info.type, info.linkname = tarfile.SYMTYPE, "/etc/passwd"
+            tar.addfile(info)
+        with self.assertRaises(ggml.LocalError):
+            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=buf.getvalue())
+
+    def test_everything_is_asked_for_over_tls(self):
+        for url in (hub.GITHUB_API, hub.HF_API, hub.HF_FILES):
+            with self.subTest(url=url):
+                self.assertTrue(url.startswith("https://"))
 
     def test_llama_takes_the_vulkan_build_when_there_is_a_loader(self):
         self.patch_attr(ggml, "_arch", lambda: "x64")
@@ -596,3 +661,4 @@ class Sizes(DikteTest):
         self.assertEqual(ggml.human_size(512), "512 B")
         self.assertEqual(ggml.human_size(574041195), "547.4 MB")
         self.assertEqual(ggml.human_size(3_095_033_483), "2.9 GB")
+
