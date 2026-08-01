@@ -30,6 +30,41 @@ systemctl --user enable --now ydotool     # needed for auto-paste
 dikte                        # the settings window opens on first run
 ```
 
+On Fedora KDE the packages are named differently, and `ydotool` takes one step
+more:
+
+```sh
+sudo dnf install pipewire-utils wl-clipboard ydotool ffmpeg-free python3-pyqt6
+```
+
+Fedora ships `ydotool` as a system service rather than a user one, and
+`ydotoold` then listens on a root-owned socket your session cannot write to, so
+auto-paste fails with the daemon running. Point it instead at the path the
+`ydotool` client already looks at, and hand the socket over:
+
+```sh
+sudo mkdir -p /etc/systemd/system/ydotool.service.d
+printf '[Service]\nExecStart=\nExecStart=/usr/bin/ydotoold --socket-path=%s/.ydotool_socket --socket-own=%s:%s\n' \
+  "$XDG_RUNTIME_DIR" "$(id -u)" "$(id -g)" \
+  | sudo tee /etc/systemd/system/ydotool.service.d/override.conf >/dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable --now ydotool
+```
+
+That runtime directory belongs to your login session, so after a reboot the
+service restarts until you are logged in and only then settles. `ffmpeg-free`
+out of Fedora's own repositories is enough, RPM Fusion not needed: what the
+free build leaves out is H.264 and HEVC video decoding, and Dikte only ever
+takes the audio track of a video file, whose AAC, MP3 and Opus decoders are all
+there.
+
+The models that run on this machine need nothing added either. Those releases
+are built on Ubuntu and run here as they are, and KWin links `libvulkan.so.1`
+itself, so a Plasma desktop already has the loader that decides whether
+llama.cpp arrives in its Vulkan build, with the Mesa drivers alongside it.
+whisper.cpp publishes no GPU build for Linux at all and transcribes on the
+processor wherever it runs.
+
 On Ubuntu/GNOME X11, recording uses PulseAudio and clipboard/paste use the X11
 tools instead:
 
