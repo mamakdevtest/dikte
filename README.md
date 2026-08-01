@@ -37,7 +37,9 @@ sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 ```
 
 `install.sh` adds the `dikte` command, a menu entry, an autostart entry and the
-two global shortcuts, whose keys are its two arguments.
+two global shortcuts, whose keys are its two arguments. `./update.sh` pulls and
+puts all of that back, keeping the keys you chose; `./uninstall.sh` takes it away
+again and leaves your settings and dictations alone unless you pass `--purge`.
 
 Three keys go in the settings window: **OpenAI**, **Groq** and **OpenRouter**.
 Speech to text runs on any of them (`gpt-4o-transcribe` by default), cleanup

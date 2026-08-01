@@ -37,7 +37,10 @@ sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 ```
 
 `install.sh` `dikte` komutunu, menü girdisini, oturum açılışında otomatik
-başlatmayı ve iki global kısayolu kurar; tuşları da iki argümanı.
+başlatmayı ve iki global kısayolu kurar; tuşları da iki argümanı. `./update.sh`
+son sürümü çeker ve bunları senin seçtiğin tuşlarla yerine koyar;
+`./uninstall.sh` hepsini geri alır, `--purge` demedikçe ayarlarına ve
+diktelerine dokunmaz.
 
 Ayarlar penceresinde üç anahtar istenir: **OpenAI**, **Groq** ve **OpenRouter**.
 Sesi yazıya çevirme üçünden birinde çalışır (varsayılan `gpt-4o-transcribe`),
