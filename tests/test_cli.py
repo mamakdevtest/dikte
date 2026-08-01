@@ -366,6 +366,34 @@ class Providers(DikteTest):
         self.assertIn("Groq", out)
 
 
+class Doctor(DikteTest):
+    """One pass over everything the settings window checks behind its buttons."""
+
+    def run_doctor(self, as_json=True, **settings):
+        self.write_config(settings)
+        with mock.patch.object(ipc, "send", return_value=None), \
+                captured() as (out, _err):
+            cli.cmd_doctor(Options(json=as_json))
+        return json.loads(out.getvalue()) if as_json else out.getvalue()
+
+    def test_cleanup_on_openrouter_is_a_question_about_the_key(self):
+        reply = self.run_doctor(cleanup_model="some/model")
+        self.assertEqual(reply["cleanup"]["provider"], "openrouter")
+        self.assertEqual(reply["cleanup"]["model"], "some/model")
+        self.assertIn("OpenRouter key, cleaning up on some/model",
+                      self.run_doctor(as_json=False, cleanup_model="some/model"))
+
+    def test_cleanup_on_a_cli_is_a_question_about_the_program(self):
+        reply = self.run_doctor(cleanup_provider="codex",
+                                cleanup_codex_model="gpt-5.4")
+        self.assertEqual(reply["cleanup"]["provider"], "codex")
+        self.assertEqual(reply["cleanup"]["model"], "gpt-5.4")
+        self.assertIn("codex", reply["programs"])
+        self.assertIn("codex, cleaning up on gpt-5.4",
+                      self.run_doctor(as_json=False, cleanup_provider="codex",
+                                      cleanup_codex_model="gpt-5.4"))
+
+
 class Finding(DikteTest):
     def test_no_history_at_all(self):
         self.assertIsNone(cli._find_history("last"))

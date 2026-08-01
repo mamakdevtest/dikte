@@ -17,6 +17,7 @@ import wave
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import api
+import cleanup
 from i18n import t
 
 CHUNK_SECONDS = 600          # 10 min ≈ 19 MB at 16 kHz mono s16
@@ -130,14 +131,7 @@ class FileTranscriber(QObject):
         out = []
         for block in split_text(text, timestamps):
             self._check()
-            out.append(api.cleanup(
-                block,
-                conf.openrouter_key(),
-                conf["cleanup_model"],
-                prompt,
-                reasoning=conf["cleanup_reasoning"],
-                base_url=conf["openrouter_base_url"],
-            ))
+            out.append(cleanup.run(block, conf, prompt))
         return ("\n" if timestamps else "\n\n").join(out)
 
 

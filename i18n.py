@@ -186,6 +186,18 @@ TR = {
     "Connection works. {count} audio models visible.":
         "Bağlantı tamam. {count} ses modeli görünüyor.",
     "Clean the transcript with a model": "Transkripti bir modelle temizle",
+    "OpenRouter is the quickest and the only one that needs nothing installed. "
+    "Claude Code and Codex clean up on the subscription you already have, "
+    "without a second key, and take a few seconds longer because each one opens "
+    "a session to do it.":
+        "En hızlısı OpenRouter'dır ve kurulu bir program istemeyen tek seçenektir. "
+        "Claude Code ile Codex, temizliği hâlihazırda ödediğin abonelik üzerinden "
+        "yapar, ikinci bir anahtar istemez; her biri bunun için bir oturum açtığından "
+        "birkaç saniye daha uzun sürer.",
+    "{binary} is not on your PATH, so cleanup would fail and the raw transcript "
+    "would be pasted. Install it, or pick another one above.":
+        "{binary} PATH'te değil; temizleme başarısız olur ve ham transkript "
+        "yapıştırılır. Kur ya da yukarıdan başka birini seç.",
     "Thinking": "Düşünme",
     "Model's own default": "Modelin kendi varsayılanı",
     "Off": "Kapalı",
@@ -379,6 +391,14 @@ TR = {
     "{service} answered with nothing.": "{service} boş cevap verdi.",
     "It was not allowed to use: {tools}": "Şunları kullanmasına izin yoktu: {tools}",
     "The model returned an empty reply.": "Model boş cevap döndürdü.",
+
+    # --- cleanup, when a CLI does it ----------------------------------------
+    "{binary} not found. Install it, or have OpenRouter clean up instead, "
+    "under Settings → API and models.":
+        "{binary} bulunamadı. Kur ya da Ayarlar → API ve modeller sekmesinden "
+        "temizliği OpenRouter'a bırak.",
+    "{service} did not finish within {seconds} seconds.":
+        "{service} {seconds} saniye içinde bitmedi.",
 
     # --- settings: the agent ------------------------------------------------
     "Agent": "Ajan",

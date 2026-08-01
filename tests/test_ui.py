@@ -44,7 +44,10 @@ CHANGED = {
     "groq_transcribe_model": "whisper-large-v3",
     "openrouter_transcribe_model": "openai/whisper-1",
     "cleanup_enabled": False,
+    "cleanup_provider": "claude",
     "cleanup_model": "some/other-model",
+    "cleanup_claude_model": "opus",
+    "cleanup_codex_model": "gpt-5",
     "cleanup_reasoning": "high",
     "cleanup_prompt": "Only fix the punctuation.",
     "file_cleanup_prompt": "Keep the stamps where they are.",
@@ -127,6 +130,20 @@ class Settings(DikteTest):
         for key, value in CHANGED.items():
             with self.subTest(key=key):
                 self.assertEqual(stored[key], value)
+
+    def test_the_model_box_on_screen_belongs_to_whoever_cleans_up(self):
+        """An OpenRouter id and a Claude alias are not the same field."""
+        window = self.window(cfg.Config())
+        boxes = {"openrouter": window.cleanup_model_row,
+                 "claude": window.cleanup_claude_model,
+                 "codex": window.cleanup_codex_model}
+        for provider, box in boxes.items():
+            with self.subTest(provider=provider):
+                window._select_data(window.cleanup_provider, provider)
+                shown = [name for name, other in boxes.items()
+                         if not other.isHidden()]
+                self.assertEqual(shown, [provider])
+                self.assertFalse(box.isHidden())
 
     def test_the_settings_the_window_does_not_show_are_left_alone(self):
         """A tab nobody wrote must not reset what the command line set."""
