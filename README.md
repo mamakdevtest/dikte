@@ -1,9 +1,9 @@
 # Dikte
 
-Press `Ctrl+Space`, talk, press again. The recording goes to OpenAI or OpenRouter
-for transcription, a model on OpenRouter cleans it up (dropping the *uh*s, the
-restarts, the missing punctuation), and the result lands in your clipboard and
-is pasted into whatever window you were typing in.
+Press `Ctrl+Space`, talk, press again. The recording is transcribed on this
+machine by default, a model cleans it up (dropping the *uh*s, the restarts, the
+missing punctuation), and the result lands in your clipboard and is pasted into
+whatever window you were typing in.
 
 Built for KDE Plasma 6 on Wayland. No dependencies beyond system packages:
 just the Python standard library and PyQt6.
@@ -39,10 +39,12 @@ sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 `install.sh` adds the `dikte` command, a menu entry and an autostart entry. The
 settings window installs a GNOME or KDE global shortcut.
 
-Two keys go in the settings window: **OpenAI** and **OpenRouter**. Speech to text
-runs on either one (`gpt-4o-transcribe` by default), cleanup always on
-OpenRouter (`google/gemini-3.5-flash-lite`), so a single OpenRouter key can
-cover both. They fall back to `OPENAI_API_KEY` and `OPENROUTER_API_KEY`, and are
+Speech to text and cleanup each pick a provider in the settings window. Both can
+run here, on whisper.cpp and llama.cpp: the program and the model are downloaded
+from that window (checksummed, into `~/.local/share/dikte`), so nothing has to be
+installed first and nothing leaves the machine. The hosted alternatives want a
+key: **OpenAI** or **OpenRouter** for speech to text, **OpenRouter** for cleanup
+(`google/gemini-3.5-flash-lite`), so a single OpenRouter key can cover both. They fall back to `OPENAI_API_KEY` and `OPENROUTER_API_KEY`, and are
 stored in `~/.config/dikte/config.json`, mode 600. Cleanup can be switched off,
 in which case the raw transcript is pasted, and a thinking model's effort can be
 set next to it.
@@ -144,7 +146,9 @@ ipc.py            one request and one reply over the local socket
 audio.py          PCM capture: pw-record for dictation, ffmpeg for a meeting
 meeting.py        channel split, speaker labelling, cleanup, minutes
 assistant.py      running a dictation through Claude Code, Codex or OpenRouter
-api.py            transcription on either provider, OpenRouter cleanup (stdlib only)
+api.py            transcription and cleanup on any provider (stdlib only)
+ggml.py           whisper.cpp and llama.cpp here: fetch, verify, keep serving
+hub.py            what GitHub and Hugging Face have on offer today
 worker.py         transcribe → clean up → clipboard → paste
 vad.py            deciding whether a recording holds speech at all
 filetranscribe.py file transcription: ffmpeg, chunking, timestamps

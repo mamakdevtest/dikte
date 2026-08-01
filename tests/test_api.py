@@ -10,6 +10,7 @@ import os
 import unittest
 
 import api
+import ggml
 from tests.support import (
     DikteTest,
     fake_urlopen,
@@ -27,10 +28,18 @@ OPENROUTER = api.Target("openrouter", "OpenRouter", "sk-or-test",
 
 class TimestampModel(unittest.TestCase):
     def test_only_whisper_returns_segment_times(self):
-        self.assertEqual(api.timestamp_model("openai"), "whisper-1")
+        self.assertEqual(api.timestamp_model("openai", "gpt-4o-transcribe"),
+                         "whisper-1")
 
     def test_openrouter_namespaces_the_id(self):
-        self.assertEqual(api.timestamp_model("openrouter"), "openai/whisper-1")
+        self.assertEqual(api.timestamp_model("openrouter", "openai/gpt-4o-transcribe"),
+                         "openai/whisper-1")
+
+    def test_the_local_server_stays_on_the_model_it_loaded(self):
+        # Asking it for whisper-1 would name a model it has never heard of, and
+        # it is running whisper whatever the file is called.
+        self.assertEqual(api.timestamp_model("local", "ggml-base.bin"),
+                         "ggml-base.bin")
 
 
 class Explain(DikteTest):
@@ -278,10 +287,15 @@ def chat_reply(content):
     return {"choices": [{"message": {"content": content}}]}
 
 
+def openrouter(model="some/model", key="sk-or-test", reasoning="",
+               base_url="https://openrouter.ai/api/v1"):
+    return api.Target("openrouter", "OpenRouter", key, base_url, model, reasoning)
+
+
 class Cleanup(DikteTest):
-    def call(self, replies, **kwargs):
+    def call(self, replies, target=None, **kwargs):
         with fake_urlopen(replies) as calls:
-            result = api.cleanup("uh, hello", "sk-or-test", "some/model",
+            result = api.cleanup(target or openrouter(), "uh, hello",
                                  "you clean up text", **kwargs)
         return result, calls
 
@@ -311,32 +325,34 @@ class Cleanup(DikteTest):
         self.assertNotIn("reasoning", sent_json(calls[0]))
 
     def test_an_effort_is_passed_on_and_the_thinking_left_out(self):
-        _, calls = self.call(chat_reply("Hello."), reasoning="high")
+        _, calls = self.call(chat_reply("Hello."),
+                             target=openrouter(reasoning="high"))
         self.assertEqual(sent_json(calls[0])["reasoning"],
                          {"effort": "high", "exclude": True})
 
     def test_a_local_base_url(self):
-        _, calls = self.call(chat_reply("Hello."), base_url="http://localhost:1234/v1")
+        _, calls = self.call(chat_reply("Hello."),
+                             target=openrouter(base_url="http://localhost:1234/v1"))
         self.assertEqual(calls[0].full_url, "http://localhost:1234/v1/chat/completions")
 
     def test_no_key(self):
         with self.assertRaises(api.ApiError):
-            api.cleanup("hello", "", "some/model", "prompt")
+            api.cleanup(openrouter(key=""), "hello", "prompt")
 
     def test_a_reply_with_no_choices_says_why(self):
         with fake_urlopen({"error": {"message": "model is offline"}}), \
                 self.assertRaises(api.ApiError) as caught:
-            api.cleanup("hello", "k", "m", "p")
+            api.cleanup(openrouter(), "hello", "p")
         self.assertIn("model is offline", str(caught.exception))
 
     def test_an_empty_answer(self):
         with fake_urlopen(chat_reply("   ")), self.assertRaises(api.ApiError):
-            api.cleanup("hello", "k", "m", "p")
+            api.cleanup(openrouter(), "hello", "p")
 
     def test_a_rate_limit_is_explained(self):
         with fake_urlopen(http_error(429)), \
                 self.assertRaises(api.ApiError) as caught:
-            api.cleanup("hello", "k", "m", "p")
+            api.cleanup(openrouter(), "hello", "p")
         self.assertIn("OpenRouter", str(caught.exception))
 
 
@@ -435,3 +451,159 @@ class ModelLists(DikteTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeServer:
+    """A ggml.Server as far as api.py is concerned."""
+
+    def __init__(self, url="http://127.0.0.1:9999/v1", fails="", log=""):
+        self.url = url
+        self.fails = fails
+        self.log = log
+        self.starts = 0
+
+    def serve(self):
+        self.starts += 1
+        if self.fails:
+            raise ggml.LocalError(self.fails)
+        return self.url
+
+    def error(self):
+        return self.log
+
+
+LOCAL = api.Target("local", "Local whisper", "", "", "ggml-base.bin")
+LOCAL_LLM = api.Target("local-llm", "Local model", "", "", "gemma.gguf", "none")
+
+
+class TranscribeHere(DikteTest):
+    def setUp(self):
+        super().setUp()
+        self.wav = str(self.path("clip.wav"))
+        os.makedirs(self.root, exist_ok=True)
+        with open(self.wav, "wb") as fh:
+            fh.write(b"RIFFfake")
+        self.server = FakeServer()
+        self.patch_attr(ggml, "whisper", self.server)
+
+    def test_the_address_comes_from_the_server_it_starts(self):
+        with fake_urlopen({"text": "hello"}) as calls:
+            api.transcribe(LOCAL, self.wav)
+        self.assertEqual(self.server.starts, 1)
+        self.assertEqual(calls[0].full_url,
+                         "http://127.0.0.1:9999/v1/audio/transcriptions")
+
+    def test_nothing_local_is_authorised(self):
+        with fake_urlopen({"text": "hello"}) as calls:
+            api.transcribe(LOCAL, self.wav)
+        self.assertNotIn("Authorization", calls[0].headers)
+
+    def test_a_server_that_will_not_start_is_the_error_shown(self):
+        self.patch_attr(ggml, "whisper", FakeServer(fails="no model downloaded"))
+        with self.assertRaises(api.ApiError) as caught:
+            api.transcribe(LOCAL, self.wav)
+        self.assertIn("no model downloaded", str(caught.exception))
+
+    def test_a_server_that_dies_mid_request_says_what_it_printed(self):
+        self.patch_attr(ggml, "whisper", FakeServer(log="out of memory"))
+        with fake_urlopen(url_error("connection reset")):
+            with self.assertRaises(api.ApiError) as caught:
+                api.transcribe(LOCAL, self.wav)
+        self.assertIn("out of memory", str(caught.exception))
+
+    def test_the_hint_reaches_whisper_as_its_initial_prompt(self):
+        with fake_urlopen({"text": "hi"}) as calls:
+            api.transcribe(LOCAL, self.wav, prompt="Dikte, Paraşüt")
+        self.assertEqual(multipart_fields(calls[0])["prompt"], "Dikte, Paraşüt")
+
+    def test_a_word_broken_over_two_lines_is_put_back_together(self):
+        # whisper.cpp cuts on tokens and writes one segment per line, which in
+        # Turkish lands inside a word about as often as between two.
+        with fake_urlopen({"text": "Onlar akraba değ\niller. Ve\n devamı."}):
+            # The line break inside a word leaves nothing in its place; the
+            # one between two words is where whisper's own leading space is.
+            self.assertEqual(api.transcribe(LOCAL, self.wav),
+                             "Onlar akraba değiller. Ve devamı.")
+
+    def test_a_local_timeout_is_not_a_hosted_one(self):
+        # Nothing is being spent but time, and a long file on a machine without
+        # a graphics card takes a good deal of it.
+        with fake_urlopen({"text": "hi"}):
+            api.transcribe(LOCAL, self.wav, timeout=300)
+        self.assertGreaterEqual(api.LOCAL_TIMEOUT, 600)
+
+    def test_segments_that_continue_a_word_are_merged(self):
+        reply = {"segments": [
+            {"start": 0.0, "end": 1.0, "text": " Onlar akraba değ"},
+            {"start": 1.0, "end": 1.4, "text": "iller."},
+            {"start": 2.0, "end": 3.0, "text": " Başka bir cümle."},
+        ]}
+        with fake_urlopen(reply):
+            out = api.transcribe_segments(LOCAL, self.wav)
+        self.assertEqual([text for _, _, text in out],
+                         ["Onlar akraba değiller.", "Başka bir cümle."])
+        self.assertEqual(out[0][1], 1.4)     # the merged cue covers the whole word
+
+    def test_the_loaded_model_is_the_one_asked_for_again(self):
+        with fake_urlopen({"segments": [{"start": 0, "end": 1, "text": " hi"}]}) as calls:
+            api.transcribe_segments(LOCAL, self.wav)
+        self.assertEqual(multipart_fields(calls[0])["model"], "ggml-base.bin")
+
+
+class CleanupHere(DikteTest):
+    def setUp(self):
+        super().setUp()
+        self.server = FakeServer("http://127.0.0.1:8888/v1")
+        self.patch_attr(ggml, "llm", self.server)
+
+    def test_it_goes_to_the_server_it_starts(self):
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            result = api.cleanup(LOCAL_LLM, "uh, hello", "clean it up")
+        self.assertEqual(result, "Hello.")
+        self.assertEqual(calls[0].full_url,
+                         "http://127.0.0.1:8888/v1/chat/completions")
+
+    def test_no_key_is_wanted_and_none_is_sent(self):
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            api.cleanup(LOCAL_LLM, "hello", "prompt")
+        self.assertNotIn("Authorization", calls[0].headers)
+
+    def test_thinking_is_turned_off_in_the_words_llama_cpp_uses(self):
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            api.cleanup(LOCAL_LLM, "hello", "prompt")
+        self.assertEqual(sent_json(calls[0])["chat_template_kwargs"],
+                         {"enable_thinking": False})
+
+    def test_the_models_own_default_asks_for_nothing(self):
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            api.cleanup(LOCAL_LLM._replace(reasoning=""), "hello", "prompt")
+        self.assertNotIn("chat_template_kwargs", sent_json(calls[0]))
+
+    def test_a_reply_that_was_all_thinking_names_the_setting_that_fixes_it(self):
+        reply = {"choices": [{"message": {"content": "", "reasoning": "hmm"}}]}
+        with fake_urlopen(reply), self.assertRaises(api.ApiError) as caught:
+            api.cleanup(LOCAL_LLM, "hello", "prompt")
+        self.assertIn("Thinking", str(caught.exception))
+
+    def test_a_reply_longer_than_the_transcript_is_cut_off(self):
+        # A small model will repeat the transcript until the context is full,
+        # and every one of those tokens is a second of somebody waiting.
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            api.cleanup(LOCAL_LLM, "x" * 4000, "prompt")
+        self.assertEqual(sent_json(calls[0])["max_tokens"], 4000)
+
+    def test_a_short_dictation_still_gets_room_to_answer(self):
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            api.cleanup(LOCAL_LLM, "uh, hi", "prompt")
+        self.assertEqual(sent_json(calls[0])["max_tokens"], 512)
+
+    def test_a_hosted_model_is_left_to_answer_at_length(self):
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            api.cleanup(openrouter(), "uh, hi", "prompt")
+        self.assertNotIn("max_tokens", sent_json(calls[0]))
+
+    def test_a_server_that_will_not_start_is_the_error_shown(self):
+        self.patch_attr(ggml, "llm", FakeServer(fails="llama.cpp is not installed"))
+        with self.assertRaises(api.ApiError) as caught:
+            api.cleanup(LOCAL_LLM, "hello", "prompt")
+        self.assertIn("llama.cpp", str(caught.exception))

@@ -13,6 +13,7 @@ from unittest import mock
 
 import api
 import config as cfg
+import ggml
 import i18n
 from tests.support import DikteTest
 
@@ -127,8 +128,17 @@ class Keys(DikteTest):
 
 
 class TranscribeTarget(DikteTest):
-    def test_openai_by_default(self):
-        target = self.config(openai_api_key="sk-test").transcribe_target()
+    def test_this_machine_by_default(self):
+        target = cfg.Config().transcribe_target()
+        self.assertEqual(target.provider, "local")
+        self.assertEqual(target.api_key, "")
+        # Empty on purpose: the server picks a port when it starts, and reading
+        # a setting must not be what starts it.
+        self.assertEqual(target.base_url, "")
+
+    def test_openai_when_it_is_picked(self):
+        target = self.config(transcribe_provider="openai",
+                             openai_api_key="sk-test").transcribe_target()
         self.assertEqual(target.provider, "openai")
         self.assertEqual(target.service, "OpenAI")
         self.assertEqual(target.api_key, "sk-test")
@@ -146,7 +156,8 @@ class TranscribeTarget(DikteTest):
         self.assertEqual(target.model, "openai/whisper-1")
 
     def test_a_self_hosted_endpoint(self):
-        conf = self.config(openai_base_url="http://localhost:8080/v1")
+        conf = self.config(transcribe_provider="openai",
+                           openai_base_url="http://localhost:8080/v1")
         self.assertEqual(conf.transcribe_target().base_url, "http://localhost:8080/v1")
 
 
@@ -425,3 +436,73 @@ class Defaults(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalTargets(DikteTest):
+    def test_cleanup_can_run_here_while_the_minutes_do_not(self):
+        # The two jobs are not the same size: a small model on this machine
+        # strips filler words perfectly well and will not write up an hour.
+        conf = self.config(cleanup_provider="local", local_llm_model="gemma.gguf")
+        self.assertEqual(conf.cleanup_target().provider, "local-llm")
+        self.assertEqual(conf.minutes_target().provider, "openrouter")
+        self.assertEqual(conf.minutes_target().model, cfg.DEFAULTS["meeting_model"])
+
+    def test_the_minutes_can_run_here_on_their_own(self):
+        conf = self.config(meeting_provider="local", local_llm_model="gemma.gguf")
+        self.assertEqual(conf.minutes_target().model, "gemma.gguf")
+        self.assertEqual(conf.cleanup_target().provider, "openrouter")
+
+    def test_the_local_cleanup_target_carries_the_thinking_level(self):
+        conf = self.config(cleanup_provider="local", local_llm_model="gemma.gguf",
+                           local_llm_reasoning="none")
+        target = conf.cleanup_target()
+        self.assertEqual(target.reasoning, "none")
+        self.assertEqual(target.api_key, "")
+
+    def test_either_of_them_counts_as_using_the_local_model(self):
+        self.assertFalse(cfg.Config().uses_local_llm())
+        self.assertTrue(self.config(cleanup_provider="local").uses_local_llm())
+        self.assertTrue(self.config(meeting_provider="local").uses_local_llm())
+
+
+class ReadyToRun(DikteTest):
+    def setUp(self):
+        super().setUp()
+        self.patch_attr(ggml, "MODELS_DIR", self.path("models"))
+
+    def install(self, name):
+        path = ggml.whisper_model_path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"model")
+
+    def test_a_missing_program_is_not_ready(self):
+        with mock.patch("shutil.which", return_value=None):
+            self.install("ggml-base.bin")
+            conf = self.config(local_model="ggml-base.bin")
+            self.assertFalse(conf.transcribe_ready())
+
+    def test_a_missing_model_is_not_ready_either(self):
+        with mock.patch("shutil.which", return_value="/usr/bin/whisper-server"):
+            conf = self.config(local_model="ggml-base.bin")
+            self.assertFalse(conf.transcribe_ready())
+
+    def test_both_halves_in_place(self):
+        with mock.patch("shutil.which", return_value="/usr/bin/whisper-server"):
+            self.install("ggml-base.bin")
+            conf = self.config(local_model="ggml-base.bin")
+            self.assertTrue(conf.transcribe_ready())
+
+    def test_a_hosted_provider_is_ready_when_it_has_a_key(self):
+        conf = self.config(transcribe_provider="openai", openai_api_key="sk-test")
+        self.assertTrue(conf.transcribe_ready())
+
+    def test_the_settings_reach_the_servers(self):
+        conf = self.config(local_model="ggml-base.bin", local_threads=4,
+                           local_gpu=False, local_llm_model="gemma.gguf",
+                           local_llm_context=4096)
+        conf.apply_local()
+        self.addCleanup(ggml.whisper.configure, model="", threads=0, gpu=True)
+        self.assertEqual(ggml.whisper.settings()["model"], "ggml-base.bin")
+        self.assertEqual(ggml.whisper.settings()["threads"], 4)
+        self.assertFalse(ggml.whisper.settings()["gpu"])
+        self.assertEqual(ggml.llm.settings()["context"], 4096)

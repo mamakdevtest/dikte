@@ -41,8 +41,18 @@ CHANGED = {
     "transcribe_model": "whisper-1",
     "openrouter_transcribe_model": "openai/whisper-1",
     "cleanup_enabled": False,
+    "cleanup_provider": "local",
     "cleanup_model": "some/other-model",
     "cleanup_reasoning": "high",
+    "local_model": "ggml-small.bin",
+    "local_gpu": False,
+    "local_preload": False,
+    "local_threads": 6,
+    "local_llm_model": "gemma-3-4b-it-Q4_K_M.gguf",
+    "local_llm_repo": "ggml-org/gemma-4-E2B-it-GGUF",
+    "local_llm_gpu": False,
+    "local_llm_preload": True,
+    "local_llm_reasoning": "low",
     "cleanup_prompt": "Only fix the punctuation.",
     "file_cleanup_prompt": "Keep the stamps where they are.",
     "transcribe_prompt": "Paraşüt, OpenFrame",
@@ -259,3 +269,53 @@ class Overlay(DikteTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalModels(DikteTest):
+    """The download boxes, without a network and without either program."""
+
+    def window(self, conf):
+        window = settings_ui.SettingsWindow(conf, "dikte toggle")
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.close)
+        return window
+
+    def test_it_opens_where_the_missing_model_is_fixed(self):
+        # Nothing can transcribe on a fresh install, which is why this window
+        # was opened at all.
+        window = self.window(cfg.Config())
+        self.assertEqual(window.tabs.currentIndex(), window.api_tab_index)
+
+    def test_it_opens_where_it_was_left_when_everything_works(self):
+        conf = self.config(transcribe_provider="openai", openai_api_key="sk-test")
+        self.assertEqual(self.window(conf).tabs.currentIndex(), 0)
+
+    def test_a_model_that_is_not_here_yet_survives_a_save(self):
+        # The box is filled from what is on this disk, so a model that was
+        # deleted from underneath is not in the list. Dropping it on save would
+        # quietly empty the setting instead of asking for the download again.
+        conf = self.config(local_model="ggml-large-v3-turbo-q5_0.bin")
+        with mock.patch.object(QMessageBox, "information"):
+            self.window(conf)._save()
+        self.assertEqual(conf["local_model"], "ggml-large-v3-turbo-q5_0.bin")
+
+    def test_nothing_is_fetched_for_a_window_nobody_opened(self):
+        # DikteTest closes the network, so a request would fail the test. The
+        # lists are asked for when the box is shown, not when it is built.
+        window = self.window(cfg.Config())
+        self.assertTrue(window.local_whisper._pending)
+
+    def test_the_hosted_boxes_go_away_when_the_work_happens_here(self):
+        window = self.window(self.config(transcribe_provider="openai"))
+        self.assertTrue(window.hosted_stt.isVisibleTo(window))
+        self.assertFalse(window.local_whisper.isVisibleTo(window))
+        window._select_data(window.transcribe_provider, "local")
+        self.assertFalse(window.hosted_stt.isVisibleTo(window))
+        self.assertTrue(window.local_whisper.isVisibleTo(window))
+
+    def test_the_same_for_cleanup(self):
+        window = self.window(cfg.Config())
+        self.assertTrue(window.hosted_cleanup.isVisibleTo(window))
+        window._select_data(window.cleanup_provider, "local")
+        self.assertTrue(window.local_llm.isVisibleTo(window))
+        self.assertFalse(window.hosted_cleanup.isVisibleTo(window))

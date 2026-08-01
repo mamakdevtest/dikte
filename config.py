@@ -6,7 +6,9 @@ import os
 import pathlib
 
 import api
+import ggml
 import i18n
+from i18n import t
 
 
 def _xdg(var, default):
@@ -365,14 +367,46 @@ DEFAULTS = {
     "openai_base_url": "https://api.openai.com/v1",
     "openrouter_api_key": "",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
-    "transcribe_provider": "openai",  # openai | openrouter
+    "transcribe_provider": "local",  # local | openai | openrouter
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
     "openrouter_transcribe_model": "openai/gpt-4o-transcribe",
     "language": "tr",
     "transcribe_prompt": "",
+
+    # --- whisper.cpp, on this machine ---------------------------------------
+    # The program and the model are both fetched from Settings; empty means
+    # nothing has been downloaded yet, which is what opens Settings on a first
+    # run.
+    # Pointed at the suggestion rather than at nothing, so the settings window
+    # opens with the Download button already on the right model.
+    "local_model": ggml.SUGGESTED_WHISPER,
+    "local_threads": 0,             # 0 -> whisper.cpp picks
+    "local_gpu": True,
+    "local_preload": True,          # load the model while Dikte starts, rather
+                                    # than on the first dictation
+    "local_binary": "",             # empty -> whichever copy ggml.py finds
+
     "cleanup_enabled": True,
+    "cleanup_provider": "openrouter",   # openrouter | local
     "cleanup_model": "google/gemini-3.5-flash-lite",
     "cleanup_reasoning": "",        # empty -> whatever the model does by default
+
+    # --- llama.cpp, on this machine -----------------------------------------
+    # Kept apart from the meeting settings on purpose. Cleanup is punctuation
+    # and filler words, which a small model does in a moment; the minutes are a
+    # summary of an hour, which it does not.
+    "local_llm_model": "",          # a file name, e.g. gemma-3-4b-it-Q4_K_M.gguf
+    # Where the model list is read from; the settings window offers the
+    # publishers ggml.py knows of and takes any other one that is typed in.
+    "local_llm_repo": ggml.SUGGESTED_LLM[0],
+    "local_llm_threads": 0,
+    "local_llm_gpu": True,
+    "local_llm_context": 8192,
+    "local_llm_binary": "",
+    "local_llm_preload": False,     # heavier than whisper, so only when asked
+    # Off rather than empty: a model trained to think will, and 300 tokens of
+    # reasoning about a comma is 300 tokens of waiting.
+    "local_llm_reasoning": "none",
     "cleanup_prompt": "",           # empty -> language-specific default
     "auto_paste": True,
     "paste_shortcut": "ctrl+v",
@@ -400,6 +434,7 @@ DEFAULTS = {
     "meeting_language": "",         # empty -> the dictation speech language
     "meeting_max_seconds": 14400,   # 4 hours
     "meeting_cleanup": True,
+    "meeting_provider": "openrouter",   # openrouter | local
     "meeting_model": "google/gemini-3.5-flash",
     "meeting_reasoning": "",
     "meeting_prompt": "",           # empty -> language-specific default
@@ -495,13 +530,83 @@ class Config:
         return self["openrouter_api_key"].strip() or os.environ.get("OPENROUTER_API_KEY", "").strip()
 
     def transcribe_target(self):
-        """Key, endpoint and model for whichever provider does speech to text."""
-        if self["transcribe_provider"] == "openrouter":
+        """Key, endpoint and model for whichever provider does speech to text.
+
+        The local one leaves its base URL empty on purpose: the server picks a
+        port when it starts, and starting it here would make reading a setting
+        launch a process. api.py fills the address in when it is about to send
+        the request, which is the moment the server is needed anyway.
+        """
+        provider = self["transcribe_provider"]
+        if provider == "local":
+            return api.Target("local", t("Local whisper"), "", "",
+                              self["local_model"])
+        if provider == "openrouter":
             return api.Target("openrouter", "OpenRouter", self.openrouter_key(),
                               self["openrouter_base_url"],
                               self["openrouter_transcribe_model"])
         return api.Target("openai", "OpenAI", self.openai_key(),
                           self["openai_base_url"], self["transcribe_model"])
+
+    def cleanup_target(self):
+        """The same, for the model that tidies a transcript up."""
+        if self["cleanup_provider"] == "local":
+            return api.Target("local-llm", t("Local model"), "", "",
+                              self["local_llm_model"], self["local_llm_reasoning"])
+        return api.Target("openrouter", "OpenRouter", self.openrouter_key(),
+                          self["openrouter_base_url"], self["cleanup_model"],
+                          self["cleanup_reasoning"])
+
+    def minutes_target(self):
+        """The same again, for the minutes.
+
+        Its own provider rather than the cleanup one. The two jobs are not the
+        same size: a 4B model on this machine will strip the filler words out of
+        a dictation perfectly well and will not write up an hour long meeting,
+        so choosing it for the first must not quietly choose it for the second.
+        """
+        if self["meeting_provider"] == "local":
+            return api.Target("local-llm", t("Local model"), "", "",
+                              self["local_llm_model"], self["local_llm_reasoning"])
+        return api.Target("openrouter", "OpenRouter", self.openrouter_key(),
+                          self["openrouter_base_url"], self["meeting_model"],
+                          self["meeting_reasoning"])
+
+    def transcribe_ready(self):
+        """Whether speech to text could run right now, without opening Settings."""
+        if self["transcribe_provider"] == "local":
+            return self.local_whisper_ready()
+        return bool(self.transcribe_target().api_key)
+
+    def local_whisper_ready(self):
+        return bool(ggml.program_path(ggml.WHISPER, self["local_binary"])
+                    and self["local_model"]
+                    and ggml.have_model(ggml.whisper_model_path(self["local_model"])))
+
+    def local_llm_ready(self):
+        return bool(ggml.program_path(ggml.LLAMA, self["local_llm_binary"])
+                    and self["local_llm_model"]
+                    and ggml.have_model(ggml.llm_model_path(self["local_llm_model"])))
+
+    def apply_local(self):
+        """Hand the local settings to the servers, restarting what they change."""
+        ggml.whisper.configure(
+            model=self["local_model"],
+            threads=int(self["local_threads"]),
+            gpu=bool(self["local_gpu"]),
+            binary=self["local_binary"],
+        )
+        ggml.llm.configure(
+            model=self["local_llm_model"],
+            threads=int(self["local_llm_threads"]),
+            gpu=bool(self["local_llm_gpu"]),
+            binary=self["local_llm_binary"],
+            context=int(self["local_llm_context"]),
+        )
+
+    def uses_local_llm(self):
+        """Whether anything is set to run the local cleanup model."""
+        return "local" in (self["cleanup_provider"], self["meeting_provider"])
 
     def cleanup_prompt(self, with_timestamps=False, with_speakers=False,
                        subtitles=False):

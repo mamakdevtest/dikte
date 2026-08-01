@@ -116,5 +116,6 @@ fi
 
 echo
 ok "Done. Start it with:  dikte"
-say "The settings window opens on first run; add an OpenAI, Groq or OpenRouter key."
+say "The settings window opens on first run: download a speech model, or add"
+say "an OpenAI or OpenRouter key instead."
 echo

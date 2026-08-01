@@ -1,9 +1,8 @@
 # Dikte
 
-`Ctrl+Space`'e bas, konuş, tekrar bas. Ses OpenAI'ye ya da OpenRouter'a gidip
-yazıya çevrilir, OpenRouter'daki bir model transkripti temizler (ıı'lar,
-tekrarlar, eksik noktalama), sonuç panoya kopyalanır ve o an yazdığın pencereye
-yapıştırılır.
+`Ctrl+Space`'e bas, konuş, tekrar bas. Ses varsayılan olarak bu makinede yazıya
+çevrilir, bir model transkripti temizler (ıı'lar, tekrarlar, eksik noktalama),
+sonuç panoya kopyalanır ve o an yazdığın pencereye yapıştırılır.
 
 KDE Plasma 6 / Wayland için yazıldı. Sistem paketleri dışında bağımlılığı yok:
 sadece Python standart kütüphanesi ve PyQt6.
@@ -39,10 +38,14 @@ sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 `install.sh` `dikte` komutunu, menü girdisini ve oturum açılışında otomatik
 başlatmayı kurar. Ayarlar penceresi GNOME veya KDE global kısayolunu kurar.
 
-Ayarlar penceresinde iki anahtar istenir: **OpenAI** ve **OpenRouter**. Sesi
-yazıya çevirme ikisinden birinde çalışır (varsayılan `gpt-4o-transcribe`),
-temizleme her zaman OpenRouter'da (`google/gemini-3.5-flash-lite`), yani tek bir
-OpenRouter anahtarı ikisine de yeter. Boş bırakırsan `OPENAI_API_KEY` ve
+Sesi yazıya çevirme ve temizleme, ayarlar penceresinde ayrı ayrı sağlayıcı
+seçer. İkisi de burada çalışabilir, whisper.cpp ve llama.cpp üzerinde: program
+da model de o pencereden indirilir (sha256 doğrulamasıyla,
+`~/.local/share/dikte` altına), yani önceden hiçbir şey kurman gerekmez ve
+makineden hiçbir şey çıkmaz. Bulut seçenekleri anahtar ister: yazıya çevirme
+için **OpenAI** ya da **OpenRouter**, temizleme için **OpenRouter**
+(`google/gemini-3.5-flash-lite`), yani tek bir OpenRouter anahtarı ikisine de
+yeter. Boş bırakırsan `OPENAI_API_KEY` ve
 `OPENROUTER_API_KEY` kullanılır; anahtarlar `~/.config/dikte/config.json`
 içinde, izinler 600. Temizlemeyi tamamen kapatabilirsin, o zaman ham transkript
 yapıştırılır; modelin yanındaki kutudan düşünme seviyesini de seçebilirsin.
@@ -142,7 +145,9 @@ ipc.py            yerel sokette bir istek, bir cevap
 audio.py          PCM kaydı: diktede pw-record, toplantıda ffmpeg
 meeting.py        kanal ayırma, konuşmacı etiketi, temizleme, tutanak
 assistant.py      dikteyi Claude Code, Codex ya da OpenRouter'dan geçirme
-api.py            iki sağlayıcıda transkript + OpenRouter temizleme (yalnız stdlib)
+api.py            her sağlayıcıda transkript ve temizleme (yalnız stdlib)
+ggml.py           whisper.cpp ve llama.cpp'yi indirip burada çalıştırma
+hub.py            GitHub ve Hugging Face'te bugün ne olduğu
 worker.py         transkript → temizleme → pano → yapıştırma
 vad.py            kayıtta gerçekten konuşma var mı kararı
 filetranscribe.py dosyadan transkript: ffmpeg, parçalama, zaman damgaları

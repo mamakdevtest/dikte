@@ -18,6 +18,7 @@ import assistant
 import audio
 import config as cfg
 import filetranscribe
+import ggml
 import hotkey
 import meeting
 from filetranscribe import FileTranscriber
@@ -29,7 +30,10 @@ LANGUAGES = [
     ("German", "de"), ("French", "fr"), ("Spanish", "es"), ("Arabic", "ar"),
 ]
 CORNERS = ["bottom-left", "bottom-right", "top-left", "top-right"]
-TRANSCRIBE_PROVIDERS = [("OpenAI", "openai"), ("OpenRouter", "openrouter")]
+TRANSCRIBE_PROVIDERS = [("This machine (whisper.cpp)", "local"),
+                        ("OpenAI", "openai"), ("OpenRouter", "openrouter")]
+CLEANUP_PROVIDERS = [("OpenRouter", "openrouter"),
+                     ("This machine (llama.cpp)", "local")]
 # Starting points for the model box; "Fetch model list" replaces them with
 # whatever the provider offers today.
 TRANSCRIBE_MODELS = {
@@ -103,6 +107,316 @@ AUDIO_FILTER = ("*.mp3 *.wav *.m4a *.ogg *.opus *.flac *.aac *.wma "
                 "*.mp4 *.mkv *.webm *.mov *.avi")
 
 
+class LocalModelBox(QGroupBox):
+    """The program, the model, and the two downloads that put them there.
+
+    One class for whisper.cpp and llama.cpp, because the job is the same one
+    twice: say whether the program is here, offer the models somebody publishes,
+    fetch the chosen one, and stay usable while a gigabyte arrives. Nothing is
+    listed in the source; `repos` and `models` are asked at the moment the box is
+    opened, so a model published this morning is in the list this afternoon.
+    """
+
+    _listed = pyqtSignal(list, str)
+    _quants = pyqtSignal(list, str)
+    _progress = pyqtSignal(int, int)
+    _finished = pyqtSignal(str, str)
+    _installed = pyqtSignal(str, str)
+
+    changed = pyqtSignal()
+
+    def __init__(self, program, title, models, model_path, repos=None, parent=None):
+        super().__init__(title, parent)
+        self.program = program
+        self._models = models          # () -> [hub.Item], or (repo) -> [hub.Item]
+        self._model_path = model_path  # (name) -> Path
+        self._repos = repos            # None, or () -> [repo id]
+        self._downloading = False
+        self._pending = False
+        self._stop = False
+        self._wanted = ""              # the model to select once a list arrives
+
+        form = QFormLayout(self)
+
+        self.program_label = QLabel("")
+        self.program_label.setWordWrap(True)
+        self.install_button = QPushButton(t("Download"))
+        self.install_button.clicked.connect(self._install_program)
+        form.addRow(t("Program"), self._side_by_side(self.program_label,
+                                                     self.install_button))
+
+        if self._repos is not None:
+            self.repo = QComboBox()
+            self.repo.setEditable(True)
+            self.repo.setToolTip(t("A Hugging Face repository of GGUF files. The "
+                                   "list is fetched; any other one can be typed in."))
+            self.repo.currentTextChanged.connect(self._repo_changed)
+            form.addRow(t("Publisher"), self.repo)
+
+        self.model = QComboBox()
+        self.download_button = QPushButton(t("Download"))
+        self.download_button.clicked.connect(self._download)
+        self.delete_button = QPushButton(t("Delete"))
+        self.delete_button.clicked.connect(self._delete)
+        form.addRow(t("Model"), self._side_by_side(self.model,
+                                                   self.download_button,
+                                                   self.delete_button))
+        self.model.currentIndexChanged.connect(self._model_changed)
+
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        form.addRow(self.status)
+
+        self._listed.connect(self._on_listed)
+        self._quants.connect(self._on_listed)
+        self._progress.connect(self._on_progress)
+        self._finished.connect(self._on_finished)
+        self._installed.connect(self._on_installed)
+
+    @staticmethod
+    def _side_by_side(*widgets):
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        for index, widget in enumerate(widgets):
+            layout.addWidget(widget, 1 if index == 0 else 0)
+        holder = QWidget()
+        holder.setLayout(layout)
+        return holder
+
+    # ---- what is here ----------------------------------------------------
+
+    def selected(self):
+        return self.model.currentData() or ""
+
+    def repository(self):
+        return self.repo.currentText().strip() if self._repos is not None else ""
+
+    def load(self, model, repo=""):
+        """Show what is stored. What else is on offer is asked for on the way up.
+
+        Nothing is fetched here: building the settings window is not the same as
+        opening it, and a list nobody is looking at is not worth a request. What
+        is already on this disk is shown straight away either way.
+        """
+        self._wanted = model
+        self._pending = True
+        self._show_program()
+        if self._repos is not None:
+            self.repo.blockSignals(True)
+            self.repo.clear()
+            self.repo.addItems(list(ggml.SUGGESTED_LLM))
+            self.repo.setCurrentText(repo or ggml.SUGGESTED_LLM[0])
+            self.repo.blockSignals(False)
+        self._fill_models([])
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._pending:
+            self._pending = False
+            if self._repos is not None:
+                self._fill_repos(self.repository())
+            self._fetch_models(self.repository())
+
+    def _show_program(self):
+        path = ggml.program_path(self.program)
+        if not path:
+            self.program_label.setText(t("Not installed."))
+            self.install_button.setVisible(True)
+            return
+        self.install_button.setVisible(not ggml.installed_program(self.program)
+                                       and not ggml.system_program(self.program))
+        if ggml.system_program(self.program):
+            # Worth saying which one is running: a distribution package is built
+            # for this machine and may reach the graphics card, while the
+            # released binaries carry processor backends only.
+            self.program_label.setText(t("Installed on the system: {path}", path=path))
+        else:
+            self.program_label.setText(
+                t("Downloaded, version {version}.",
+                  version=ggml.installed_version(self.program) or "?"))
+
+    # ---- the lists -------------------------------------------------------
+
+    def _fill_repos(self, current):
+        def work():
+            self._listed.emit([("repos", ggml.llm_repos())], "")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _repo_changed(self):
+        if not self._downloading:
+            self._fetch_models(self.repository())
+
+    def _fetch_models(self, repo=""):
+        self.status.setText(t("Fetching the model list…"))
+
+        def work():
+            try:
+                found = self._models(repo) if self._repos is not None else self._models()
+                self._quants.emit([("models", found)], "")
+            except ggml.LocalError as exc:
+                self._quants.emit([], str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_listed(self, payload, error):
+        if error:
+            self.status.setText(error)
+            self._refresh_buttons()
+            return
+        kind, found = payload[0]
+        if kind == "repos":
+            current = self.repo.currentText()
+            self.repo.blockSignals(True)
+            self.repo.clear()
+            self.repo.addItems(found)
+            self.repo.setCurrentText(current)
+            self.repo.blockSignals(False)
+            return
+        self._fill_models(found)
+
+    def _fill_models(self, items):
+        """One row per model, saying what it weighs and whether it is here."""
+        wanted = self._wanted or self.selected()
+        here = [name for name in (self._model_path(i.name).name for i in items)]
+        self.model.blockSignals(True)
+        self.model.clear()
+        for item, name in zip(items, here):
+            mark = (t("downloaded") if ggml.have_model(self._model_path(item.name))
+                    else ggml.human_size(item.size))
+            self.model.addItem(f"{name}  ({mark})", name)
+            self.model.setItemData(self.model.count() - 1, item, Qt.ItemDataRole.UserRole + 1)
+        # A model that was downloaded and then dropped from the list upstream is
+        # still on this disk and still works, so it stays on offer.
+        for name in self._on_disk():
+            if self.model.findData(name) < 0:
+                self.model.addItem(f"{name}  ({t('downloaded')})", name)
+        # And one that is chosen but not here, because the file was deleted from
+        # underneath or the settings came from another machine, stays chosen:
+        # Save reads this box, and a row missing here would quietly empty the
+        # setting rather than showing that the model needs downloading again.
+        if wanted and self.model.findData(wanted) < 0:
+            self.model.addItem(f"{wanted}  ({t('not downloaded')})", wanted)
+        index = self.model.findData(wanted)
+        self.model.setCurrentIndex(max(index, 0))
+        self.model.blockSignals(False)
+        self._wanted = ""
+        self._model_changed()
+
+    def _on_disk(self):
+        return (ggml.installed_whisper_models() if self.program is ggml.WHISPER
+                else ggml.installed_llm_models())
+
+    # ---- fetching --------------------------------------------------------
+
+    def _install_program(self):
+        self.install_button.setEnabled(False)
+        self.program_label.setText(t("Downloading…"))
+
+        def work():
+            try:
+                ggml.install_program(self.program, on_progress=self._report)
+                self._installed.emit("", "")
+            except ggml.LocalError as exc:
+                self._installed.emit("", str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_installed(self, _, error):
+        self.install_button.setEnabled(True)
+        self._show_program()
+        if error:
+            self.program_label.setText(error)
+        self.changed.emit()
+
+    def _current_item(self):
+        return self.model.currentData(Qt.ItemDataRole.UserRole + 1)
+
+    def _download(self):
+        if self._downloading:
+            self._stop = True
+            return
+        item = self._current_item()
+        if item is None:
+            return
+        self._downloading, self._stop = True, False
+        self._refresh_buttons()
+
+        def work():
+            try:
+                landed = ggml.download(item, self._model_path(item.name),
+                                       on_progress=self._report,
+                                       should_stop=lambda: self._stop)
+                self._finished.emit(item.name if landed else "", "")
+            except ggml.LocalError as exc:
+                self._finished.emit("", str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _report(self, done, total):
+        self._progress.emit(done, total)
+
+    def _on_progress(self, done, total):
+        share = f" ({done * 100 // total}%)" if total else ""
+        text = t("Downloading: {done} of {total}{share}",
+                 done=ggml.human_size(done), total=ggml.human_size(total or done),
+                 share=share)
+        if self._downloading:
+            self.status.setText(text)
+        else:
+            self.program_label.setText(text)
+
+    def _on_finished(self, name, error):
+        self._downloading = False
+        if error:
+            self.status.setText(error)
+        elif not name:
+            self.status.setText(t("Download stopped."))
+        self._fill_models_from_current()
+        self.changed.emit()
+
+    def _fill_models_from_current(self):
+        """Redraw the rows without asking anybody anything again."""
+        items = [self.model.itemData(i, Qt.ItemDataRole.UserRole + 1)
+                 for i in range(self.model.count())]
+        self._wanted = self.selected()
+        self._fill_models([i for i in items if i is not None])
+
+    def _delete(self):
+        name = self.selected()
+        if not name or not ggml.have_model(self._model_path(name)):
+            return
+        if QMessageBox.question(self, t("Delete model"),
+                                t("Delete {name} from this machine?", name=name)) \
+                != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            ggml.delete_model(self._model_path(name))
+        except ggml.LocalError as exc:
+            self.status.setText(str(exc))
+        self._fill_models_from_current()
+        self.changed.emit()
+
+    def _model_changed(self):
+        self._refresh_buttons()
+        self.changed.emit()
+
+    def _refresh_buttons(self):
+        name = self.selected()
+        here = bool(name) and ggml.have_model(self._model_path(name))
+        self.delete_button.setEnabled(here and not self._downloading)
+        self.download_button.setText(t("Stop") if self._downloading else t("Download"))
+        self.download_button.setEnabled(self._downloading or (bool(name) and not here))
+        if self._downloading:
+            return
+        if not name:
+            self.status.setText(t("Nothing downloaded yet."))
+        elif here:
+            self.status.setText(t("Ready: {name}.", name=name))
+        else:
+            self.status.setText(t("{name} has not been downloaded yet.", name=name))
+
+
 class SettingsWindow(QDialog):
     applied = pyqtSignal()
 
@@ -127,9 +441,9 @@ class SettingsWindow(QDialog):
         self.setWindowTitle(t("Dikte Settings"))
         self.resize(680, 640)
 
-        tabs = QTabWidget(self)
+        tabs = self.tabs = QTabWidget(self)
         tabs.addTab(self._general_tab(), t("General"))
-        tabs.addTab(self._api_tab(), t("API and models"))
+        self.api_tab_index = tabs.addTab(self._api_tab(), t("API and models"))
         tabs.addTab(self._prompt_tab(), t("Cleanup rules"))
         tabs.addTab(self._assistant_tab(), t("Agent"))
         tabs.addTab(self._meeting_tab(), t("Meeting"))
@@ -161,6 +475,10 @@ class SettingsWindow(QDialog):
             self.meetings.finished.connect(self._on_minutes_finished)
             self.meetings.failed.connect(self._on_minutes_failed)
         self._load()
+        # On a machine where nothing can transcribe yet, this window was opened
+        # because of that, so open it on the tab that fixes it.
+        if not conf.transcribe_ready():
+            self.tabs.setCurrentIndex(self.api_tab_index)
 
     # ---- tabs ----------------------------------------------------------
 
@@ -269,20 +587,55 @@ class SettingsWindow(QDialog):
         stt_form = QFormLayout(stt)
         self.transcribe_provider = QComboBox()
         for label, value in TRANSCRIBE_PROVIDERS:
-            self.transcribe_provider.addItem(label, value)
+            self.transcribe_provider.addItem(t(label), value)
         stt_form.addRow(t("Provider"), self.transcribe_provider)
 
+        # The hosted providers take any model id that is typed at them; the
+        # local one offers what has been published, so the two are separate
+        # blocks and only one of them is ever visible.
+        self.hosted_stt = QWidget()
+        hosted_form = QFormLayout(self.hosted_stt)
+        hosted_form.setContentsMargins(0, 0, 0, 0)
         self.transcribe_model = QComboBox()
         self.transcribe_model.setEditable(True)
         self.refresh_transcribe_models = QPushButton(t("Fetch model list"))
         self.refresh_transcribe_models.clicked.connect(self._load_transcribe_models)
-        stt_form.addRow(t("Model"),
-                        self._row(self.transcribe_model, self.refresh_transcribe_models))
+        hosted_form.addRow(t("Model"),
+                           self._row(self.transcribe_model,
+                                     self.refresh_transcribe_models))
         # A spanning row: in the narrow field column a wrapped label gets a
         # height that fits one line, and the rest of the text is cut off.
         self.transcribe_status = QLabel("")
         self.transcribe_status.setWordWrap(True)
-        stt_form.addRow(self.transcribe_status)
+        hosted_form.addRow(self.transcribe_status)
+        stt_form.addRow(self.hosted_stt)
+
+        self.local_whisper = LocalModelBox(
+            ggml.WHISPER, t("On this machine"),
+            ggml.whisper_models, ggml.whisper_model_path)
+        stt_form.addRow(self.local_whisper)
+
+        self.local_gpu = QCheckBox(t("Use the graphics card"))
+        self.local_gpu.setToolTip(
+            t("whisper.cpp reaches the card through CUDA, ROCm or Vulkan when the "
+              "build it is running was made with one. A build without any of them "
+              "runs on the processor whatever this says."))
+        self.local_preload = QCheckBox(t("Load the model when Dikte starts"))
+        self.local_preload.setToolTip(
+            t("A large model takes a second or two to load. Loading it up front "
+              "spends that once instead of on the first dictation, at the cost of "
+              "the memory it sits in."))
+        self.local_threads = QSpinBox()
+        self.local_threads.setRange(0, 64)
+        self.local_threads.setSpecialValueText(t("Automatic"))
+        self.local_options = QWidget()
+        options_form = QFormLayout(self.local_options)
+        options_form.setContentsMargins(0, 0, 0, 0)
+        options_form.addRow("", self.local_gpu)
+        options_form.addRow("", self.local_preload)
+        options_form.addRow(t("Threads"), self.local_threads)
+        stt_form.addRow(self.local_options)
+
         self.transcribe_provider.currentIndexChanged.connect(self._provider_changed)
         outer.addWidget(stt)
 
@@ -291,12 +644,22 @@ class SettingsWindow(QDialog):
         self.cleanup_enabled = QCheckBox(t("Clean the transcript with a model"))
         orr_form.addRow("", self.cleanup_enabled)
 
+        self.cleanup_provider = QComboBox()
+        for label, value in CLEANUP_PROVIDERS:
+            self.cleanup_provider.addItem(t(label), value)
+        self.cleanup_provider.currentIndexChanged.connect(self._cleanup_provider_changed)
+        orr_form.addRow(t("Provider"), self.cleanup_provider)
+
+        self.hosted_cleanup = QWidget()
+        cleanup_form = QFormLayout(self.hosted_cleanup)
+        cleanup_form.setContentsMargins(0, 0, 0, 0)
         self.cleanup_model = QComboBox()
         self.cleanup_model.setEditable(True)
         self.cleanup_model.addItems(CLEANUP_MODELS)
         self.refresh_models = QPushButton(t("Fetch model list"))
         self.refresh_models.clicked.connect(self._load_models)
-        orr_form.addRow(t("Model"), self._row(self.cleanup_model, self.refresh_models))
+        cleanup_form.addRow(t("Model"), self._row(self.cleanup_model,
+                                                  self.refresh_models))
 
         self.cleanup_reasoning = QComboBox()
         for label, value in REASONING_LEVELS:
@@ -306,11 +669,38 @@ class SettingsWindow(QDialog):
               "a light job, so more thinking mostly costs time and tokens. Models "
               "that cannot think ignore this.")
         )
-        orr_form.addRow(t("Thinking"), self.cleanup_reasoning)
+        cleanup_form.addRow(t("Thinking"), self.cleanup_reasoning)
 
         self.models_label = QLabel(t("Runs on OpenRouter."))
         self.models_label.setWordWrap(True)
-        orr_form.addRow(self.models_label)
+        cleanup_form.addRow(self.models_label)
+        orr_form.addRow(self.hosted_cleanup)
+
+        self.local_llm = LocalModelBox(
+            ggml.LLAMA, t("On this machine"),
+            ggml.llm_quants, ggml.llm_model_path, repos=ggml.llm_repos)
+        orr_form.addRow(self.local_llm)
+
+        self.local_llm_gpu = QCheckBox(t("Use the graphics card"))
+        self.local_llm_preload = QCheckBox(t("Load the model when Dikte starts"))
+        self.local_llm_preload.setToolTip(
+            t("An LLM is slower to load than a whisper model and sits in more "
+              "memory. Off means it is loaded on the first cleanup instead."))
+        self.local_llm_reasoning = QComboBox()
+        for label, value in REASONING_LEVELS:
+            self.local_llm_reasoning.addItem(t(label), value)
+        self.local_llm_reasoning.setToolTip(
+            t("A model trained to think will think unless it is told not to, and "
+              "spending 300 tokens of reasoning on a comma is 300 tokens of "
+              "waiting. Off is what cleanup wants."))
+        self.local_llm_options = QWidget()
+        llm_form = QFormLayout(self.local_llm_options)
+        llm_form.setContentsMargins(0, 0, 0, 0)
+        llm_form.addRow("", self.local_llm_gpu)
+        llm_form.addRow("", self.local_llm_preload)
+        llm_form.addRow(t("Thinking"), self.local_llm_reasoning)
+        orr_form.addRow(self.local_llm_options)
+
         outer.addWidget(orr)
         outer.addStretch(1)
         return page
@@ -926,9 +1316,20 @@ class SettingsWindow(QDialog):
         self._shown_provider = ""
         self._select_data(self.transcribe_provider, conf["transcribe_provider"])
         self._provider_changed()  # selecting index 0 fires no signal
+        self.local_gpu.setChecked(conf["local_gpu"])
+        self.local_preload.setChecked(conf["local_preload"])
+        self.local_threads.setValue(int(conf["local_threads"]))
+        self.local_whisper.load(conf["local_model"])
+
         self.cleanup_enabled.setChecked(conf["cleanup_enabled"])
+        self._select_data(self.cleanup_provider, conf["cleanup_provider"])
+        self._cleanup_provider_changed()
         self.cleanup_model.setCurrentText(conf["cleanup_model"])
         self._select_data(self.cleanup_reasoning, conf["cleanup_reasoning"])
+        self.local_llm_gpu.setChecked(conf["local_llm_gpu"])
+        self.local_llm_preload.setChecked(conf["local_llm_preload"])
+        self._select_data(self.local_llm_reasoning, conf["local_llm_reasoning"])
+        self.local_llm.load(conf["local_llm_model"], conf["local_llm_repo"])
         self.cleanup_prompt.setPlainText(conf["cleanup_prompt"] or cfg.default_cleanup_prompt())
         self.file_cleanup_prompt.setPlainText(
             conf["file_cleanup_prompt"] or cfg.default_file_cleanup_prompt()
@@ -1003,16 +1404,27 @@ class SettingsWindow(QDialog):
         conf["openai_api_key"] = self.openai_key.text().strip()
         conf["openrouter_api_key"] = self.openrouter_key.text().strip()
 
-        provider = self.transcribe_provider.currentData() or "openai"
-        self._models[provider] = self.transcribe_model.currentText().strip()
+        provider = self.transcribe_provider.currentData() or "local"
+        if provider in TRANSCRIBE_MODELS:
+            self._models[provider] = self.transcribe_model.currentText().strip()
         conf["transcribe_provider"] = provider
         for key, name in (("openai", "transcribe_model"),
                           ("openrouter", "openrouter_transcribe_model")):
             conf[name] = self._models[key].strip() or cfg.DEFAULTS[name]
+        conf["local_model"] = self.local_whisper.selected()
+        conf["local_gpu"] = self.local_gpu.isChecked()
+        conf["local_preload"] = self.local_preload.isChecked()
+        conf["local_threads"] = self.local_threads.value()
 
         conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
+        conf["cleanup_provider"] = self.cleanup_provider.currentData() or "openrouter"
         conf["cleanup_model"] = self.cleanup_model.currentText().strip()
         conf["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
+        conf["local_llm_model"] = self.local_llm.selected()
+        conf["local_llm_repo"] = self.local_llm.repository()
+        conf["local_llm_gpu"] = self.local_llm_gpu.isChecked()
+        conf["local_llm_preload"] = self.local_llm_preload.isChecked()
+        conf["local_llm_reasoning"] = self.local_llm_reasoning.currentData() or ""
 
         # Store an empty prompt when it matches the default, so switching the
         # interface language also switches the prompt language.
@@ -1093,14 +1505,26 @@ class SettingsWindow(QDialog):
 
     def _provider_changed(self):
         """Swap the model box over to the newly chosen provider's own model."""
-        if self._shown_provider:
+        if self._shown_provider in TRANSCRIBE_MODELS:
             self._models[self._shown_provider] = self.transcribe_model.currentText().strip()
-        provider = self.transcribe_provider.currentData() or "openai"
+        provider = self.transcribe_provider.currentData() or "local"
         self._shown_provider = provider
+        local = provider == "local"
+        self.hosted_stt.setVisible(not local)
+        self.local_whisper.setVisible(local)
+        self.local_options.setVisible(local)
+        if local:
+            return
         self.transcribe_model.clear()
         self.transcribe_model.addItems(TRANSCRIBE_MODELS[provider])
         self.transcribe_model.setCurrentText(self._models[provider])
         self.transcribe_status.setText("")
+
+    def _cleanup_provider_changed(self):
+        local = (self.cleanup_provider.currentData() or "openrouter") == "local"
+        self.hosted_cleanup.setVisible(not local)
+        self.local_llm.setVisible(local)
+        self.local_llm_options.setVisible(local)
 
     def _load_transcribe_models(self):
         """The model list of whichever provider is selected."""
