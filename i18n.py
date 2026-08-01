@@ -27,7 +27,10 @@ def language():
     return _lang
 
 
-def t(text, **kwargs):
+def t(text, /, **kwargs):
+    # The string is positional-only so that every name is free to be a
+    # placeholder: t("Discarded: {text}", text=…) would otherwise be two values
+    # for one argument, and fail at the moment the message is shown.
     out = TR.get(text, text) if _lang == "tr" else text
     return out.format(**kwargs) if kwargs else out
 
@@ -42,7 +45,7 @@ _TR_CASES = {
 }
 
 
-def name(text, case=""):
+def name(text, /, case=""):
     if _lang != "tr" or not case:
         return text
     return _TR_CASES.get(case, {}).get(text, text)

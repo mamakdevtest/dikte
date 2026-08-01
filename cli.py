@@ -361,9 +361,11 @@ def _find_meeting(which):
         return None
     if which in ("", "last"):
         return rows[-1]
-    if which.isdigit():
-        index = int(which)
-        return rows[-index] if 0 < index <= len(rows) else None
+    # A stem is all digits too, so a number is only a position while there are
+    # that many meetings to count back through. Anything larger is a date
+    # somebody typed: nobody is looking for the twenty-millionth meeting.
+    if which.isdigit() and 0 < int(which) <= len(rows):
+        return rows[-int(which)]
     exact = [row for row in rows if row["base"] == which]
     if exact:
         return exact[0]
