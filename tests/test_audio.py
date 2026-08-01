@@ -243,6 +243,18 @@ class RecordingCommand(DikteTest):
                 self.assertIn(str(audio.CHANNELS), joined)
                 self.assertIn("s16", joined)
 
+    def test_parec_is_asked_for_the_level_meter_s_own_chunk(self):
+        """Left alone it buffers about two seconds, which the waveform shows as
+        a still bar that jumps once a second, and which can cost the tail of a
+        recording when the process is asked to stop."""
+        with only_these_tools("parec"):
+            self.assertIn(f"--latency-msec={audio.CHUNK_LATENCY_MS}",
+                          audio.recording_command())
+
+    def test_the_latency_asked_for_is_the_chunk_the_meter_reads(self):
+        self.assertEqual(audio.CHUNK_LATENCY_MS,
+                         round(audio.CHUNK_FRAMES / audio.RATE * 1000))
+
     def test_a_chosen_microphone_reaches_either_one(self):
         with only_these_tools("parec"):
             self.assertIn("--device=alsa_input.usb", audio.recording_command(

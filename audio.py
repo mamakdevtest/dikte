@@ -27,6 +27,7 @@ CHANNELS = 1
 SAMPLE_WIDTH = 2  # s16
 CHUNK_FRAMES = 1024
 CHUNK_BYTES = CHUNK_FRAMES * SAMPLE_WIDTH * CHANNELS
+CHUNK_LATENCY_MS = round(CHUNK_FRAMES / RATE * 1000)
 MIN_FRAMES = int(RATE * 0.25)
 
 
@@ -184,6 +185,12 @@ def recording_command(target=""):
         cmd = [
             "parec", "--record", "--raw", f"--rate={RATE}",
             f"--channels={CHANNELS}", "--format=s16le",
+            # Left alone, parec holds about two seconds before handing anything
+            # over, and then hands over all of it at once: the level meter sits
+            # still and jumps, and the tail of a recording can be lost on the
+            # way out. A chunk of the meter is the unit the rest of this file
+            # is measured in, so ask for that.
+            f"--latency-msec={CHUNK_LATENCY_MS}",
         ]
         if target:
             cmd.append(f"--device={target}")
