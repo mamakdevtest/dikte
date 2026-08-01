@@ -509,6 +509,22 @@ class Servers(Local):
     def test_no_pid_file_is_nothing_to_sweep(self):
         self.assertFalse(self.server().sweep())
 
+    def test_a_start_that_goes_wrong_takes_its_process_with_it(self):
+        started = []
+
+        def explode(inner, proc, port):
+            started.append(proc)
+            raise RuntimeError("something in the wait went wrong")
+
+        self.patch_attr(ggml.Server, "_wait_ready", explode)
+        server = self.server()
+        with self.assertRaises(RuntimeError):
+            server.serve()
+        # Nothing else holds a reference to it, so leaving it running would leak
+        # a loaded model with nobody left to ask it anything.
+        self.assertIsNotNone(started[0].poll())
+        self.assertFalse(server.sweep())      # and the pid file went with it
+
 
 class Arguments(Local):
     """What the two command lines say, since neither program is here to say it."""

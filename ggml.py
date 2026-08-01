@@ -577,7 +577,18 @@ class Server:
             # Written before it is ready rather than after, so that a kill
             # during the model load leaves something for the sweep to find.
             self._remember(proc.pid)
-            if self._wait_ready(proc, port):
+            try:
+                ready = self._wait_ready(proc, port)
+            except BaseException:
+                # Whatever went wrong while waiting, the process is ours and
+                # nothing else is left holding a reference to it. Leaving it
+                # running would leak a loaded model with nobody to ask it
+                # anything, which is the whole failure this class is careful
+                # about elsewhere.
+                self._kill(proc)
+                self._forget()
+                raise
+            if ready:
                 return proc, port, str(log)
             last = _tail(log)
             self._forget()
@@ -600,21 +611,32 @@ class Server:
                 if not self.program.health or _healthy(port, self.program.health):
                     return True
             time.sleep(0.1)
-        proc.kill()
-        proc.wait(timeout=5)
+        self._kill(proc)
         return False
+
+    @staticmethod
+    def _kill(proc, gently=False):
+        """Stop a process of ours, and wait for it rather than assume."""
+        if proc is None or proc.poll() is not None:
+            return
+        if gently:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+                return
+            except subprocess.TimeoutExpired:
+                pass
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
 
     def stop(self):
         with self._lock:
             proc, self._proc = self._proc, None
             self._port, self._log, self._key = 0, "", None
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
+        self._kill(proc, gently=True)
         if proc is not None:
             self._forget()
 
