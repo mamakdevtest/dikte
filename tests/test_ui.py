@@ -305,6 +305,16 @@ class LocalModels(DikteTest):
         window = self.window(cfg.Config())
         self.assertTrue(window.local_whisper._pending)
 
+    def test_a_model_bigger_than_two_gigabytes_counts_up_rather_than_down(self):
+        # Qt's int is C++'s 32-bit one, and a 2.3 GB model is more than fits in
+        # it: the count came out the far side negative, at "-1%".
+        box = self.window(cfg.Config()).local_llm
+        box._downloading = True
+        box._report(1_048_576, 2_489_757_856)
+        _app.processEvents()
+        self.assertIn("2.3 GB", box.status.text())
+        self.assertNotIn("-", box.status.text())
+
     def test_the_hosted_boxes_go_away_when_the_work_happens_here(self):
         window = self.window(self.config(transcribe_provider="openai"))
         self.assertTrue(window.hosted_stt.isVisibleTo(window))

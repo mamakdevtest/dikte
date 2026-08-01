@@ -119,7 +119,9 @@ class LocalModelBox(QGroupBox):
 
     _listed = pyqtSignal(list, str)
     _quants = pyqtSignal(list, str)
-    _progress = pyqtSignal(int, int)
+    # qint64 rather than int, which is C++'s 32-bit one: a 2.3 GB model is more
+    # than fits in it, and the count comes out the far side negative.
+    _progress = pyqtSignal("qint64", "qint64")
     _finished = pyqtSignal(str, str)
     _installed = pyqtSignal(str, str)
 
