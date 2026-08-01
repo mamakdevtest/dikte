@@ -29,8 +29,15 @@ systemctl --user enable --now ydotool     # otomatik yapıştırma için
 dikte                        # ilk açılışta ayarlar penceresi gelir
 ```
 
-`install.sh` `dikte` komutunu, menü girdisini, oturum açılışında otomatik
-başlatmayı ve KDE kısayolunu kurar.
+Ubuntu/GNOME X11 için kayıt PulseAudio üzerinden, pano ve yapıştırma ise X11
+araçlarıyla çalışır:
+
+```sh
+sudo apt install pulseaudio-utils xclip xdotool ffmpeg
+```
+
+`install.sh` `dikte` komutunu, menü girdisini ve oturum açılışında otomatik
+başlatmayı kurar. Ayarlar penceresi GNOME veya KDE global kısayolunu kurar.
 
 Ayarlar penceresinde **OpenAI**, **Groq** ve **OpenRouter** anahtarları bulunur.
 Sesi yazıya çevirme bunlardan birinde çalışır (varsayılan `gpt-4o-transcribe`),
@@ -58,6 +65,13 @@ süreyi, ardından hangi aşamada olduğunu gösterir. Odak almaz. Dikte çalı�
 verilen komut yalnızca mikrofon için birbirini bekler, o da tek aygıt olduğu
 için; başka hiçbir şeyde beklemezler. Her birinin kendi göstergesi var, ikisi
 birden ekrandayken ikincisi birincinin üstüne yerleşir.
+
+Ayarlar penceresindeki her şeyin bir de komutu var; bir betik ya da bir ajan
+yazılımın tamamını çalıştırabilsin diye: `dikte record --seconds 8` söyleneni
+geri verir, `dikte transcribe konusma.mp4 --srt` altyazıyı yazar, ayarlar,
+geçmiş ve toplantılar da yanlarında durur. Hepsini `dikte --help` sayar, hepsi
+`--json` kabul eder, yalnızca mikrofona ihtiyacı olanlar uygulamanın açık
+olmasını ister.
 
 ## Neler yapıyor
 
@@ -122,7 +136,9 @@ grubunda olmasını gerektirir: `sudo usermod -aG input $USER`.
 ## Dosyalar
 
 ```
-dikte.py          giriş noktası, tepsi simgesi, durum makinesi, IPC
+dikte.py          giriş noktası, tepsi simgesi, durum makinesi
+cli.py            komut satırı: bütün fiiller ve verdikleri cevap
+ipc.py            yerel sokette bir istek, bir cevap
 audio.py          PCM kaydı: diktede pw-record, toplantıda ffmpeg
 meeting.py        kanal ayırma, konuşmacı etiketi, temizleme, tutanak
 assistant.py      dikteyi Claude Code, Codex ya da OpenRouter'dan geçirme

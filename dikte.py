@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 """Dikte: press Ctrl+Space, talk, press again to transcribe, clean up and paste.
 
-Usage:
-  dikte.py               run in the background (tray icon)
-  dikte.py toggle        start / stop recording
-  dikte.py cancel        discard the current recording
-  dikte.py ask           start / stop recording a command for the agent
-  dikte.py ask-cancel    call off the command the agent is working on
-  dikte.py ask-reset     forget the conversation the agent has been following
-  dikte.py meeting       start / end a meeting recording
-  dikte.py meeting-cancel  discard the meeting being recorded
-  dikte.py settings      open the settings window
-  dikte.py restart       reload the running instance
-  dikte.py quit          shut the application down
+This is the application: the tray icon, the state machine, and the socket the
+terminal talks to. Every verb it answers is in cli.py, which is also what runs
+`dikte.py --help`; the only argument handled here is --gui, which is how the
+command line says "there is no instance to talk to, so be one".
 """
 
+import json
 import os
 import sys
 
@@ -30,9 +23,11 @@ from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
 
 import assistant  # noqa: E402
 import audio  # noqa: E402
+import cli  # noqa: E402
 import config as cfg  # noqa: E402
 import hotkey  # noqa: E402
 import i18n  # noqa: E402
+import ipc  # noqa: E402
 import meeting  # noqa: E402
 from i18n import t  # noqa: E402
 from meeting import MeetingPipeline  # noqa: E402
@@ -40,7 +35,7 @@ from overlay import Overlay  # noqa: E402
 from settings_ui import SettingsWindow  # noqa: E402
 from worker import Pipeline  # noqa: E402
 
-SERVER_NAME = "dikte-" + str(os.getuid())
+SERVER_NAME = ipc.SERVER_NAME
 IDLE, RECORDING, BUSY = "idle", "recording", "busy"
 # Dictation and a command for the agent are two runs of the same machinery, kept
 # apart so that neither waits on the other: an agent can spend a minute thinking,
@@ -49,6 +44,7 @@ IDLE, RECORDING, BUSY = "idle", "recording", "busy"
 DICTATION, ASK = "dictation", "ask"
 # A meeting runs alongside dictation rather than through it: writing up an hour
 # of audio takes minutes, and dictation should not be held hostage to it.
+MEETING = "meeting"
 M_IDLE, M_RECORDING, M_WORKING = "idle", "recording", "working"
 
 # The KDE shortcut answers a key press by launching a whole Python process, so
@@ -75,6 +71,15 @@ class Dikte:
         self.meeting_message = ""
         self.settings_window = None
         self._quitting = False
+        # A request that asked to be told how its run ended waits in here until
+        # the run gets there, keyed by which of the three it was waiting on.
+        self._waiters = {}
+        # Whether the next run pastes, when the request said so instead of
+        # leaving it to the setting.
+        self.paste_override = {}
+        # Which recording is the current one, so a timer set for the run that
+        # started it cannot stop the one that came after.
+        self._run_id = 0
 
         self.overlay = Overlay(self.conf["overlay_corner"])
         # The agent's indicator sits on top of the dictation one when both are
@@ -332,6 +337,122 @@ class Dikte:
             QSystemTrayIcon.MessageIcon.Information, 8000,
         )
 
+    # ---- requests off the socket ------------------------------------------
+    #
+    # Every request is answered, and a request can ask to be answered late: not
+    # when the recording starts but when the transcript is there. That is what
+    # makes a terminal, or something driving one, able to use this at all rather
+    # than only able to press its buttons.
+
+    def handle(self, request, reply):
+        cmd = str(request.get("cmd") or "settings").strip()
+        if cmd in ("toggle", "start", "stop", "record"):
+            self._dictation_request(cmd, request, reply)
+        elif cmd == "ask":
+            self._ask_request(request, reply)
+        elif cmd in ("meeting", "meeting-start", "meeting-stop"):
+            self._meeting_request(cmd, request, reply)
+        elif cmd == "status":
+            reply(self.status())
+        else:
+            handler = {
+                "cancel": self.cancel,
+                "ask-cancel": self.cancel_ask,
+                "ask-reset": self.reset_conversation,
+                "meeting-cancel": self.cancel_meeting,
+                "settings": self.open_settings,
+                "reload": self.reload_settings,
+                "restart": self.restart,
+                "quit": self.app.quit,
+            }.get(cmd)
+            if handler is None:
+                reply({"ok": False, "error": f"unknown command: {cmd}"})
+                return
+            if cmd in ("restart", "quit"):
+                # Answer while there is still something to answer with.
+                reply({"ok": True})
+                QTimer.singleShot(120, handler)
+                return
+            handler()
+            reply({"ok": True})
+
+    def _dictation_request(self, cmd, request, reply):
+        before = self.state
+        # Only a request that said something about pasting changes it, so that
+        # the stop half of a `start --paste` does not undo the start half.
+        if "paste" in request:
+            self.paste_override[DICTATION] = request["paste"]
+        if cmd == "toggle":
+            self.toggle()
+        elif cmd == "stop":
+            self.stop()
+        else:
+            self.start()
+            seconds = float(request.get("seconds") or 0)
+            if seconds > 0 and self.state == RECORDING:
+                run = self._run_id
+                QTimer.singleShot(int(seconds * 1000), lambda: self._auto_stop(run))
+        self._answer(DICTATION, before, self.state, request, reply)
+
+    def _ask_request(self, request, reply):
+        before = self.ask_state
+        if "paste" in request:
+            self.paste_override[ASK] = request["paste"]
+        self.toggle_ask()
+        self._answer(ASK, before, self.ask_state, request, reply)
+
+    def _meeting_request(self, cmd, request, reply):
+        before = self.meeting_state
+        if cmd == "meeting":
+            self.toggle_meeting()
+        elif cmd == "meeting-start":
+            self.start_meeting()
+        else:
+            self.stop_meeting()
+        self._answer(MEETING, before, self.meeting_state, request, reply)
+
+    def _answer(self, kind, before, after, request, reply):
+        """Reply now, or once the run this request set going is over."""
+        if not request.get("wait"):
+            reply({"ok": True, "state": after})
+        elif after == before:
+            # Nothing moved: the microphone is held by the other one, or this
+            # one is still working, or there was nothing to stop. Say so rather
+            # than wait for a run that was never started.
+            reply({"ok": False, "state": after,
+                   "error": f"nothing was started; {kind} is {after}"})
+        else:
+            self._waiters.setdefault(kind, []).append(reply)
+
+    def _settle(self, kind, payload):
+        """Tell whoever was waiting on this run how it ended."""
+        for reply in self._waiters.pop(kind, []):
+            reply(payload)
+
+    def _auto_stop(self, run):
+        """The end of a `record --seconds`, if that recording is still the one."""
+        if self._run_id == run and self.state == RECORDING:
+            self.stop()
+
+    def status(self):
+        return {
+            "ok": True,
+            "running": True,
+            "dictation": self.state,
+            "ask": self.ask_state,
+            "meeting": self.meeting_state,
+            "meeting_base": self.meetings.running_base,
+            "meeting_message": self.meeting_message,
+            "agent": assistant.display_name(self.conf),
+            "provider": assistant.provider(self.conf),
+            "listener": self.evdev.running,
+        }
+
+    def reload_settings(self):
+        """Read the config file back after something outside changed it."""
+        self.conf.load()
+        self._apply_settings()
+
     def _toggle(self):
         # Two /dev/input nodes can carry the same keyboard, and a menu click can
         # land on top of a key press; swallow the immediate repeat.
@@ -374,6 +495,7 @@ class Dikte:
     def _begin_recording(self, owner):
         """One microphone, so one of the two holds it at a time."""
         self.recorder_owner = owner
+        self._run_id += 1
         self.elapsed.restart()
         self.ticker.start()
         self.recorder.start(self.conf["mic_target"], self.conf["max_seconds"])
@@ -402,12 +524,18 @@ class Dikte:
         self.ticker.stop()
         self.recorder.cancel()
         self.recorder_owner = None
+        # What goes over the socket is read by a program as often as by a
+        # person, so it stays in one language; only what a run itself said
+        # travels through translated.
+        dropped = {"ok": False, "cancelled": True, "error": "cancelled"}
         if asking:
             self.ask_overlay.dismiss()
             self._set_ask_state(IDLE)
+            self._settle(ASK, dropped)
         else:
             self.overlay.dismiss()
             self._set_state(IDLE)
+            self._settle(DICTATION, dropped)
 
     def cancel_ask(self):
         """Call off the agent, whether it is still recording or already working."""
@@ -482,6 +610,7 @@ class Dikte:
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
         self._set_meeting_state(M_IDLE)
+        self._settle(MEETING, {"ok": False, "cancelled": True, "error": "cancelled"})
 
     def _conceal_meeting_overlay(self):
         if self.overlay.state == "meeting":
@@ -514,6 +643,11 @@ class Dikte:
             return
         if not self.meetings.run(entry):
             self._set_meeting_state(M_IDLE)
+            self._settle(MEETING, {
+                "ok": False, "base": entry["base"],
+                "error": "recording saved, but the previous meeting is still "
+                         "being written up",
+            })
             self.tray.showMessage(
                 "Dikte",
                 t("Recording saved. The previous meeting is still being written "
@@ -531,6 +665,8 @@ class Dikte:
     def _on_meeting_finished(self, base, title):
         self._set_meeting_state(M_IDLE)
         doc_path, _ = cfg.meeting_paths(base)
+        self._settle(MEETING, {"ok": True, "base": base, "title": title,
+                               "path": str(doc_path)})
         self.overlay.show_done(t("Meeting written up: {title}", title=title), 5000)
         self.tray.showMessage(
             t("Dikte: the meeting is written up"), f"{title}\n{doc_path}",
@@ -539,6 +675,7 @@ class Dikte:
 
     def _on_meeting_failed(self, _base, error):
         self._set_meeting_state(M_IDLE)
+        self._settle(MEETING, {"ok": False, "base": _base, "error": error})
         first_line = error.strip().splitlines()[0]
         self.overlay.show_error(t("Meeting failed: {error}", error=first_line))
         self.tray.showMessage(
@@ -554,6 +691,7 @@ class Dikte:
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
         self._set_meeting_state(M_IDLE)
+        self._settle(MEETING, {"ok": False, "error": message})
         self._on_error(message)
 
     def _on_meeting_died(self):
@@ -569,10 +707,12 @@ class Dikte:
 
     def _on_recorded(self, wav_path, duration, rms_values):
         owner, self.recorder_owner = self.recorder_owner, None
+        wants_paste = self.paste_override.pop(owner, None)
         if owner == ASK:
-            self.ask_pipeline.run(wav_path, duration, rms_values, ask=True)
+            self.ask_pipeline.run(wav_path, duration, rms_values, ask=True,
+                                  paste=wants_paste)
         else:
-            self.pipeline.run(wav_path, duration, rms_values)
+            self.pipeline.run(wav_path, duration, rms_values, paste=wants_paste)
 
     def _on_finished(self, _raw, text, warning):
         if warning:
@@ -591,6 +731,8 @@ class Dikte:
                 t("{action}: {preview}", action=action, preview=_preview(text))
             )
         self._set_state(IDLE)
+        self._settle(DICTATION, {"ok": True, "text": text, "raw": _raw,
+                                 "warning": warning})
 
     def _on_ask_finished(self, _raw, text, warning):
         agent = assistant.display_name(self.conf)
@@ -612,10 +754,13 @@ class Dikte:
                 t("{name}: {preview}", name=agent, preview=_preview(text)), 6000
             )
         self._set_ask_state(IDLE)
+        self._settle(ASK, {"ok": True, "answer": text, "question": _raw,
+                           "warning": warning, "agent": agent})
 
     def _on_ask_cancelled(self):
         self.ask_overlay.show_done(t("Stopped."), 2000)
         self._set_ask_state(IDLE)
+        self._settle(ASK, {"ok": False, "cancelled": True, "error": "stopped"})
 
     def _on_recorder_error(self, message):
         """The microphone itself could not run, so it belongs to whoever asked."""
@@ -626,10 +771,12 @@ class Dikte:
     def _on_error(self, message):
         self._report(message, self.overlay)
         self._set_state(IDLE)
+        self._settle(DICTATION, {"ok": False, "error": message})
 
     def _on_ask_error(self, message):
         self._report(message, self.ask_overlay)
         self._set_ask_state(IDLE)
+        self._settle(ASK, {"ok": False, "error": message})
 
     def _report(self, message, overlay):
         first_line = message.strip().splitlines()[0]
@@ -673,8 +820,7 @@ class Dikte:
             self.settings_window.close()
         self.shutdown()
         QLocalServer.removeServer(SERVER_NAME)
-        script = os.path.realpath(__file__)
-        os.execv(sys.executable, [sys.executable, script])
+        os.execv(sys.executable, [sys.executable, ipc.script_path(), "--gui"])
 
     def shutdown(self):
         self._quitting = True
@@ -705,52 +851,34 @@ def _clock(seconds):
 
 def launch_command():
     """The command the KDE shortcut will run."""
-    return f"{sys.executable} {os.path.realpath(__file__)} toggle"
+    return ipc.command_for("toggle")
 
 
 def meeting_command():
-    return f"{sys.executable} {os.path.realpath(__file__)} meeting"
+    return ipc.command_for("meeting")
 
 
 def ask_command():
-    return f"{sys.executable} {os.path.realpath(__file__)} ask"
-
-
-def send_command(command, timeout=800):
-    """Hand a command to the running instance; False when there is none."""
-    socket = QLocalSocket()
-    socket.connectToServer(SERVER_NAME)
-    if not socket.waitForConnected(timeout):
-        return False
-    socket.write(command.encode("utf-8"))
-    socket.flush()
-    socket.waitForBytesWritten(timeout)
-    socket.disconnectFromServer()
-    return True
+    return ipc.command_for("ask")
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    command = args[0] if args else ""
+    argv = sys.argv[1:]
+    # Anything typed at a terminal is the command line's business, including
+    # --help and the verbs that only need a message sent. It comes back here
+    # with --gui when it turns out there is no instance to send one to.
+    if "--gui" not in argv:
+        return cli.run(argv)
+    return run_app([arg for arg in argv if arg != "--gui"])
 
-    if command and command not in ("toggle", "cancel", "settings", "restart",
-                                   "quit", "start", "stop", "ask", "ask-reset",
-                                   "ask-cancel", "meeting", "meeting-cancel"):
-        print(__doc__)
-        return 2
+
+def run_app(args):
+    command = args[0] if args else ""
 
     app = QApplication(sys.argv)
     app.setApplicationName("Dikte")
     app.setDesktopFileName("dikte")
     app.setQuitOnLastWindowClosed(False)
-
-    # No command and an instance already running: bring its settings forward.
-    if send_command(command or "settings"):
-        return 0
-
-    if command in ("cancel", "quit", "stop", "restart", "meeting-cancel",
-                   "ask-reset", "ask-cancel"):
-        return 0
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("dikte: no system tray found, running anyway")
@@ -770,25 +898,27 @@ def main():
         if conn is None:
             return
 
+        def reply(payload):
+            """One JSON object back, and the connection is done.
+
+            A request that waited for its run may find the terminal gone by the
+            time the answer is ready, which is a closed socket and not an error.
+            """
+            if conn.state() != QLocalSocket.LocalSocketState.ConnectedState:
+                return
+            conn.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+            conn.flush()
+            conn.disconnectFromServer()
+
         def read():
             payload = bytes(conn.readAll()).decode("utf-8", "replace").strip()
-            handler = {
-                "toggle": dikte.toggle,
-                "start": dikte.start,
-                "stop": dikte.stop,
-                "cancel": dikte.cancel,
-                "ask": dikte.toggle_ask,
-                "ask-cancel": dikte.cancel_ask,
-                "ask-reset": dikte.reset_conversation,
-                "meeting": dikte.toggle_meeting,
-                "meeting-cancel": dikte.cancel_meeting,
-                "settings": dikte.open_settings,
-                "restart": dikte.restart,
-                "quit": app.quit,
-            }.get(payload)
-            if handler:
-                handler()
-            conn.disconnectFromServer()
+            try:
+                request = json.loads(payload)
+                if not isinstance(request, dict):
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
+                request = {"cmd": payload}   # a bare verb, as older versions sent
+            dikte.handle(request, reply)
 
         conn.readyRead.connect(read)
 

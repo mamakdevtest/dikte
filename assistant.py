@@ -154,6 +154,16 @@ def clear_session():
         pass
 
 
+def stored_provider():
+    """Whose conversation is on disk, whatever the setting says now."""
+    try:
+        with open(SESSION_FILE, encoding="utf-8") as fh:
+            row = json.load(fh)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return ""
+    return str(row.get("provider", "")) if isinstance(row, dict) else ""
+
+
 def session_age():
     """Seconds since the stored conversation was last used, or None."""
     try:

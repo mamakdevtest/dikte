@@ -29,8 +29,15 @@ systemctl --user enable --now ydotool     # needed for auto-paste
 dikte                        # the settings window opens on first run
 ```
 
-`install.sh` adds the `dikte` command, a menu entry, an autostart entry and the
-KDE shortcut.
+On Ubuntu/GNOME X11, recording uses PulseAudio and clipboard/paste use the X11
+tools instead:
+
+```sh
+sudo apt install pulseaudio-utils xclip xdotool ffmpeg
+```
+
+`install.sh` adds the `dikte` command, a menu entry and an autostart entry. The
+settings window installs a GNOME or KDE global shortcut.
 
 The settings window accepts **OpenAI**, **Groq** and **OpenRouter** keys. Speech
 to text runs on any of them (`gpt-4o-transcribe` by default), cleanup always on
@@ -59,6 +66,13 @@ elapsed time, then the stage it is on. It never takes focus. Pressing
 A dictation and a command to the agent do wait on each other for the microphone,
 which is one device, but for nothing else: each has its own indicator, and the
 second one stacks above the first while both are up.
+
+Everything the settings window holds has a verb of its own too, so a script or
+an agent can work the whole thing: `dikte record --seconds 8` says back what was
+said, `dikte transcribe talk.mp4 --srt` writes subtitles, and the settings, the
+history and the meetings are there beside them. `dikte --help` lists them, they
+all take `--json`, and only the ones needing the microphone need the application
+running.
 
 ## What it does
 
@@ -125,7 +139,9 @@ needs your user in the `input` group: `sudo usermod -aG input $USER`.
 ## Layout
 
 ```
-dikte.py          entry point, tray icon, state machine, IPC
+dikte.py          entry point, tray icon, state machine
+cli.py            the command line: every verb, and what it answers with
+ipc.py            one request and one reply over the local socket
 audio.py          PCM capture: pw-record for dictation, ffmpeg for a meeting
 meeting.py        channel split, speaker labelling, cleanup, minutes
 assistant.py      running a dictation through Claude Code, Codex or OpenRouter

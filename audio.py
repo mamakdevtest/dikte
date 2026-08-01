@@ -27,11 +27,12 @@ CHANNELS = 1
 SAMPLE_WIDTH = 2  # s16
 CHUNK_FRAMES = 1024
 CHUNK_BYTES = CHUNK_FRAMES * SAMPLE_WIDTH * CHANNELS
+CHUNK_LATENCY_MS = round(CHUNK_FRAMES / RATE * 1000)
 MIN_FRAMES = int(RATE * 0.25)
 
 
 class Recorder(QObject):
-    """Runs pw-record as a child process and reads raw PCM from its stdout."""
+    """Runs the available sound-server recorder and reads raw PCM from stdout."""
 
     level = pyqtSignal(float)              # 0.0 - 1.0, for the waveform
     stopped = pyqtSignal(str, float, object)  # wav path, duration (s), per-chunk RMS
@@ -44,6 +45,7 @@ class Recorder(QObject):
         self._buffer = bytearray()
         self._rms = []
         self._cancelled = False
+        self._stopping = False
         self._lock = threading.Lock()
 
     @property
@@ -53,20 +55,12 @@ class Recorder(QObject):
     def start(self, target="", max_seconds=300):
         if self.active:
             return
-        if not shutil.which("pw-record"):
-            self.failed.emit(t("pw-record not found. Is pipewire-audio installed?"))
+        cmd = recording_command(target)
+        if not cmd:
+            self.failed.emit(t(
+                "No audio recorder found. Install pulseaudio-utils or pipewire-audio."
+            ))
             return
-
-        cmd = [
-            "pw-record",
-            "--raw",
-            f"--rate={RATE}",
-            f"--channels={CHANNELS}",
-            "--format=s16",
-        ]
-        if target:
-            cmd.append(f"--target={target}")
-        cmd.append("-")
 
         try:
             self._proc = subprocess.Popen(
@@ -79,12 +73,14 @@ class Recorder(QObject):
         self._buffer = bytearray()
         self._rms = []
         self._cancelled = False
+        self._stopping = False
         self._max_bytes = int(max_seconds * RATE * SAMPLE_WIDTH * CHANNELS)
         self._thread = threading.Thread(target=self._pump, daemon=True)
         self._thread.start()
 
     def _pump(self):
-        stdout = self._proc.stdout
+        proc = self._proc
+        stdout = proc.stdout
         try:
             while True:
                 chunk = stdout.read(CHUNK_BYTES)
@@ -101,8 +97,25 @@ class Recorder(QObject):
                     break
         except (OSError, ValueError):
             pass
+        # Nobody asked it to end and it captured nothing: the recorder is not
+        # installed properly, or the device was refused. Said out loud here,
+        # because stop() would otherwise report it as a recording that was too
+        # short, which sends the user looking in the wrong place.
+        with self._lock:
+            captured = bool(self._buffer)
+        if self._stopping or self._cancelled or captured:
+            return
+        try:
+            detail = proc.stderr.read().decode("utf-8", "replace").strip()
+        except (AttributeError, OSError):
+            detail = ""
+        self.failed.emit(t(
+            "Audio recorder stopped before receiving sound: {error}",
+            error=detail or f"exit code {proc.returncode}",
+        ))
 
     def _terminate(self):
+        self._stopping = True
         proc = self._proc
         if proc and proc.poll() is None:
             try:
@@ -159,6 +172,39 @@ def write_wav(pcm, rate=RATE, channels=CHANNELS, width=SAMPLE_WIDTH):
         wav.setframerate(rate)
         wav.writeframes(pcm)
     return path
+
+
+def recording_command(target=""):
+    """Return a raw-s16 capture command for the sound server on this desktop.
+
+    parec works with both PulseAudio and PipeWire's PulseAudio compatibility
+    service, and its source names are the same ones shown by list_sources().
+    Keep pw-record as the fallback for minimal native-PipeWire installations.
+    """
+    if shutil.which("parec"):
+        cmd = [
+            "parec", "--record", "--raw", f"--rate={RATE}",
+            f"--channels={CHANNELS}", "--format=s16le",
+            # Left alone, parec holds about two seconds before handing anything
+            # over, and then hands over all of it at once: the level meter sits
+            # still and jumps, and the tail of a recording can be lost on the
+            # way out. A chunk of the meter is the unit the rest of this file
+            # is measured in, so ask for that.
+            f"--latency-msec={CHUNK_LATENCY_MS}",
+        ]
+        if target:
+            cmd.append(f"--device={target}")
+        return cmd
+    if shutil.which("pw-record"):
+        cmd = [
+            "pw-record", "--raw", f"--rate={RATE}",
+            f"--channels={CHANNELS}", "--format=s16",
+        ]
+        if target:
+            cmd.append(f"--target={target}")
+        cmd.append("-")
+        return cmd
+    return []
 
 
 class MeetingRecorder(QObject):
