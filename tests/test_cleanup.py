@@ -13,7 +13,9 @@ from unittest import mock
 
 import api
 import cleanup
-from tests.support import DikteTest
+import ggml
+from tests.support import DikteTest, fake_urlopen, sent_json, url_error
+from tests.test_api import FakeServer, chat_reply
 
 
 def fake_run(stdout="", code=0, stderr="", last_message=""):
@@ -209,3 +211,76 @@ class Codex(DikteTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Here(DikteTest):
+    """llama.cpp, answering the request OpenRouter answers."""
+
+    def setUp(self):
+        super().setUp()
+        self.conf = self.config(cleanup_provider="local",
+                                local_llm_model="gemma.gguf")
+        self.server = FakeServer()
+        self.patch_attr(ggml, "llm", self.server)
+
+    def test_the_address_comes_from_the_server_it_starts(self):
+        with fake_urlopen(chat_reply("Done.")) as calls:
+            self.assertEqual(cleanup.run("uh, done", self.conf, "the rules"),
+                             "Done.")
+        self.assertEqual(self.server.starts, 1)
+        self.assertEqual(calls[0].full_url,
+                         "http://127.0.0.1:9999/v1/chat/completions")
+
+    def test_no_key_is_wanted_and_none_is_sent(self):
+        with fake_urlopen(chat_reply("Done.")) as calls:
+            cleanup.run("uh, done", self.conf, "the rules")
+        self.assertNotIn("Authorization", calls[0].headers)
+
+    def test_thinking_is_turned_off_in_the_words_llama_cpp_uses(self):
+        with fake_urlopen(chat_reply("Done.")) as calls:
+            cleanup.run("uh, done", self.conf, "the rules")
+        self.assertEqual(sent_json(calls[0])["chat_template_kwargs"],
+                         {"enable_thinking": False})
+
+    def test_the_models_own_default_asks_for_nothing(self):
+        self.conf["local_llm_reasoning"] = ""
+        with fake_urlopen(chat_reply("Done.")) as calls:
+            cleanup.run("uh, done", self.conf, "the rules")
+        self.assertNotIn("chat_template_kwargs", sent_json(calls[0]))
+
+    def test_a_reply_longer_than_the_transcript_is_cut_off(self):
+        # A small model will repeat the transcript until the context is full,
+        # and every one of those tokens is a second of somebody waiting.
+        with fake_urlopen(chat_reply("Done.")) as calls:
+            cleanup.run("x" * 4000, self.conf, "the rules")
+        self.assertEqual(sent_json(calls[0])["max_tokens"], 4000)
+
+    def test_a_short_dictation_still_gets_room_to_answer(self):
+        with fake_urlopen(chat_reply("Done.")) as calls:
+            cleanup.run("uh, done", self.conf, "the rules")
+        self.assertEqual(sent_json(calls[0])["max_tokens"], 512)
+
+    def test_a_reply_that_was_all_thinking_names_the_setting_that_fixes_it(self):
+        reply = {"choices": [{"message": {"content": "", "reasoning": "hmm"}}]}
+        with fake_urlopen(reply), self.assertRaises(api.ApiError) as caught:
+            cleanup.run("uh, done", self.conf, "the rules")
+        self.assertIn("Thinking", str(caught.exception))
+
+    def test_a_server_that_will_not_start_is_the_error_shown(self):
+        self.patch_attr(ggml, "llm", FakeServer(fails="llama.cpp is not installed"))
+        with self.assertRaises(api.ApiError) as caught:
+            cleanup.run("uh, done", self.conf, "the rules")
+        self.assertIn("llama.cpp", str(caught.exception))
+
+    def test_a_server_that_dies_mid_request_says_what_it_printed(self):
+        self.patch_attr(ggml, "llm", FakeServer(log="out of memory"))
+        with fake_urlopen(url_error("connection reset")):
+            with self.assertRaises(api.ApiError) as caught:
+                cleanup.run("uh, done", self.conf, "the rules")
+        self.assertIn("out of memory", str(caught.exception))
+
+    def test_no_cli_is_started_for_it(self):
+        patcher, calls = fake_run(stdout="never")
+        with patcher, fake_urlopen(chat_reply("Done.")):
+            cleanup.run("uh, done", self.conf, "the rules")
+        self.assertEqual(calls, [])

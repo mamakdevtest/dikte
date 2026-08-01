@@ -20,9 +20,10 @@ import tempfile
 
 import api
 import assistant
+import ggml
 from i18n import t
 
-PROVIDERS = ("openrouter", "claude", "codex")
+PROVIDERS = ("openrouter", "local", "claude", "codex")
 
 
 class CleanupError(api.ApiError):
@@ -47,6 +48,8 @@ def executable(name):
 def model(conf):
     """Which model does the cleaning, for the history and the settings window."""
     name = provider(conf)
+    if name == "local":
+        return conf["local_llm_model"]
     if name == "claude":
         return conf["cleanup_claude_model"].strip() or "haiku"
     if name == "codex":
@@ -65,8 +68,32 @@ def run(text, conf, system_prompt, timeout=180):
             reasoning=conf["cleanup_reasoning"],
             base_url=conf["openrouter_base_url"], timeout=timeout,
         )
+    if name == "local":
+        return _local(text, conf, system_prompt, timeout)
     runner = _claude if name == "claude" else _codex
     return runner(text, conf, system_prompt, timeout)
+
+
+def _local(text, conf, system_prompt, timeout):
+    """llama.cpp, on this machine, answering the request OpenRouter answers.
+
+    No key and no bill, and the address does not exist until the server is up,
+    which is what starting it here is for. The timeout is the hosted one raised:
+    the only thing being spent is time.
+    """
+    service = t("Local model")
+    try:
+        return api.cleanup(
+            text, "", conf["local_llm_model"], system_prompt,
+            reasoning=conf["local_llm_reasoning"],
+            base_url=api.serving(ggml.llm),
+            timeout=max(timeout, api.LOCAL_TIMEOUT),
+            provider="local-llm", service=service,
+        )
+    except api.ApiError as exc:
+        # A server that died mid-request would otherwise report only that the
+        # connection dropped, when the reason is in its own output.
+        raise api.local_failure(service, ggml.llm, exc) from None
 
 
 def _wrap(text):

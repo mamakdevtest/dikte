@@ -10,6 +10,7 @@ import os
 import unittest
 
 import api
+import ggml
 from tests.support import (
     DikteTest,
     fake_urlopen,
@@ -481,3 +482,99 @@ class ModelLists(DikteTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeServer:
+    """A ggml.Server as far as api.py is concerned."""
+
+    def __init__(self, url="http://127.0.0.1:9999/v1", fails="", log=""):
+        self.url = url
+        self.fails = fails
+        self.log = log
+        self.starts = 0
+
+    def serve(self):
+        self.starts += 1
+        if self.fails:
+            raise ggml.LocalError(self.fails)
+        return self.url
+
+    def error(self):
+        return self.log
+
+
+LOCAL = api.Target("local", "Local whisper", "", "", "ggml-base.bin")
+
+
+class TranscribeHere(DikteTest):
+    def setUp(self):
+        super().setUp()
+        self.wav = str(self.path("clip.wav"))
+        os.makedirs(self.root, exist_ok=True)
+        with open(self.wav, "wb") as fh:
+            fh.write(b"RIFFfake")
+        self.server = FakeServer()
+        self.patch_attr(ggml, "whisper", self.server)
+
+    def test_the_address_comes_from_the_server_it_starts(self):
+        with fake_urlopen({"text": "hello"}) as calls:
+            api.transcribe(LOCAL, self.wav)
+        self.assertEqual(self.server.starts, 1)
+        self.assertEqual(calls[0].full_url,
+                         "http://127.0.0.1:9999/v1/audio/transcriptions")
+
+    def test_nothing_local_is_authorised(self):
+        with fake_urlopen({"text": "hello"}) as calls:
+            api.transcribe(LOCAL, self.wav)
+        self.assertNotIn("Authorization", calls[0].headers)
+
+    def test_a_server_that_will_not_start_is_the_error_shown(self):
+        self.patch_attr(ggml, "whisper", FakeServer(fails="no model downloaded"))
+        with self.assertRaises(api.ApiError) as caught:
+            api.transcribe(LOCAL, self.wav)
+        self.assertIn("no model downloaded", str(caught.exception))
+
+    def test_a_server_that_dies_mid_request_says_what_it_printed(self):
+        self.patch_attr(ggml, "whisper", FakeServer(log="out of memory"))
+        with fake_urlopen(url_error("connection reset")):
+            with self.assertRaises(api.ApiError) as caught:
+                api.transcribe(LOCAL, self.wav)
+        self.assertIn("out of memory", str(caught.exception))
+
+    def test_the_hint_reaches_whisper_as_its_initial_prompt(self):
+        with fake_urlopen({"text": "hi"}) as calls:
+            api.transcribe(LOCAL, self.wav, prompt="Dikte, Paraşüt")
+        self.assertEqual(multipart_fields(calls[0])["prompt"], "Dikte, Paraşüt")
+
+    def test_a_word_broken_over_two_lines_is_put_back_together(self):
+        # whisper.cpp cuts on tokens and writes one segment per line, which in
+        # Turkish lands inside a word about as often as between two.
+        with fake_urlopen({"text": "Onlar akraba değ\niller. Ve\n devamı."}):
+            # The line break inside a word leaves nothing in its place; the
+            # one between two words is where whisper's own leading space is.
+            self.assertEqual(api.transcribe(LOCAL, self.wav),
+                             "Onlar akraba değiller. Ve devamı.")
+
+    def test_a_local_timeout_is_not_a_hosted_one(self):
+        # Nothing is being spent but time, and a long file on a machine without
+        # a graphics card takes a good deal of it.
+        with fake_urlopen({"text": "hi"}):
+            api.transcribe(LOCAL, self.wav, timeout=300)
+        self.assertGreaterEqual(api.LOCAL_TIMEOUT, 600)
+
+    def test_segments_that_continue_a_word_are_merged(self):
+        reply = {"segments": [
+            {"start": 0.0, "end": 1.0, "text": " Onlar akraba değ"},
+            {"start": 1.0, "end": 1.4, "text": "iller."},
+            {"start": 2.0, "end": 3.0, "text": " Başka bir cümle."},
+        ]}
+        with fake_urlopen(reply):
+            out = api.transcribe_segments(LOCAL, self.wav)
+        self.assertEqual([text for _, _, text in out],
+                         ["Onlar akraba değiller.", "Başka bir cümle."])
+        self.assertEqual(out[0][1], 1.4)     # the merged cue covers the whole word
+
+    def test_the_loaded_model_is_the_one_asked_for_again(self):
+        with fake_urlopen({"segments": [{"start": 0, "end": 1, "text": " hi"}]}) as calls:
+            api.transcribe_segments(LOCAL, self.wav)
+        self.assertEqual(multipart_fields(calls[0])["model"], "ggml-base.bin")

@@ -7,7 +7,9 @@ import os
 import pathlib
 
 import api
+import ggml
 import i18n
+from i18n import t
 
 
 def _xdg(var, default):
@@ -368,18 +370,49 @@ DEFAULTS = {
     "groq_base_url": "https://api.groq.com/openai/v1",
     "openrouter_api_key": "",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
-    "transcribe_provider": "openai",  # a key of TRANSCRIBERS
+    "transcribe_provider": "local",  # "local", or a key of TRANSCRIBERS
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
     "groq_transcribe_model": "whisper-large-v3-turbo",
     "openrouter_transcribe_model": "openai/gpt-4o-transcribe",
     "language": "tr",
     "transcribe_prompt": "",
+
+    # --- whisper.cpp, on this machine ---------------------------------------
+    # The program and the model are both fetched from Settings; empty means
+    # nothing has been downloaded yet, which is what opens Settings on a first
+    # run.
+    # Pointed at the suggestion rather than at nothing, so the settings window
+    # opens with the Download button already on the right model.
+    "local_model": ggml.SUGGESTED_WHISPER,
+    "local_threads": 0,             # 0 -> whisper.cpp picks
+    "local_gpu": True,
+    "local_preload": True,          # load the model while Dikte starts, rather
+                                    # than on the first dictation
+    "local_binary": "",             # empty -> whichever copy ggml.py finds
+
     "cleanup_enabled": True,
-    "cleanup_provider": "openrouter",  # openrouter | claude | codex
+    "cleanup_provider": "openrouter",  # a name in cleanup.PROVIDERS
     "cleanup_model": "google/gemini-3.5-flash-lite",
     "cleanup_claude_model": "haiku",   # Claude Code: an alias, or a full model id
     "cleanup_codex_model": "",         # empty -> whatever Codex is set to
     "cleanup_reasoning": "",        # empty -> whatever the model does by default
+
+    # --- llama.cpp, on this machine -----------------------------------------
+    # Kept apart from the meeting settings on purpose. Cleanup is punctuation
+    # and filler words, which a small model does in a moment; the minutes are a
+    # summary of an hour, which it does not.
+    "local_llm_model": "",          # a file name, e.g. gemma-3-4b-it-Q4_K_M.gguf
+    # Where the model list is read from; the settings window offers the
+    # publishers ggml.py knows of and takes any other one that is typed in.
+    "local_llm_repo": ggml.SUGGESTED_LLM[0],
+    "local_llm_threads": 0,
+    "local_llm_gpu": True,
+    "local_llm_context": 8192,
+    "local_llm_binary": "",
+    "local_llm_preload": False,     # heavier than whisper, so only when asked
+    # Off rather than empty: a model trained to think will, and 300 tokens of
+    # reasoning about a comma is 300 tokens of waiting.
+    "local_llm_reasoning": "none",
     "cleanup_prompt": "",           # empty -> language-specific default
     "auto_paste": True,
     "paste_shortcut": "ctrl+v",
@@ -528,13 +561,62 @@ class Config:
         return self.api_key("openrouter_api_key")
 
     def transcribe_target(self):
-        """Key, endpoint and model for whichever provider does speech to text."""
+        """Key, endpoint and model for whichever provider does speech to text.
+
+        The local one is not in the table and leaves its base URL empty on
+        purpose: the server picks a port when it starts, and reading a setting
+        must not be what launches a process. api.py fills the address in when it
+        is about to send the request, which is the moment the server is needed
+        anyway.
+        """
         name = self["transcribe_provider"]
+        if name == "local":
+            return api.Target("local", t("Local whisper"), "", "",
+                              self["local_model"])
         if name not in TRANSCRIBERS:
-            name = DEFAULTS["transcribe_provider"]
+            # A config written by a fork, or by a version that dropped one. The
+            # shipped default is not in the table, so this names the hosted one
+            # to land on rather than reading it from there.
+            name = "openai"
         who = TRANSCRIBERS[name]
         return api.Target(name, who.service, self.api_key(who.key),
                           self[who.url], self[who.model])
+
+    def transcribe_ready(self):
+        """Whether speech to text could run right now, without opening Settings."""
+        if self["transcribe_provider"] == "local":
+            return self.local_whisper_ready()
+        return bool(self.transcribe_target().api_key)
+
+    def local_whisper_ready(self):
+        return bool(ggml.program_path(ggml.WHISPER, self["local_binary"])
+                    and self["local_model"]
+                    and ggml.have_model(ggml.whisper_model_path(self["local_model"])))
+
+    def local_llm_ready(self):
+        return bool(ggml.program_path(ggml.LLAMA, self["local_llm_binary"])
+                    and self["local_llm_model"]
+                    and ggml.have_model(ggml.llm_model_path(self["local_llm_model"])))
+
+    def apply_local(self):
+        """Hand the local settings to the servers, restarting what they change."""
+        ggml.whisper.configure(
+            model=self["local_model"],
+            threads=int(self["local_threads"]),
+            gpu=bool(self["local_gpu"]),
+            binary=self["local_binary"],
+        )
+        ggml.llm.configure(
+            model=self["local_llm_model"],
+            threads=int(self["local_llm_threads"]),
+            gpu=bool(self["local_llm_gpu"]),
+            binary=self["local_llm_binary"],
+            context=int(self["local_llm_context"]),
+        )
+
+    def uses_local_llm(self):
+        """Whether anything is set to run the local cleanup model."""
+        return self["cleanup_provider"] == "local"
 
     def cleanup_prompt(self, with_timestamps=False, with_speakers=False,
                        subtitles=False):

@@ -1,9 +1,8 @@
 # Dikte
 
-`Ctrl+Space`'e bas, konuş, tekrar bas. Ses OpenAI'ye ya da OpenRouter'a gidip
-yazıya çevrilir, bir model transkripti temizler (ıı'lar,
-tekrarlar, eksik noktalama), sonuç panoya kopyalanır ve o an yazdığın pencereye
-yapıştırılır.
+`Ctrl+Space`'e bas, konuş, tekrar bas. Ses varsayılan olarak bu makinede yazıya
+çevrilir, bir model transkripti temizler (ıı'lar, tekrarlar, eksik noktalama),
+sonuç panoya kopyalanır ve o an yazdığın pencereye yapıştırılır.
 
 KDE Plasma 6 / Wayland için yazıldı. Sistem paketleri dışında bağımlılığı yok:
 sadece Python standart kütüphanesi ve PyQt6.
@@ -42,12 +41,15 @@ son sürümü çeker ve bunları senin seçtiğin tuşlarla yerine koyar;
 `./uninstall.sh` hepsini geri alır, `--purge` demedikçe ayarlarına ve
 diktelerine dokunmaz.
 
-Ayarlar penceresinde üç anahtar istenir: **OpenAI**, **Groq** ve **OpenRouter**.
-Sesi yazıya çevirme üçünden birinde çalışır (varsayılan `gpt-4o-transcribe`),
-temizleme OpenRouter'da (`google/gemini-3.5-flash-lite`) ya da kuruluysa Claude
-Code veya Codex'te, yani tek bir OpenRouter anahtarı ikisine de yeter. Boş bırakırsan `OPENAI_API_KEY`,
-`GROQ_API_KEY` ve `OPENROUTER_API_KEY` kullanılır;
-anahtarlar `~/.config/dikte/config.json`
+Sesi yazıya çevirme ve temizleme, ayarlar penceresinde ayrı ayrı sağlayıcı
+seçer; ikisi de burada çalışabilir, whisper.cpp ve llama.cpp üzerinde: program da
+model de o pencereden, sha256 doğrulamasıyla indirilir, yani önceden hiçbir şey
+kurman gerekmez ve makineden hiçbir şey çıkmaz. Bulutu seçersen sesi yazıya
+çevirme **OpenAI**, **Groq** ya da **OpenRouter**'da (varsayılan
+`gpt-4o-transcribe`), temizleme OpenRouter'da
+(`google/gemini-3.5-flash-lite`) ya da kuruluysa Claude Code veya Codex'te
+çalışır. Anahtarları boş bırakırsan `OPENAI_API_KEY`, `GROQ_API_KEY` ve
+`OPENROUTER_API_KEY` kullanılır; anahtarlar `~/.config/dikte/config.json`
 içinde, izinler 600. Temizlemeyi tamamen kapatabilirsin, o zaman ham transkript
 yapıştırılır; modelin yanındaki kutudan düşünme seviyesini de seçebilirsin.
 
@@ -146,8 +148,10 @@ ipc.py            yerel sokette bir istek, bir cevap
 audio.py          PCM kaydı: diktede pw-record, toplantıda ffmpeg
 meeting.py        kanal ayırma, konuşmacı etiketi, temizleme, tutanak
 assistant.py      dikteyi Claude Code, Codex ya da OpenRouter'dan geçirme
-api.py            iki sağlayıcıda transkript + OpenRouter temizleme (yalnız stdlib)
-cleanup.py        transkripti kim temizler: OpenRouter, Claude Code ya da Codex
+api.py            transkript ve temizleme istekleri (yalnız stdlib)
+cleanup.py        transkripti kim temizler: OpenRouter, burası, Claude ya da Codex
+ggml.py           whisper.cpp ve llama.cpp'yi indirip burada çalıştırma
+hub.py            GitHub ve Hugging Face'te bugün ne olduğu
 worker.py         transkript → temizleme → pano → yapıştırma
 vad.py            kayıtta gerçekten konuşma var mı kararı
 filetranscribe.py dosyadan transkript: ffmpeg, parçalama, zaman damgaları

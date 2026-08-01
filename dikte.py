@@ -7,16 +7,20 @@ terminal talks to. Every verb it answers is in cli.py, which is also what runs
 command line says "there is no instance to talk to, so be one".
 """
 
+import contextlib
 import json
 import os
+import signal
+import socket
 import sys
+import threading
 
 # A Wayland client cannot place a window in a screen corner, so the indicator
 # is drawn through XWayland.
 if os.environ.get("XDG_SESSION_TYPE") == "wayland" and os.environ.get("DISPLAY"):
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
-from PyQt6.QtCore import QTimer, QElapsedTimer  # noqa: E402
+from PyQt6.QtCore import QTimer, QElapsedTimer, QSocketNotifier  # noqa: E402
 from PyQt6.QtGui import QAction, QIcon  # noqa: E402
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
@@ -25,6 +29,7 @@ import assistant  # noqa: E402
 import audio  # noqa: E402
 import cli  # noqa: E402
 import config as cfg  # noqa: E402
+import ggml  # noqa: E402
 import hotkey  # noqa: E402
 import i18n  # noqa: E402
 import ipc  # noqa: E402
@@ -92,6 +97,9 @@ class Dikte:
         self.meeting_recorder = audio.MeetingRecorder()
         self.meetings = MeetingPipeline(self.conf)
         self.evdev = hotkey.EvdevHotkey()
+        # Before anything of ours is started: a server from a Dikte that was
+        # killed outright is still holding a model in memory.
+        ggml.sweep()
 
         self.recorder.level.connect(self._on_level)
         self.recorder.stopped.connect(self._on_recorded)
@@ -805,9 +813,44 @@ class Dikte:
         # Don't drop the object while its own signal is still being delivered.
         QTimer.singleShot(0, lambda: setattr(self, "settings_window", None))
 
+    def _apply_local(self):
+        """Pass the local settings on, and hold the models ready if asked to.
+
+        Loading a model takes a second or two for whisper and longer for an LLM.
+        Doing it while Dikte starts rather than on the first dictation is the
+        whole reason a server is kept alive instead of running the program once
+        per recording; the checkboxes are there for the machine whose memory is
+        wanted elsewhere.
+        """
+        self.conf.apply_local()
+        wanted = []
+        if self.conf["transcribe_provider"] == "local":
+            if self.conf["local_preload"] and self.conf.local_whisper_ready():
+                wanted.append((ggml.whisper, "whisper"))
+        else:
+            ggml.whisper.stop()      # give the memory back when it is not in use
+        if self.conf.uses_local_llm():
+            if self.conf["local_llm_preload"] and self.conf.local_llm_ready():
+                wanted.append((ggml.llm, "llama"))
+        else:
+            ggml.llm.stop()
+
+        def warm():
+            for server, name in wanted:
+                try:
+                    server.serve()
+                except ggml.LocalError as exc:
+                    # Not worth an indicator: the first dictation raises the
+                    # same thing where the user can act on it.
+                    print(f"dikte: {name}: {exc}", file=sys.stderr)
+
+        if wanted:
+            threading.Thread(target=warm, daemon=True).start()
+
     def _apply_settings(self):
         self.overlay.corner = self.conf["overlay_corner"]
         self.ask_overlay.corner = self.conf["overlay_corner"]
+        self._apply_local()
         self._build_tray()
         self._refresh_tray()
         if self.conf["evdev_hotkey"]:
@@ -836,6 +879,9 @@ class Dikte:
             self.meeting_recorder.stop()
         self.overlay.dismiss()
         self.ask_overlay.dismiss()
+        # Also on the restart path, which replaces the process without ever
+        # reaching atexit and would otherwise leave the models in memory.
+        ggml.stop_all()
         self.tray.hide()
 
 
@@ -861,6 +907,41 @@ def main():
     return run_app([arg for arg in argv if arg != "--gui"])
 
 
+def install_signal_handlers(app):
+    """Quit properly on the signals a session sends, rather than dying where we stand.
+
+    Qt spends its time blocked inside C, and a Python signal handler only runs
+    between bytecodes, so on its own it would not run until the next event
+    arrived, which for an idle tray icon may be never. set_wakeup_fd writes the
+    signal number to a socket instead, and a notifier turns that into an event
+    Qt does deliver.
+
+    Worth the trouble because of what shutdown() does: a logout sends SIGTERM,
+    and without this a whisper.cpp or llama.cpp server outlives the session
+    holding its model in memory. SIGKILL cannot be caught at all, which is what
+    ggml.sweep() is for.
+
+    Returns the objects it made; they have to stay alive to keep working.
+    """
+    reader, writer = socket.socketpair()
+    reader.setblocking(False)
+    writer.setblocking(False)
+    signal.set_wakeup_fd(writer.fileno())
+    notifier = QSocketNotifier(reader.fileno(), QSocketNotifier.Type.Read)
+
+    def woken():
+        with contextlib.suppress(OSError):
+            reader.recv(64)
+        app.quit()          # aboutToQuit runs shutdown()
+
+    notifier.activated.connect(woken)
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        # A handler that does nothing, so that the default action, stopping the
+        # process where it stands, is replaced by the wakeup above.
+        signal.signal(sig, lambda *_: None)
+    return reader, writer, notifier
+
+
 def run_app(args):
     command = args[0] if args else ""
 
@@ -868,6 +949,12 @@ def run_app(args):
     app.setApplicationName("Dikte")
     app.setDesktopFileName("dikte")
     app.setQuitOnLastWindowClosed(False)
+    # Before Dikte is built, because building it is what may start a server, and
+    # a signal arriving in the middle of that would otherwise take the default
+    # action and leave the server behind. A signal this early lands in the
+    # socket and is delivered as soon as the event loop starts. Held in a name
+    # so that the notifier and its socket outlive this function.
+    signal_plumbing = install_signal_handlers(app)  # noqa: F841
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("dikte: no system tray found, running anyway")
@@ -916,7 +1003,10 @@ def run_app(args):
 
     # No key for the chosen transcription provider means nothing can work yet,
     # so the settings window is the only useful thing to open.
-    if command == "settings" or not dikte.conf.transcribe_target().api_key:
+    # A transcription provider that cannot run yet, whether that is a missing
+    # API key or a model nobody has downloaded, means nothing can work, so the
+    # settings window is the only useful thing to open.
+    if command == "settings" or not dikte.conf.transcribe_ready():
         dikte.open_settings()
     elif command == "toggle":
         QTimer.singleShot(0, dikte.toggle)
