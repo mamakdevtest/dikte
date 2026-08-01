@@ -29,9 +29,8 @@ LANGUAGES = [
     ("German", "de"), ("French", "fr"), ("Spanish", "es"), ("Arabic", "ar"),
 ]
 CORNERS = ["bottom-left", "bottom-right", "top-left", "top-right"]
-TRANSCRIBE_PROVIDERS = [
-    ("OpenAI", "openai"), ("Groq", "groq"), ("OpenRouter", "openrouter"),
-]
+# The provider box offers what config knows how to reach, in that order.
+TRANSCRIBE_PROVIDERS = [(who.service, name) for name, who in cfg.TRANSCRIBERS.items()]
 # Starting points for the model box; "Fetch model list" replaces them with
 # whatever the provider offers today.
 TRANSCRIBE_MODELS = {
@@ -111,9 +110,8 @@ class SettingsWindow(QDialog):
 
     _models_loaded = pyqtSignal(list, str)
     _transcribe_models_loaded = pyqtSignal(list, str)
-    _test_done = pyqtSignal(bool, str)
-    _groq_test_done = pyqtSignal(bool, str)
-    _or_test_done = pyqtSignal(bool, str)
+    # Which key was tested, whether it worked, and what to write under it.
+    _test_done = pyqtSignal(str, bool, str)
 
     def __init__(self, conf, launch_command, meeting_command=None,
                  meetings=None, ask_command=None, parent=None):
@@ -125,7 +123,9 @@ class SettingsWindow(QDialog):
         self.meetings = meetings
         # Each provider keeps its own transcription model, so switching the
         # provider back and forth never overwrites the other one's.
-        self._models = {"openai": "", "groq": "", "openrouter": ""}
+        self._models = dict.fromkeys(cfg.TRANSCRIBERS, "")
+        self._key_fields = {}
+        self._testers = {}
         self._shown_provider = ""
         self.transcriber = FileTranscriber(conf, self)
         self.setWindowTitle(t("Dikte Settings"))
@@ -156,8 +156,6 @@ class SettingsWindow(QDialog):
         self._models_loaded.connect(self._on_models_loaded)
         self._transcribe_models_loaded.connect(self._on_transcribe_models_loaded)
         self._test_done.connect(self._on_test_done)
-        self._groq_test_done.connect(self._on_groq_test_done)
-        self._or_test_done.connect(self._on_or_test_done)
         self.transcriber.progress.connect(self._on_file_progress)
         self.transcriber.finished.connect(self._on_file_finished)
         self.transcriber.failed.connect(self._on_file_failed)
@@ -249,35 +247,15 @@ class SettingsWindow(QDialog):
         # them and a key no longer belongs to a single job.
         keys = QGroupBox(t("Keys"))
         keys_form = QFormLayout(keys)
-        self.openai_key = QLineEdit()
-        self.openai_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.openai_key.setPlaceholderText(t("sk-… (falls back to OPENAI_API_KEY)"))
-        self.test_button = QPushButton(t("Test"))
-        self.test_button.clicked.connect(self._test_openai)
-        self.test_label = QLabel("")
-        self.test_label.setWordWrap(True)
-        keys_form.addRow("OpenAI", self._row(self.openai_key, self.test_button))
-        keys_form.addRow("", self.test_label)
-
-        self.groq_key = QLineEdit()
-        self.groq_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.groq_key.setPlaceholderText(t("gsk_… (falls back to GROQ_API_KEY)"))
-        self.groq_test_button = QPushButton(t("Test"))
-        self.groq_test_button.clicked.connect(self._test_groq)
-        self.groq_test_label = QLabel("")
-        self.groq_test_label.setWordWrap(True)
-        keys_form.addRow("Groq", self._row(self.groq_key, self.groq_test_button))
-        keys_form.addRow("", self.groq_test_label)
-
-        self.openrouter_key = QLineEdit()
-        self.openrouter_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.openrouter_key.setPlaceholderText(t("sk-or-… (falls back to OPENROUTER_API_KEY)"))
-        self.or_test_button = QPushButton(t("Test"))
-        self.or_test_button.clicked.connect(self._test_openrouter)
-        self.or_test_label = QLabel("")
-        self.or_test_label.setWordWrap(True)
-        keys_form.addRow("OpenRouter", self._row(self.openrouter_key, self.or_test_button))
-        keys_form.addRow("", self.or_test_label)
+        self.openai_key = self._key_row(
+            keys_form, "openai", t("sk-… (falls back to OPENAI_API_KEY)"),
+            self._test_openai)
+        self.groq_key = self._key_row(
+            keys_form, "groq", t("gsk_… (falls back to GROQ_API_KEY)"),
+            self._test_groq)
+        self.openrouter_key = self._key_row(
+            keys_form, "openrouter", t("sk-or-… (falls back to OPENROUTER_API_KEY)"),
+            self._test_openrouter)
         outer.addWidget(keys)
 
         stt = QGroupBox(t("Speech to text"))
@@ -383,7 +361,7 @@ class SettingsWindow(QDialog):
         how = QGroupBox(t("How it runs"))
         how_form = QFormLayout(how)
         self.assistant_shortcut = self._shortcut_box(t("none"))
-        install = QPushButton(t("Install as a global shortcut"))
+        install = QPushButton(t("Install as a KDE shortcut"))
         install.clicked.connect(self._install_ask_shortcut)
         remove = QPushButton(t("Remove"))
         remove.clicked.connect(self._remove_ask_shortcut)
@@ -645,7 +623,7 @@ class SettingsWindow(QDialog):
         recording_form.addRow("", self.meeting_keep_audio)
 
         self.meeting_shortcut = self._shortcut_box(t("none"))
-        install = QPushButton(t("Install as a global shortcut"))
+        install = QPushButton(t("Install as a KDE shortcut"))
         install.clicked.connect(self._install_meeting_shortcut)
         remove = QPushButton(t("Remove"))
         remove.clicked.connect(self._remove_meeting_shortcut)
@@ -799,7 +777,7 @@ class SettingsWindow(QDialog):
         form.addRow(t("Shortcut"), self.shortcut)
         layout.addLayout(form)
 
-        install = QPushButton(t("Install as a global shortcut"))
+        install = QPushButton(t("Install as a KDE shortcut"))
         install.clicked.connect(self._install_shortcut)
         remove = QPushButton(t("Remove"))
         remove.clicked.connect(self._remove_shortcut)
@@ -906,6 +884,26 @@ class SettingsWindow(QDialog):
             box.lineEdit().setPlaceholderText(placeholder)
         return box
 
+    def _key_row(self, form, provider, placeholder, tester):
+        """A key field, its Test button and the line the answer lands on.
+
+        The field and the pair the answer needs are filed under the provider's
+        name, so saving, loading and the test handler find them by name rather
+        than through three attributes each.
+        """
+        field = QLineEdit()
+        field.setEchoMode(QLineEdit.EchoMode.Password)
+        field.setPlaceholderText(placeholder)
+        button = QPushButton(t("Test"))
+        button.clicked.connect(tester)
+        answer = QLabel("")
+        answer.setWordWrap(True)
+        form.addRow(cfg.TRANSCRIBERS[provider].service, self._row(field, button))
+        form.addRow("", answer)
+        self._key_fields[provider] = field
+        self._testers[provider] = (button, answer)
+        return field
+
     @staticmethod
     def _row(*widgets):
         """Widgets side by side in one form row; the first one takes the space."""
@@ -934,12 +932,9 @@ class SettingsWindow(QDialog):
         self.filter_hallucinations.setChecked(conf["filter_hallucinations"])
         self.keep_audio.setChecked(conf["keep_audio"])
 
-        self.openai_key.setText(conf["openai_api_key"])
-        self.groq_key.setText(conf["groq_api_key"])
-        self.openrouter_key.setText(conf["openrouter_api_key"])
-        self._models = {"openai": conf["transcribe_model"],
-                        "groq": conf["groq_transcribe_model"],
-                        "openrouter": conf["openrouter_transcribe_model"]}
+        for name, who in cfg.TRANSCRIBERS.items():
+            self._key_fields[name].setText(conf[who.key])
+            self._models[name] = conf[who.model]
         self._shown_provider = ""
         self._select_data(self.transcribe_provider, conf["transcribe_provider"])
         self._provider_changed()  # selecting index 0 fires no signal
@@ -1017,17 +1012,12 @@ class SettingsWindow(QDialog):
         conf["filter_hallucinations"] = self.filter_hallucinations.isChecked()
         conf["keep_audio"] = self.keep_audio.isChecked()
 
-        conf["openai_api_key"] = self.openai_key.text().strip()
-        conf["groq_api_key"] = self.groq_key.text().strip()
-        conf["openrouter_api_key"] = self.openrouter_key.text().strip()
-
         provider = self.transcribe_provider.currentData() or "openai"
         self._models[provider] = self.transcribe_model.currentText().strip()
         conf["transcribe_provider"] = provider
-        for key, name in (("openai", "transcribe_model"),
-                          ("groq", "groq_transcribe_model"),
-                          ("openrouter", "openrouter_transcribe_model")):
-            conf[name] = self._models[key].strip() or cfg.DEFAULTS[name]
+        for name, who in cfg.TRANSCRIBERS.items():
+            conf[who.key] = self._key_fields[name].text().strip()
+            conf[who.model] = self._models[name].strip() or cfg.DEFAULTS[who.model]
 
         conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
         conf["cleanup_model"] = self.cleanup_model.currentText().strip()
@@ -1126,22 +1116,14 @@ class SettingsWindow(QDialog):
         provider = self.transcribe_provider.currentData() or "openai"
         self.refresh_transcribe_models.setEnabled(False)
         self.transcribe_status.setText(t("Fetching model list…"))
-        openai_key = self.openai_key.text().strip() or self.conf.openai_key()
-        groq_key = self.groq_key.text().strip() or self.conf.groq_key()
-        openrouter_key = self.openrouter_key.text().strip() or self.conf.openrouter_key()
+        key, base = self._typed_key(provider)
+        service = cfg.TRANSCRIBERS[provider].service
 
         def work():
             try:
-                if provider == "openrouter":
-                    models = api.openrouter_models(openrouter_key, transcription=True)
-                elif provider == "groq":
-                    models = api.openai_models(
-                        groq_key, self.conf["groq_base_url"], "Groq"
-                    )
-                else:
-                    models = api.openai_models(
-                        openai_key, self.conf["openai_base_url"]
-                    )
+                models = (api.openrouter_models(key, transcription=True)
+                          if provider == "openrouter"
+                          else api.openai_models(key, base, service))
                 self._transcribe_models_loaded.emit(models, "")
             except api.ApiError as exc:
                 self._transcribe_models_loaded.emit([], str(exc))
@@ -1185,65 +1167,51 @@ class SettingsWindow(QDialog):
         self.models_label.setText(t("{count} models loaded.", count=len(models)))
 
     def _test_openai(self):
-        self.test_button.setEnabled(False)
-        self.test_label.setText(t("Trying…"))
-        key = self.openai_key.text().strip() or self.conf.openai_key()
-        base = self.conf["openai_base_url"]
-
-        def work():
-            try:
-                models = api.openai_models(key, base)
-                self._test_done.emit(
-                    True, t("Connection works. {count} audio models visible.", count=len(models))
-                )
-            except api.ApiError as exc:
-                self._test_done.emit(False, str(exc))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _test_openrouter(self):
-        self.or_test_button.setEnabled(False)
-        self.or_test_label.setText(t("Trying…"))
-        key = self.openrouter_key.text().strip() or self.conf.openrouter_key()
-
-        def work():
-            try:
-                self._or_test_done.emit(True, api.openrouter_key_status(key))
-            except api.ApiError as exc:
-                self._or_test_done.emit(False, str(exc))
-
-        threading.Thread(target=work, daemon=True).start()
+        key, base = self._typed_key("openai")
+        self._test_key("openai", lambda: t(
+            "Connection works. {count} audio models visible.",
+            count=len(api.openai_models(key, base)),
+        ))
 
     def _test_groq(self):
-        self.groq_test_button.setEnabled(False)
-        self.groq_test_label.setText(t("Trying…"))
-        key = self.groq_key.text().strip() or self.conf.groq_key()
+        key, base = self._typed_key("groq")
+        self._test_key("groq", lambda: t(
+            "Connection works. {count} audio models visible.",
+            count=len(api.openai_models(key, base, cfg.TRANSCRIBERS["groq"].service)),
+        ))
+
+    def _test_openrouter(self):
+        key, _ = self._typed_key("openrouter")
+        self._test_key("openrouter", lambda: api.openrouter_key_status(key))
+
+    def _typed_key(self, provider):
+        """(key, base URL) for a provider, preferring what is in the field now."""
+        who = cfg.TRANSCRIBERS[provider]
+        typed = self._key_fields[provider].text().strip()
+        return typed or self.conf.api_key(who.key), self.conf[who.url]
+
+    def _test_key(self, provider, ask):
+        """Run `ask` off the interface thread and write its answer under the key.
+
+        `ask` returns the line to show, or raises ApiError with the line to show
+        instead; either way it is read from a field before the thread starts.
+        """
+        button, answer = self._testers[provider]
+        button.setEnabled(False)
+        answer.setText(t("Trying…"))
 
         def work():
             try:
-                models = api.openai_models(
-                    key, self.conf["groq_base_url"], "Groq"
-                )
-                self._groq_test_done.emit(
-                    True, t("Connection works. {count} audio models visible.",
-                            count=len(models))
-                )
+                self._test_done.emit(provider, True, ask())
             except api.ApiError as exc:
-                self._groq_test_done.emit(False, str(exc))
+                self._test_done.emit(provider, False, str(exc))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _on_or_test_done(self, ok, message):
-        self.or_test_button.setEnabled(True)
-        self.or_test_label.setText(("✓ " if ok else "✗ ") + message)
-
-    def _on_test_done(self, ok, message):
-        self.test_button.setEnabled(True)
-        self.test_label.setText(("✓ " if ok else "✗ ") + message)
-
-    def _on_groq_test_done(self, ok, message):
-        self.groq_test_button.setEnabled(True)
-        self.groq_test_label.setText(("✓ " if ok else "✗ ") + message)
+    def _on_test_done(self, provider, ok, message):
+        button, answer = self._testers[provider]
+        button.setEnabled(True)
+        answer.setText(("✓ " if ok else "✗ ") + message)
 
     # ---- audio file ------------------------------------------------------
 
@@ -1329,7 +1297,7 @@ class SettingsWindow(QDialog):
 
     def _install_shortcut(self):
         combo = self.shortcut.currentText().strip() or "Ctrl+Space"
-        clashes = hotkey.conflicting_shortcuts(combo) if hotkey.desktop_name() == "KDE" else []
+        clashes = hotkey.conflicting_shortcuts(combo)
         if clashes:
             answer = QMessageBox.question(
                 self, t("Shortcut conflict"),

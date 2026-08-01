@@ -36,9 +36,11 @@ CHANGED = {
     "filter_hallucinations": False,
     "keep_audio": True,
     "openai_api_key": "sk-test-key",
+    "groq_api_key": "gsk-test-key",
     "openrouter_api_key": "sk-or-test-key",
     "transcribe_provider": "openrouter",
     "transcribe_model": "whisper-1",
+    "groq_transcribe_model": "whisper-large-v3",
     "openrouter_transcribe_model": "openai/whisper-1",
     "cleanup_enabled": False,
     "cleanup_model": "some/other-model",
@@ -145,14 +147,38 @@ class Settings(DikteTest):
     def test_each_provider_keeps_its_own_transcription_model(self):
         self.write_config({"transcribe_provider": "openai",
                            "transcribe_model": "gpt-4o-transcribe",
+                           "groq_transcribe_model": "whisper-large-v3",
                            "openrouter_transcribe_model": "openai/whisper-1"})
         conf = cfg.Config()
         window = self.window(conf)
-        window.transcribe_provider.setCurrentIndex(
-            window.transcribe_provider.findData("openrouter"))
+        for provider in ("groq", "openrouter"):
+            window.transcribe_provider.setCurrentIndex(
+                window.transcribe_provider.findData(provider))
         window._save()
         self.assertEqual(conf["transcribe_provider"], "openrouter")
         self.assertEqual(conf["transcribe_model"], "gpt-4o-transcribe")
+        self.assertEqual(conf["groq_transcribe_model"], "whisper-large-v3")
+
+    def test_the_provider_box_offers_every_provider_config_knows(self):
+        window = self.window(cfg.Config())
+        offered = [window.transcribe_provider.itemData(i)
+                   for i in range(window.transcribe_provider.count())]
+        self.assertEqual(offered, list(cfg.TRANSCRIBERS))
+
+    def test_the_answer_to_a_test_lands_under_the_key_it_was_asked_about(self):
+        """One signal serves all three buttons, so it carries which one asked."""
+        window = self.window(cfg.Config())
+        window._on_test_done("groq", True, "it works")
+        button, answer = window._testers["groq"]
+        self.assertEqual(answer.text(), "✓ it works")
+        self.assertTrue(button.isEnabled())
+        self.assertEqual(window._testers["openai"][1].text(), "")
+
+    def test_a_key_lands_in_the_field_of_its_own_provider(self):
+        self.write_config({"groq_api_key": "gsk-mine"})
+        window = self.window(cfg.Config())
+        self.assertEqual(window.groq_key.text(), "gsk-mine")
+        self.assertEqual(window.openai_key.text(), "")
 
     def test_saving_applies_the_lowered_history_limit_at_once(self):
         for index in range(10):

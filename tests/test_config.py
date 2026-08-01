@@ -125,6 +125,10 @@ class Keys(DikteTest):
     def test_no_key_anywhere(self):
         self.assertEqual(cfg.Config().openai_key(), "")
 
+    def test_every_provider_falls_back_to_the_variable_of_its_own_name(self):
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "gsk-env"}):
+            self.assertEqual(cfg.Config().groq_key(), "gsk-env")
+
 
 class TranscribeTarget(DikteTest):
     def test_openai_by_default(self):
@@ -144,6 +148,21 @@ class TranscribeTarget(DikteTest):
         self.assertEqual(target.service, "OpenRouter")
         self.assertEqual(target.api_key, "sk-or-test")
         self.assertEqual(target.model, "openai/whisper-1")
+
+    def test_groq_when_it_is_picked(self):
+        conf = self.config(transcribe_provider="groq", groq_api_key="gsk-test",
+                           groq_transcribe_model="whisper-large-v3")
+        target = conf.transcribe_target()
+        self.assertEqual(target.provider, "groq")
+        self.assertEqual(target.service, "Groq")
+        self.assertEqual(target.api_key, "gsk-test")
+        self.assertEqual(target.base_url, api.GROQ_URL)
+        self.assertEqual(target.model, "whisper-large-v3")
+
+    def test_a_provider_this_version_has_never_heard_of(self):
+        """A config written by a fork, or by a version that dropped one."""
+        target = self.config(transcribe_provider="deepgram").transcribe_target()
+        self.assertEqual(target.provider, "openai")
 
     def test_a_self_hosted_endpoint(self):
         conf = self.config(openai_base_url="http://localhost:8080/v1")

@@ -1,9 +1,9 @@
-"""OpenAI-compatible transcription and OpenRouter calls, stdlib only.
+"""OpenAI, Groq and OpenRouter calls, stdlib only.
 
-Transcription runs on either provider: OpenRouter mirrors OpenAI's
+Transcription runs on any of the three: Groq and OpenRouter both mirror OpenAI's
 /audio/transcriptions endpoint field for field, so one multipart request serves
-both and only the key, the base URL and the model id change. Cleanup is always
-OpenRouter.
+all of them and only the key, the base URL and the model id change. Cleanup is
+always OpenRouter.
 """
 
 import collections
@@ -19,8 +19,8 @@ from i18n import t
 APP_URL = "https://github.com/yusufipk/dikte"
 USER_AGENT = f"dikte/1.0 (+{APP_URL})"
 OPENAI_URL = "https://api.openai.com/v1"
-OPENROUTER_URL = "https://openrouter.ai/api/v1"
 GROQ_URL = "https://api.groq.com/openai/v1"
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
 
 # Where a transcription request goes; built by config.Config.transcribe_target().
 # `service` is the name the user sees in an error, `provider` the one the code
@@ -29,7 +29,12 @@ Target = collections.namedtuple("Target", "provider service api_key base_url mod
 
 
 def timestamp_model(provider, selected=""):
-    """Return a timestamp-capable model id for the selected provider."""
+    """Which model answers with segment times.
+
+    OpenAI keeps them to whisper-1 and OpenRouter namespaces that id. Everything
+    Groq transcribes with is a whisper, so the model already chosen does it and
+    the fallback is only for a provider left on its default.
+    """
     if provider == "groq":
         return selected or "whisper-large-v3-turbo"
     return "openai/whisper-1" if provider == "openrouter" else "whisper-1"
@@ -301,6 +306,11 @@ def openrouter_models(api_key="", transcription=False):
 
 
 def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI"):
+    """The audio models of anything that speaks OpenAI's /models, Groq included.
+
+    `service` is only the name an error is written in, so a Groq key that is
+    refused says Groq rather than OpenAI.
+    """
     if not api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
                          service=service))

@@ -39,10 +39,10 @@ sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 `install.sh` adds the `dikte` command, a menu entry and an autostart entry. The
 settings window installs a GNOME or KDE global shortcut.
 
-The settings window accepts **OpenAI**, **Groq** and **OpenRouter** keys. Speech
-to text runs on any of them (`gpt-4o-transcribe` by default), cleanup always on
-OpenRouter (`google/gemini-3.5-flash-lite`), so a single OpenRouter key can
-cover both. They fall back to `OPENAI_API_KEY`, `GROQ_API_KEY` and
+Three keys go in the settings window: **OpenAI**, **Groq** and **OpenRouter**.
+Speech to text runs on any of them (`gpt-4o-transcribe` by default), cleanup
+always on OpenRouter (`google/gemini-3.5-flash-lite`), so a single OpenRouter key
+can cover both. They fall back to `OPENAI_API_KEY`, `GROQ_API_KEY` and
 `OPENROUTER_API_KEY`, and are
 stored in `~/.config/dikte/config.json`, mode 600. Cleanup can be switched off,
 in which case the raw transcript is pasted, and a thinking model's effort can be
