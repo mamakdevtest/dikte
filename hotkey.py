@@ -1,10 +1,12 @@
-"""Global shortcut: KDE custom-shortcut installation plus a built-in evdev listener."""
+"""GNOME/KDE global-shortcut installation plus a built-in evdev listener."""
 
+import ast
 import glob
 import os
 import pathlib
 import re
 import select
+import shutil
 import struct
 import subprocess
 import threading
@@ -19,6 +21,8 @@ ASK_DESKTOP_ID = "dikte-ask.desktop"
 APPLICATIONS_DIR = pathlib.Path.home() / ".local/share/applications"
 DESKTOP_FILE = APPLICATIONS_DIR / DESKTOP_ID
 SHORTCUTS_FILE = pathlib.Path.home() / ".config/kglobalshortcutsrc"
+GNOME_MEDIA_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
+GNOME_BINDING_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
 
 # --- evdev key codes (linux/input-event-codes.h) --------------------------
 
@@ -172,7 +176,154 @@ class EvdevHotkey(QObject):
         return True
 
 
-# --- KDE custom shortcut --------------------------------------------------
+# --- the desktop's own shortcut -------------------------------------------
+
+def _gnome():
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    return "gnome" in desktop and shutil.which("gsettings") is not None
+
+
+def _gnome_path(desktop_id):
+    name = re.sub(r"[^a-zA-Z0-9_-]+", "-", desktop_id.removesuffix(".desktop"))
+    return f"/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/{name}/"
+
+
+def gnome_accelerator(shortcut):
+    """Translate Qt-style Ctrl+Alt+A into GNOME's <Primary><Alt>a syntax."""
+    parts = [part.strip() for part in str(shortcut).split("+") if part.strip()]
+    modifiers = []
+    key = ""
+    names = {
+        "ctrl": "<Primary>", "control": "<Primary>",
+        "alt": "<Alt>", "shift": "<Shift>",
+        "super": "<Super>", "meta": "<Super>",
+    }
+    for part in parts:
+        modifier = names.get(part.lower())
+        if modifier:
+            if modifier not in modifiers:
+                modifiers.append(modifier)
+        else:
+            key = part.lower() if len(part) == 1 else part
+    return "".join(modifiers) + key if key else ""
+
+
+def display_accelerator(accelerator):
+    """Translate a GNOME accelerator back to the form shown in Dikte."""
+    text = str(accelerator)
+    parts = []
+    for token, label in (("<Primary>", "Ctrl"), ("<Control>", "Ctrl"),
+                         ("<Alt>", "Alt"), ("<Shift>", "Shift"),
+                         ("<Super>", "Super")):
+        if token.lower() in text.lower():
+            parts.append(label)
+            text = re.sub(re.escape(token), "", text, flags=re.IGNORECASE)
+    key = text.strip()
+    if len(key) == 1:
+        key = key.upper()
+    if key:
+        parts.append(key)
+    return "+".join(parts)
+
+
+def _gsettings(*args, check=True):
+    return subprocess.run(
+        ["gsettings", *args], capture_output=True, text=True, timeout=10, check=check,
+    )
+
+
+def _gsettings_array(value):
+    """Parse a gsettings string-array, including the empty `@as []` form."""
+    text = str(value).strip()
+    if text.startswith("@as "):
+        text = text[4:].strip()
+    parsed = ast.literal_eval(text) if text else []
+    if not isinstance(parsed, (list, tuple)):
+        raise ValueError(f"not a string array: {value}")
+    return list(parsed)
+
+
+def install_gnome_shortcut(shortcut, exec_command,
+                           name="Dikte: start/stop recording",
+                           desktop_id=DESKTOP_ID):
+    path = _gnome_path(desktop_id)
+    try:
+        current = _gsettings(
+            "get", GNOME_MEDIA_SCHEMA, "custom-keybindings"
+        ).stdout.strip()
+        paths = _gsettings_array(current)
+        if path not in paths:
+            paths.append(path)
+            _gsettings("set", GNOME_MEDIA_SCHEMA, "custom-keybindings", repr(paths))
+        schema = f"{GNOME_BINDING_SCHEMA}:{path}"
+        _gsettings("set", schema, "name", repr(name))
+        _gsettings("set", schema, "command", repr(exec_command))
+        accelerator = gnome_accelerator(shortcut)
+        if not accelerator:
+            raise ValueError(t("Could not parse the shortcut: {shortcut}",
+                               shortcut=shortcut))
+        _gsettings("set", schema, "binding", repr(accelerator))
+    except (ValueError, SyntaxError, subprocess.SubprocessError, OSError) as exc:
+        return False, t("Could not register the GNOME shortcut: {error}", error=exc)
+    return True, t("Shortcut saved: {shortcut}", shortcut=shortcut)
+
+
+def remove_gnome_shortcut(desktop_id=DESKTOP_ID):
+    path = _gnome_path(desktop_id)
+    try:
+        current = _gsettings(
+            "get", GNOME_MEDIA_SCHEMA, "custom-keybindings"
+        ).stdout.strip()
+        paths = _gsettings_array(current)
+        if path in paths:
+            paths.remove(path)
+            _gsettings("set", GNOME_MEDIA_SCHEMA, "custom-keybindings", repr(paths))
+    except (ValueError, SyntaxError, subprocess.SubprocessError, OSError):
+        pass
+
+
+def gnome_shortcut_status(desktop_id=DESKTOP_ID):
+    path = _gnome_path(desktop_id)
+    try:
+        current = _gsettings(
+            "get", GNOME_MEDIA_SCHEMA, "custom-keybindings"
+        ).stdout.strip()
+        paths = _gsettings_array(current)
+        if path not in paths:
+            return None
+        value = _gsettings(
+            "get", f"{GNOME_BINDING_SCHEMA}:{path}", "binding"
+        ).stdout.strip()
+        accelerator = ast.literal_eval(value)
+        return display_accelerator(accelerator) if accelerator else None
+    except (ValueError, SyntaxError, subprocess.SubprocessError, OSError):
+        return None
+
+
+def install_shortcut(shortcut, exec_command, name="Dikte: start/stop recording",
+                     desktop_id=DESKTOP_ID):
+    if _gnome():
+        return install_gnome_shortcut(shortcut, exec_command, name, desktop_id)
+    return install_kde_shortcut(shortcut, exec_command, name, desktop_id)
+
+
+def remove_shortcut(desktop_id=DESKTOP_ID):
+    if _gnome():
+        remove_gnome_shortcut(desktop_id)
+    else:
+        remove_kde_shortcut(desktop_id)
+
+
+def shortcut_status(desktop_id=DESKTOP_ID):
+    return (gnome_shortcut_status(desktop_id) if _gnome()
+            else kde_shortcut_status(desktop_id))
+
+
+def desktop_name():
+    return "GNOME" if _gnome() else "KDE"
+
+
+# --- KDE ------------------------------------------------------------------
 
 def install_kde_shortcut(shortcut, exec_command, name="Dikte: start/stop recording",
                          desktop_id=DESKTOP_ID):

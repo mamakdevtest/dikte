@@ -29,8 +29,15 @@ systemctl --user enable --now ydotool     # otomatik yapıştırma için
 dikte                        # ilk açılışta ayarlar penceresi gelir
 ```
 
-`install.sh` `dikte` komutunu, menü girdisini, oturum açılışında otomatik
-başlatmayı ve KDE kısayolunu kurar.
+Ubuntu/GNOME X11 için kayıt PulseAudio üzerinden, pano ve yapıştırma ise X11
+araçlarıyla çalışır:
+
+```sh
+sudo apt install pulseaudio-utils xclip xdotool ffmpeg
+```
+
+`install.sh` `dikte` komutunu, menü girdisini ve oturum açılışında otomatik
+başlatmayı kurar. Ayarlar penceresi GNOME veya KDE global kısayolunu kurar.
 
 Ayarlar penceresinde iki anahtar istenir: **OpenAI** ve **OpenRouter**. Sesi
 yazıya çevirme ikisinden birinde çalışır (varsayılan `gpt-4o-transcribe`),

@@ -7,6 +7,7 @@ speakers, and neither list may go missing when pactl is absent.
 
 import array
 import contextlib
+import io
 import json
 import os
 import subprocess
@@ -194,10 +195,10 @@ class FakeProcess:
     """A pw-record that hands over a fixed buffer and then ends."""
 
     def __init__(self, data):
-        import io
         self.stdout = io.BytesIO(data)
         self.stderr = io.BytesIO(b"")
         self.signals = []
+        self.returncode = 0
         self._alive = True
 
     def poll(self):
@@ -213,6 +214,60 @@ class FakeProcess:
 
     def kill(self):
         self._alive = False
+
+
+@linux_only
+class RecordingCommand(DikteTest):
+    """Which program captures the microphone, and how it is asked to."""
+
+    def test_parec_is_preferred(self):
+        """It speaks to PulseAudio and to PipeWire's compatibility service, so
+        it is the one that works on both desktops."""
+        with only_these_tools("parec", "pw-record"):
+            self.assertEqual(audio.recording_command()[0], "parec")
+
+    def test_pw_record_is_the_fallback(self):
+        with only_these_tools("pw-record"):
+            self.assertEqual(audio.recording_command()[0], "pw-record")
+
+    def test_neither_is_installed(self):
+        with only_these_tools():
+            self.assertEqual(audio.recording_command(), [])
+
+    def test_both_capture_the_format_the_rest_of_the_code_expects(self):
+        for tool in ("parec", "pw-record"):
+            with self.subTest(tool=tool), only_these_tools(tool):
+                cmd = audio.recording_command()
+                joined = " ".join(cmd)
+                self.assertIn(str(audio.RATE), joined)
+                self.assertIn(str(audio.CHANNELS), joined)
+                self.assertIn("s16", joined)
+
+    def test_parec_is_asked_for_the_level_meter_s_own_chunk(self):
+        """Left alone it buffers about two seconds, which the waveform shows as
+        a still bar that jumps once a second, and which can cost the tail of a
+        recording when the process is asked to stop."""
+        with only_these_tools("parec"):
+            self.assertIn(f"--latency-msec={audio.CHUNK_LATENCY_MS}",
+                          audio.recording_command())
+
+    def test_the_latency_asked_for_is_the_chunk_the_meter_reads(self):
+        self.assertEqual(audio.CHUNK_LATENCY_MS,
+                         round(audio.CHUNK_FRAMES / audio.RATE * 1000))
+
+    def test_a_chosen_microphone_reaches_either_one(self):
+        with only_these_tools("parec"):
+            self.assertIn("--device=alsa_input.usb", audio.recording_command(
+                "alsa_input.usb"))
+        with only_these_tools("pw-record"):
+            self.assertIn("--target=alsa_input.usb", audio.recording_command(
+                "alsa_input.usb"))
+
+    def test_no_microphone_named_means_no_device_flag(self):
+        for tool, flag in (("parec", "--device="), ("pw-record", "--target=")):
+            with self.subTest(tool=tool), only_these_tools(tool):
+                self.assertFalse([arg for arg in audio.recording_command()
+                                  if arg.startswith(flag)])
 
 
 @linux_only
@@ -232,15 +287,6 @@ class RecorderChain(DikteTest):
             recorder._thread.join(timeout=5)
             recorder.stop()
         return recorder, results, failures, popen
-
-    def test_pw_record_is_not_installed(self):
-        recorder = audio.Recorder()
-        failures = []
-        recorder.failed.connect(failures.append)
-        with only_these_tools():
-            recorder.start()
-        self.assertEqual(len(failures), 1)
-        self.assertIn("pipewire", failures[0])
 
     def test_the_capture_format_is_what_the_rest_of_the_code_expects(self):
         _, _, _, popen = self.record(silence(1.0))
@@ -294,6 +340,58 @@ class RecorderChain(DikteTest):
         path, duration, _ = results[0]
         self.addCleanup(os.unlink, path)
         self.assertLessEqual(duration, 1.1)
+
+    def test_a_recorder_that_is_not_installed_at_all(self):
+        recorder = audio.Recorder()
+        failures = []
+        recorder.failed.connect(failures.append)
+        with only_these_tools():
+            recorder.start()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("pulseaudio-utils", failures[0])
+
+    def pump(self, data=b"", stderr=b"", stopping=False, cancelled=False):
+        """Run the pump in this thread, where a queued signal would need an
+        event loop nobody is running here."""
+        recorder = audio.Recorder()
+        failures = []
+        recorder.failed.connect(failures.append)
+        proc = FakeProcess(data)
+        proc.stderr = io.BytesIO(stderr)
+        proc._alive = False
+        recorder._proc = proc
+        recorder._max_bytes = 10 ** 9
+        recorder._stopping = stopping
+        recorder._cancelled = cancelled
+        recorder._pump()
+        return failures
+
+    def test_a_recorder_that_died_on_its_own_says_so(self):
+        """parec refused the device, or the sound server went away."""
+        failures = self.pump(stderr=b"connection refused\n")
+        self.assertEqual(len(failures), 1)
+        self.assertIn("connection refused", failures[0])
+
+    def test_a_death_with_nothing_on_stderr_still_names_the_exit_code(self):
+        failures = self.pump()
+        self.assertIn("exit code", failures[0])
+
+    def test_a_recording_we_ended_ourselves_is_not_a_death(self):
+        """Otherwise a stray keypress produces two errors, and the first one
+        sends the user looking for a broken sound server."""
+        self.assertEqual(self.pump(stopping=True), [])
+
+    def test_a_cancelled_recording_is_not_a_death(self):
+        self.assertEqual(self.pump(cancelled=True), [])
+
+    def test_a_recorder_that_captured_something_first_is_not_a_death(self):
+        self.assertEqual(self.pump(data=silence(0.5)), [])
+
+    def test_a_short_recording_reports_only_that(self):
+        _, results, failures, _ = self.record(silence(0.1))
+        self.assertEqual(results, [])
+        self.assertEqual(len(failures), 1)
+        self.assertIn("0.3", failures[0])
 
     def test_a_recorder_that_could_not_start(self):
         recorder = audio.Recorder()

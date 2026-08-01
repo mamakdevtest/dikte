@@ -1,5 +1,7 @@
-"""Parsing a shortcut, and the KDE entry it is installed as."""
+"""Parsing a shortcut, and the entry the desktop is asked to register it as."""
 
+import contextlib
+import os
 import subprocess
 import unittest
 from unittest import mock
@@ -119,6 +121,193 @@ class Bindings(DikteTest):
                                             "ask": "Ctrl+Alt+Space"}))
             thread.assert_called_once()
         self.assertEqual(len(listener._bindings[57]), 2)
+
+
+@linux_only
+class Chooser(DikteTest):
+    """Which desktop is asked to register the shortcut."""
+
+    @contextlib.contextmanager
+    def under(self, desktop, has_gsettings=True):
+        """A session that says it is this desktop, with or without gsettings."""
+        with mock.patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": desktop}), \
+                mock.patch.object(hotkey.shutil, "which",
+                                  return_value="/usr/bin/gsettings"
+                                  if has_gsettings else None):
+            yield
+
+    def test_gnome_when_the_session_says_so_and_gsettings_is_there(self):
+        with self.under("GNOME"):
+            self.assertEqual(hotkey.desktop_name(), "GNOME")
+
+    def test_kde_otherwise(self):
+        with self.under("KDE"):
+            self.assertEqual(hotkey.desktop_name(), "KDE")
+
+    def test_a_gnome_session_with_no_gsettings_falls_back(self):
+        """Nothing to write the binding with, so KDE's file is the only try."""
+        with self.under("GNOME", has_gsettings=False):
+            self.assertEqual(hotkey.desktop_name(), "KDE")
+
+    def test_the_desktop_is_matched_loosely(self):
+        for desktop in ("GNOME", "ubuntu:GNOME", "gnome"):
+            with self.subTest(desktop=desktop), self.under(desktop):
+                self.assertEqual(hotkey.desktop_name(), "GNOME")
+
+    def test_installing_goes_to_whichever_it_is(self):
+        with self.under("GNOME"), \
+                mock.patch.object(hotkey, "install_gnome_shortcut",
+                                  return_value=(True, "ok")) as gnome:
+            hotkey.install_shortcut("Ctrl+Space", "dikte toggle")
+        gnome.assert_called_once()
+
+        with self.under("KDE"), \
+                mock.patch.object(hotkey, "install_kde_shortcut",
+                                  return_value=(True, "ok")) as kde:
+            hotkey.install_shortcut("Ctrl+Space", "dikte toggle")
+        kde.assert_called_once()
+
+    def test_removing_and_reading_back_go_to_the_same_one(self):
+        with self.under("GNOME"), \
+                mock.patch.object(hotkey, "remove_gnome_shortcut") as remove, \
+                mock.patch.object(hotkey, "gnome_shortcut_status",
+                                  return_value="Ctrl+Space") as status:
+            hotkey.remove_shortcut()
+            self.assertEqual(hotkey.shortcut_status(), "Ctrl+Space")
+        remove.assert_called_once()
+        status.assert_called_once()
+
+
+@linux_only
+class GnomeAccelerator(DikteTest):
+    """Qt spells a combination one way, GNOME another."""
+
+    def test_the_default_shortcut(self):
+        self.assertEqual(hotkey.gnome_accelerator("Ctrl+Space"), "<Primary>Space")
+
+    def test_several_modifiers_keep_their_order(self):
+        self.assertEqual(hotkey.gnome_accelerator("Ctrl+Alt+A"), "<Primary><Alt>a")
+
+    def test_the_synonyms(self):
+        self.assertEqual(hotkey.gnome_accelerator("Meta+A"),
+                         hotkey.gnome_accelerator("Super+A"))
+        self.assertEqual(hotkey.gnome_accelerator("Control+A"),
+                         hotkey.gnome_accelerator("Ctrl+A"))
+
+    def test_a_modifier_repeated_is_written_once(self):
+        self.assertEqual(hotkey.gnome_accelerator("Ctrl+Control+A"), "<Primary>a")
+
+    def test_modifiers_with_no_key_are_not_a_shortcut(self):
+        self.assertEqual(hotkey.gnome_accelerator("Ctrl+Alt"), "")
+        self.assertEqual(hotkey.gnome_accelerator(""), "")
+
+    def test_what_goes_out_comes_back_the_way_dikte_writes_it(self):
+        for shortcut in ("Ctrl+Space", "Ctrl+Alt+A", "Shift+F9", "Super+M"):
+            with self.subTest(shortcut=shortcut):
+                accelerator = hotkey.gnome_accelerator(shortcut)
+                self.assertEqual(hotkey.display_accelerator(accelerator), shortcut)
+
+    def test_the_control_spelling_gnome_also_uses(self):
+        self.assertEqual(hotkey.display_accelerator("<Control>a"), "Ctrl+A")
+
+    def test_an_empty_binding(self):
+        self.assertEqual(hotkey.display_accelerator(""), "")
+
+
+@linux_only
+class GsettingsArray(DikteTest):
+    def test_a_list_of_paths(self):
+        self.assertEqual(
+            hotkey._gsettings_array("['/org/gnome/one/', '/org/gnome/two/']"),
+            ["/org/gnome/one/", "/org/gnome/two/"])
+
+    def test_the_empty_form_gsettings_prints(self):
+        self.assertEqual(hotkey._gsettings_array("@as []"), [])
+
+    def test_nothing_at_all(self):
+        self.assertEqual(hotkey._gsettings_array(""), [])
+
+    def test_something_that_is_not_an_array(self):
+        with self.assertRaises(ValueError):
+            hotkey._gsettings_array("'just a string'")
+
+
+@linux_only
+class GnomeShortcut(DikteTest):
+    """The gsettings calls, without a session bus to make them against."""
+
+    def setUp(self):
+        super().setUp()
+        self.enterContext(mock.patch.dict(os.environ,
+                                          {"XDG_CURRENT_DESKTOP": "GNOME"}))
+        self.enterContext(mock.patch.object(hotkey.shutil, "which",
+                                            return_value="/usr/bin/gsettings"))
+
+    def gsettings(self, listed="@as []", binding="'<Primary>Space'"):
+        def run(cmd, **kwargs):
+            if cmd[1] == "get" and cmd[3] == "custom-keybindings":
+                return FakeCompleted(stdout=listed)
+            return FakeCompleted(stdout=binding)
+        return mock.patch.object(subprocess, "run", side_effect=run)
+
+    def written(self, run, key):
+        """The value the last `gsettings set ... <key>` was given."""
+        for call in reversed(run.mock_calls):
+            cmd = call.args[0] if call.args else []
+            if len(cmd) > 4 and cmd[1] == "set" and cmd[3] == key:
+                return cmd[4]
+        return None
+
+    def test_installing_registers_the_path_the_name_and_the_binding(self):
+        with self.gsettings() as run:
+            ok, message = hotkey.install_shortcut("Ctrl+Space", "dikte toggle")
+        self.assertTrue(ok)
+        self.assertIn("Ctrl+Space", message)
+        self.assertIn(hotkey.DESKTOP_ID.removesuffix(".desktop"),
+                      self.written(run, "custom-keybindings"))
+        self.assertEqual(self.written(run, "command"), repr("dikte toggle"))
+        self.assertEqual(self.written(run, "binding"), repr("<Primary>Space"))
+
+    def test_installing_twice_does_not_list_the_path_twice(self):
+        path = hotkey._gnome_path(hotkey.DESKTOP_ID)
+        with self.gsettings(listed=repr([path])) as run:
+            hotkey.install_shortcut("Ctrl+Space", "dikte toggle")
+        self.assertIsNone(self.written(run, "custom-keybindings"))
+
+    def test_each_verb_gets_its_own_path(self):
+        self.assertNotEqual(hotkey._gnome_path(hotkey.DESKTOP_ID),
+                            hotkey._gnome_path(hotkey.ASK_DESKTOP_ID))
+
+    def test_a_shortcut_gnome_cannot_express(self):
+        with self.gsettings():
+            ok, message = hotkey.install_shortcut("Ctrl+Alt", "dikte toggle")
+        self.assertFalse(ok)
+        self.assertIn("Ctrl+Alt", message)
+
+    def test_no_session_bus_to_talk_to(self):
+        with mock.patch.object(subprocess, "run", side_effect=OSError("no bus")):
+            ok, _ = hotkey.install_shortcut("Ctrl+Space", "dikte toggle")
+        self.assertFalse(ok)
+
+    def test_reading_back_a_shortcut_that_is_registered(self):
+        path = hotkey._gnome_path(hotkey.DESKTOP_ID)
+        with self.gsettings(listed=repr([path])):
+            self.assertEqual(hotkey.shortcut_status(), "Ctrl+Space")
+
+    def test_reading_back_one_that_is_not(self):
+        with self.gsettings(listed="@as []"):
+            self.assertIsNone(hotkey.shortcut_status())
+
+    def test_removing_takes_the_path_off_the_list(self):
+        path = hotkey._gnome_path(hotkey.DESKTOP_ID)
+        with self.gsettings(listed=repr([path, "/org/gnome/other/"])) as run:
+            hotkey.remove_shortcut()
+        self.assertEqual(self.written(run, "custom-keybindings"),
+                         repr(["/org/gnome/other/"]))
+
+    def test_removing_one_that_was_never_installed(self):
+        with self.gsettings(listed="@as []"):
+            hotkey.remove_shortcut()   # must not raise
 
 
 @linux_only

@@ -29,8 +29,15 @@ systemctl --user enable --now ydotool     # needed for auto-paste
 dikte                        # the settings window opens on first run
 ```
 
-`install.sh` adds the `dikte` command, a menu entry, an autostart entry and the
-KDE shortcut.
+On Ubuntu/GNOME X11, recording uses PulseAudio and clipboard/paste use the X11
+tools instead:
+
+```sh
+sudo apt install pulseaudio-utils xclip xdotool ffmpeg
+```
+
+`install.sh` adds the `dikte` command, a menu entry and an autostart entry. The
+settings window installs a GNOME or KDE global shortcut.
 
 Two keys go in the settings window: **OpenAI** and **OpenRouter**. Speech to text
 runs on either one (`gpt-4o-transcribe` by default), cleanup always on

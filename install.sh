@@ -19,21 +19,33 @@ echo "────────────────"
 
 # 1. Dependencies ----------------------------------------------------------
 missing=()
-for cmd in pw-record wl-copy wl-paste ydotool ffmpeg; do
+audio_cmds=(ffmpeg)
+if command -v parec >/dev/null || command -v pw-record >/dev/null; then
+  :
+else
+  missing+=("pulseaudio-utils-or-pipewire-audio")
+fi
+if [[ "${XDG_SESSION_TYPE:-}" == "x11" ]]; then
+  desktop_cmds=(xclip xdotool)
+else
+  desktop_cmds=(wl-copy wl-paste ydotool)
+fi
+for cmd in "${audio_cmds[@]}" "${desktop_cmds[@]}"; do
   command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
 python3 -c 'import PyQt6.QtWidgets' 2>/dev/null || missing+=("python-pyqt6")
 
 if ((${#missing[@]})); then
   warn "Missing: ${missing[*]}"
-  say  "Arch/CachyOS:  sudo pacman -S --needed pipewire-audio wl-clipboard ydotool ffmpeg python-pyqt6"
+  say  "Ubuntu X11:    sudo apt install pulseaudio-utils xclip xdotool ffmpeg"
+  say  "Arch Wayland:  sudo pacman -S --needed pipewire-audio wl-clipboard ydotool ffmpeg python-pyqt6"
   echo
 else
   ok "All dependencies present"
 fi
 
 # 2. ydotoold --------------------------------------------------------------
-if command -v ydotool >/dev/null; then
+if [[ "${XDG_SESSION_TYPE:-}" != "x11" ]] && command -v ydotool >/dev/null; then
   if systemctl --user is-active --quiet ydotool 2>/dev/null \
      || systemctl --user is-active --quiet ydotoold 2>/dev/null; then
     ok "ydotoold is running (auto-paste ready)"
@@ -87,7 +99,10 @@ Type=Application
 X-KDE-GlobalAccel-CommandShortcut=true
 EOF
 
-if command -v kwriteconfig6 >/dev/null; then
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *GNOME* || "${XDG_CURRENT_DESKTOP:-}" == *gnome* ]]; then
+  ok "GNOME detected"
+  say "Open Dikte Settings > Shortcut to install the global shortcut."
+elif command -v kwriteconfig6 >/dev/null; then
   kwriteconfig6 --notify --file kglobalshortcutsrc \
     --group services --group dikte-toggle.desktop \
     --key _launch "$SHORTCUT"
@@ -96,10 +111,10 @@ if command -v kwriteconfig6 >/dev/null; then
   say  "next login. Until then open Settings → Shortcut and turn on the"
   say  "built-in listener to use it right away."
 else
-  warn "kwriteconfig6 not found. Add the shortcut via System Settings > Shortcuts"
+  warn "No supported shortcut manager found. Add the shortcut in desktop settings."
 fi
 
 echo
 ok "Done. Start it with:  dikte"
-say "The settings window opens on first run; add your OpenAI and OpenRouter keys."
+say "The settings window opens on first run; add an OpenAI, Groq or OpenRouter key."
 echo

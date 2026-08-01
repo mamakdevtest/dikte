@@ -1289,7 +1289,7 @@ class SettingsWindow(QDialog):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        ok, message = hotkey.install_kde_shortcut(combo, self.launch_command)
+        ok, message = hotkey.install_shortcut(combo, self.launch_command)
         QMessageBox.information(self, t("Shortcut"), message)
         if ok:
             self.conf["shortcut"] = combo
@@ -1297,14 +1297,15 @@ class SettingsWindow(QDialog):
         self._refresh_shortcut_status()
 
     def _remove_shortcut(self):
-        hotkey.remove_kde_shortcut()
+        hotkey.remove_shortcut()
         self._refresh_shortcut_status()
 
     def _refresh_shortcut_status(self):
-        current = hotkey.kde_shortcut_status()
+        current = hotkey.shortcut_status()
         self.shortcut_status.setText(
-            t("Registered in KDE: {shortcut}", shortcut=current) if current
-            else t("No KDE shortcut installed.")
+            t("Registered in {desktop}: {shortcut}",
+              desktop=hotkey.desktop_name(), shortcut=current) if current
+            else t("No global shortcut installed.")
         )
 
     def _install_meeting_shortcut(self):
@@ -1322,7 +1323,7 @@ class SettingsWindow(QDialog):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        ok, message = hotkey.install_kde_shortcut(
+        ok, message = hotkey.install_shortcut(
             combo, self.meeting_command, name="Dikte: start/end a meeting recording",
             desktop_id=hotkey.MEETING_DESKTOP_ID,
         )
@@ -1333,14 +1334,15 @@ class SettingsWindow(QDialog):
         self._refresh_meeting_shortcut_status()
 
     def _remove_meeting_shortcut(self):
-        hotkey.remove_kde_shortcut(hotkey.MEETING_DESKTOP_ID)
+        hotkey.remove_shortcut(hotkey.MEETING_DESKTOP_ID)
         self._refresh_meeting_shortcut_status()
 
     def _refresh_meeting_shortcut_status(self):
-        current = hotkey.kde_shortcut_status(hotkey.MEETING_DESKTOP_ID)
+        current = hotkey.shortcut_status(hotkey.MEETING_DESKTOP_ID)
         self.meeting_shortcut_status.setText(
-            t("Registered in KDE: {shortcut}", shortcut=current) if current
-            else t("No KDE shortcut installed. The tray menu starts a meeting too.")
+            t("Registered in {desktop}: {shortcut}",
+              desktop=hotkey.desktop_name(), shortcut=current) if current
+            else t("No global shortcut installed. The tray menu starts a meeting too.")
         )
 
     # ---- Claude ----------------------------------------------------------
@@ -1360,7 +1362,7 @@ class SettingsWindow(QDialog):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        ok, message = hotkey.install_kde_shortcut(
+        ok, message = hotkey.install_shortcut(
             combo, self.ask_command, name="Dikte: ask Claude Code",
             desktop_id=hotkey.ASK_DESKTOP_ID,
         )
@@ -1371,14 +1373,15 @@ class SettingsWindow(QDialog):
         self._refresh_ask_shortcut_status()
 
     def _remove_ask_shortcut(self):
-        hotkey.remove_kde_shortcut(hotkey.ASK_DESKTOP_ID)
+        hotkey.remove_shortcut(hotkey.ASK_DESKTOP_ID)
         self._refresh_ask_shortcut_status()
 
     def _refresh_ask_shortcut_status(self):
-        current = hotkey.kde_shortcut_status(hotkey.ASK_DESKTOP_ID)
+        current = hotkey.shortcut_status(hotkey.ASK_DESKTOP_ID)
         self.assistant_shortcut_status.setText(
-            t("Registered in KDE: {shortcut}", shortcut=current) if current
-            else t("No KDE shortcut installed. The tray menu asks it too.")
+            t("Registered in {desktop}: {shortcut}",
+              desktop=hotkey.desktop_name(), shortcut=current) if current
+            else t("No global shortcut installed. The tray menu asks it too.")
         )
 
     def _assistant_provider_changed(self):

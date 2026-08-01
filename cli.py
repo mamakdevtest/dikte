@@ -702,7 +702,7 @@ def cmd_shortcut(opts):
     if opts.shortcut == "status":
         rows = {}
         for name, (desktop_id, _label, key) in SHORTCUTS.items():
-            rows[name] = {"registered": hotkey.kde_shortcut_status(desktop_id),
+            rows[name] = {"registered": hotkey.shortcut_status(desktop_id),
                           "configured": conf[key]}
         lines = [f"{name:8} {row['registered'] or '(not installed)':16} "
                  f"setting: {row['configured'] or '(none)'}"
@@ -713,7 +713,7 @@ def cmd_shortcut(opts):
 
     desktop_id, label, key = SHORTCUTS[opts.which]
     if opts.shortcut == "remove":
-        hotkey.remove_kde_shortcut(desktop_id)
+        hotkey.remove_shortcut(desktop_id)
         return out(opts, {"ok": True, "removed": opts.which},
                    f"Removed the {opts.which} shortcut.")
 
@@ -727,7 +727,7 @@ def cmd_shortcut(opts):
         return fail(opts, f"{combo} is also used by: {', '.join(clashes[:6])}. "
                           "Pass --force to install it anyway.", 1, conflicts=clashes)
 
-    ok, message = hotkey.install_kde_shortcut(
+    ok, message = hotkey.install_shortcut(
         combo, ipc.command_for(opts.which), name=label, desktop_id=desktop_id,
     )
     if not ok:
