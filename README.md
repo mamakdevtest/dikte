@@ -25,7 +25,7 @@ just the Python standard library and PyQt6.
 sudo pacman -S --needed pipewire-audio wl-clipboard ydotool ffmpeg python-pyqt6
 systemctl --user enable --now ydotool     # needed for auto-paste
 
-./install.sh                 # or:  ./install.sh "Ctrl+Alt+Space"
+./install.sh                 # or:  ./install.sh "Meta+Space" "Meta+Shift+Space"
 dikte                        # the settings window opens on first run
 ```
 
@@ -36,8 +36,8 @@ tools instead:
 sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 ```
 
-`install.sh` adds the `dikte` command, a menu entry and an autostart entry. The
-settings window installs a GNOME or KDE global shortcut.
+`install.sh` adds the `dikte` command, a menu entry, an autostart entry and the
+two global shortcuts, whose keys are its two arguments.
 
 Three keys go in the settings window: **OpenAI**, **Groq** and **OpenRouter**.
 Speech to text runs on any of them (`gpt-4o-transcribe` by default), cleanup
@@ -53,7 +53,7 @@ set next to it.
 | What | How |
 | --- | --- |
 | Start / stop recording | `Ctrl+Space`, or click the tray icon |
-| Cancel a recording | Tray menu → *Cancel recording*, or `dikte cancel` |
+| Discard the recording | `Ctrl+Alt+Space`, tray menu, or `dikte cancel` |
 | Speak a command to an agent | Tray menu → *Ask Claude*, or `dikte ask` |
 | Start / end a meeting | Tray menu → *Record a meeting*, or `dikte meeting` |
 | Settings | Tray menu → *Settings*, or `dikte settings` |
@@ -127,11 +127,11 @@ running.
   right-click to delete.
 - **Turkish and English interface**, following the system locale by default.
 
-## The global shortcut needs one logout
+## The global shortcuts need one logout
 
-KWin only reads `kglobalshortcutsrc` at startup, so the shortcut `install.sh`
+KWin only reads `kglobalshortcutsrc` at startup, so the shortcuts `install.sh`
 writes will not fire until you log out and back in. Until then, Settings →
-Shortcut → **built-in listener** reads `/dev/input` and catches the combination
+Shortcuts → **built-in listener** reads `/dev/input` and catches the combination
 itself. The difference: it does not swallow the key, so `Ctrl+Space` also reaches
 the focused application (some editors will pop up autocomplete). The listener
 needs your user in the `input` group: `sudo usermod -aG input $USER`.

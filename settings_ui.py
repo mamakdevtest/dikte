@@ -19,6 +19,7 @@ import audio
 import config as cfg
 import filetranscribe
 import hotkey
+import ipc
 import meeting
 from filetranscribe import FileTranscriber
 from i18n import t
@@ -92,9 +93,9 @@ REASONING_LEVELS = [
     ("Very high", "xhigh"), ("Maximum", "max"),
 ]
 PASTE_SHORTCUTS = ["ctrl+v", "ctrl+shift+v", "shift+insert"]
-# Offered for all three global shortcuts, which keeps them one kind of field
-# rather than three. The boxes stay editable: this is a shortlist of
-# combinations that are usually free, not the set of ones that work.
+# Offered for every global shortcut, which keeps them one kind of field rather
+# than four. The boxes stay editable: this is a shortlist of combinations that
+# are usually free, not the set of ones that work.
 SHORTCUTS = [
     "Ctrl+Space", "Ctrl+Alt+Space", "Ctrl+Shift+Space", "Meta+Space",
     "Ctrl+Alt+A", "Ctrl+Alt+D", "Ctrl+Alt+M", "Ctrl+Alt+Q",
@@ -113,14 +114,15 @@ class SettingsWindow(QDialog):
     # Which key was tested, whether it worked, and what to write under it.
     _test_done = pyqtSignal(str, bool, str)
 
-    def __init__(self, conf, launch_command, meeting_command=None,
-                 meetings=None, ask_command=None, parent=None):
+    def __init__(self, conf, meetings=None, parent=None):
         super().__init__(parent)
         self.conf = conf
-        self.launch_command = launch_command
-        self.meeting_command = meeting_command or launch_command
-        self.ask_command = ask_command or launch_command
         self.meetings = meetings
+        # Filled in by _shortcut_row as the tabs are built: which combination
+        # box, status label and "nothing installed" line belong to each of the
+        # global shortcuts. One dictionary is what lets install, remove and the
+        # status line be written once instead of once per key.
+        self._shortcut_rows = {}
         # Each provider keeps its own transcription model, so switching the
         # provider back and forth never overwrites the other one's.
         self._models = dict.fromkeys(cfg.TRANSCRIBERS, "")
@@ -139,7 +141,7 @@ class SettingsWindow(QDialog):
         tabs.addTab(self._meeting_tab(), t("Meeting"))
         tabs.addTab(self._minutes_tab(), t("Minutes"))
         tabs.addTab(self._file_tab(), t("Audio file"))
-        tabs.addTab(self._shortcut_tab(), t("Shortcut"))
+        tabs.addTab(self._shortcut_tab(), t("Shortcuts"))
         tabs.addTab(self._history_tab(), t("History"))
 
         # Save keeps the window open, so the window is closed with the titlebar
@@ -360,16 +362,10 @@ class SettingsWindow(QDialog):
 
         how = QGroupBox(t("How it runs"))
         how_form = QFormLayout(how)
-        self.assistant_shortcut = self._shortcut_box(t("none"))
-        install = QPushButton(t("Install as a KDE shortcut"))
-        install.clicked.connect(self._install_ask_shortcut)
-        remove = QPushButton(t("Remove"))
-        remove.clicked.connect(self._remove_ask_shortcut)
-        how_form.addRow(t("Shortcut"),
-                        self._row(self.assistant_shortcut, install, remove))
-        self.assistant_shortcut_status = QLabel("")
-        self.assistant_shortcut_status.setWordWrap(True)
-        how_form.addRow(self.assistant_shortcut_status)
+        self._shortcut_row(
+            how_form, "ask", t("Shortcut"),
+            t("No global shortcut installed. The tray menu asks it too."),
+        )
 
         self.assistant_provider = QComboBox()
         for label, value in ASSISTANT_PROVIDERS:
@@ -622,16 +618,10 @@ class SettingsWindow(QDialog):
         ))
         recording_form.addRow("", self.meeting_keep_audio)
 
-        self.meeting_shortcut = self._shortcut_box(t("none"))
-        install = QPushButton(t("Install as a KDE shortcut"))
-        install.clicked.connect(self._install_meeting_shortcut)
-        remove = QPushButton(t("Remove"))
-        remove.clicked.connect(self._remove_meeting_shortcut)
-        recording_form.addRow(t("Shortcut"),
-                              self._row(self.meeting_shortcut, install, remove))
-        self.meeting_shortcut_status = QLabel("")
-        self.meeting_shortcut_status.setWordWrap(True)
-        recording_form.addRow(self.meeting_shortcut_status)
+        self._shortcut_row(
+            recording_form, "meeting", t("Shortcut"),
+            t("No global shortcut installed. The tray menu starts a meeting too."),
+        )
         layout.addWidget(recording)
 
         prompt_label = QLabel(t("System instruction given to the minutes model."))
@@ -772,24 +762,26 @@ class SettingsWindow(QDialog):
     def _shortcut_tab(self):
         page = QWidget()
         layout = QVBoxLayout(page)
+        # Both keys in one form, the way the Meeting and Agent tabs already lay
+        # theirs out. Two forms would give each row a label column of its own,
+        # and two combination boxes starting at different places read as two
+        # unrelated settings rather than the pair they are.
         form = QFormLayout()
-        self.shortcut = self._shortcut_box("Ctrl+Space")
-        form.addRow(t("Shortcut"), self.shortcut)
+        self._shortcut_row(
+            form, "toggle", t("Start and stop"),
+            t("No global shortcut installed."), placeholder="Ctrl+Space",
+        )
+        # Stopping is what sends the recording off to be transcribed, and that
+        # is the step there is no taking back. By the time the tray menu is
+        # open the sentence you did not mean to dictate is already on its way.
+        self._shortcut_row(
+            form, "cancel", t("Discard the recording"),
+            t("No global shortcut installed. The tray menu discards it too."),
+            tooltip=t("Throws the recording away without transcribing it. Works "
+                      "on a dictation and on a command for the agent alike, "
+                      "whichever is running."),
+        )
         layout.addLayout(form)
-
-        install = QPushButton(t("Install as a KDE shortcut"))
-        install.clicked.connect(self._install_shortcut)
-        remove = QPushButton(t("Remove"))
-        remove.clicked.connect(self._remove_shortcut)
-        row = QHBoxLayout()
-        row.addWidget(install)
-        row.addWidget(remove)
-        row.addStretch(1)
-        layout.addLayout(row)
-
-        self.shortcut_status = QLabel("")
-        self.shortcut_status.setWordWrap(True)
-        layout.addWidget(self.shortcut_status)
 
         self.evdev_enabled = QCheckBox(t(
             "Use the built-in listener (/dev/input), for when the KDE shortcut is "
@@ -904,6 +896,25 @@ class SettingsWindow(QDialog):
         self._testers[provider] = (button, answer)
         return field
 
+    def _shortcut_row(self, form, which, label, missing, placeholder="",
+                      tooltip=""):
+        """One global shortcut: the combination, Install, Remove, and a line
+        saying what the desktop has registered. `missing` is what that line
+        says when nothing is."""
+        box = self._shortcut_box(placeholder or t("none"))
+        if tooltip:
+            box.setToolTip(tooltip)
+        install = QPushButton(t("Install as a KDE shortcut"))
+        install.clicked.connect(lambda: self._install_shortcut(which))
+        remove = QPushButton(t("Remove"))
+        remove.clicked.connect(lambda: self._remove_shortcut(which))
+        form.addRow(label, self._row(box, install, remove))
+        status = QLabel("")
+        status.setWordWrap(True)
+        form.addRow(status)
+        self._shortcut_rows[which] = (box, status, missing)
+        return box
+
     @staticmethod
     def _row(*widgets):
         """Widgets side by side in one form row; the first one takes the space."""
@@ -947,7 +958,6 @@ class SettingsWindow(QDialog):
         )
         self.transcribe_prompt.setPlainText(conf["transcribe_prompt"])
 
-        self.assistant_shortcut.setCurrentText(conf["assistant_shortcut"])
         self._select_data(self.assistant_provider, conf["assistant_provider"])
         self.assistant_model.setCurrentText(conf["assistant_model"])
         self._select_data(self.assistant_permission, conf["assistant_permission_mode"])
@@ -976,7 +986,6 @@ class SettingsWindow(QDialog):
         self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
         self.meeting_max_minutes.setValue(max(5, int(conf["meeting_max_seconds"]) // 60))
         self.meeting_keep_audio.setChecked(conf["meeting_keep_audio"])
-        self.meeting_shortcut.setCurrentText(conf["meeting_shortcut"])
         self.meeting_prompt.setPlainText(
             conf["meeting_prompt"] or cfg.default_meeting_prompt()
         )
@@ -985,14 +994,14 @@ class SettingsWindow(QDialog):
         self.file_cleanup.setChecked(conf["file_cleanup"])
         self.file_path = ""
 
-        self.shortcut.setCurrentText(conf["shortcut"])
+        for which, (box, _status, _missing) in self._shortcut_rows.items():
+            box.setCurrentText(conf[hotkey.SHORTCUTS[which].setting])
         self.evdev_enabled.setChecked(conf["evdev_hotkey"])
 
         self.history_limit.setValue(max(0, int(conf["history_limit"])))
 
-        self._refresh_shortcut_status()
-        self._refresh_meeting_shortcut_status()
-        self._refresh_ask_shortcut_status()
+        for which in self._shortcut_rows:
+            self._refresh_shortcut_status(which)
         self._refresh_assistant_status()
         self._load_history()
         self._load_minutes()
@@ -1032,7 +1041,6 @@ class SettingsWindow(QDialog):
                                        else file_prompt)
         conf["transcribe_prompt"] = self.transcribe_prompt.toPlainText().strip()
 
-        conf["assistant_shortcut"] = self.assistant_shortcut.currentText().strip()
         conf["assistant_provider"] = self.assistant_provider.currentData() or "claude"
         conf["assistant_model"] = (self.assistant_model.currentText().strip()
                                    or cfg.DEFAULTS["assistant_model"])
@@ -1072,7 +1080,6 @@ class SettingsWindow(QDialog):
         conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
         conf["meeting_max_seconds"] = self.meeting_max_minutes.value() * 60
         conf["meeting_keep_audio"] = self.meeting_keep_audio.isChecked()
-        conf["meeting_shortcut"] = self.meeting_shortcut.currentText().strip()
         meeting_prompt = self.meeting_prompt.toPlainText().strip()
         conf["meeting_prompt"] = ("" if meeting_prompt == cfg.default_meeting_prompt()
                                   else meeting_prompt)
@@ -1080,7 +1087,12 @@ class SettingsWindow(QDialog):
         conf["file_timestamps"] = self.file_timestamps.isChecked()
         conf["file_cleanup"] = self.file_cleanup.isChecked()
 
-        conf["shortcut"] = self.shortcut.currentText().strip() or "Ctrl+Space"
+        # Left empty, only the toggle falls back to a default: the application
+        # is unusable without it. The other three stay empty, which is what
+        # turns them off.
+        for which, (box, _status, _missing) in self._shortcut_rows.items():
+            spec = hotkey.SHORTCUTS[which]
+            conf[spec.setting] = box.currentText().strip() or spec.fallback
         conf["evdev_hotkey"] = self.evdev_enabled.isChecked()
         conf["history_limit"] = self.history_limit.value()
         conf.save()
@@ -1293,45 +1305,17 @@ class SettingsWindow(QDialog):
         except OSError as exc:
             self.file_status.setText(t("Failed: {error}", error=exc))
 
-    # ---- shortcut --------------------------------------------------------
+    # ---- shortcuts -------------------------------------------------------
 
-    def _install_shortcut(self):
-        combo = self.shortcut.currentText().strip() or "Ctrl+Space"
-        clashes = hotkey.conflicting_shortcuts(combo)
-        if clashes:
-            answer = QMessageBox.question(
-                self, t("Shortcut conflict"),
-                t("{shortcut} is also used by:\n\n{list}\n\nInstall anyway?",
-                  shortcut=combo, list="\n".join(clashes[:6])),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-        ok, message = hotkey.install_shortcut(combo, self.launch_command)
-        QMessageBox.information(self, t("Shortcut"), message)
-        if ok:
-            self.conf["shortcut"] = combo
-            self.conf.save()
-        self._refresh_shortcut_status()
-
-    def _remove_shortcut(self):
-        hotkey.remove_shortcut()
-        self._refresh_shortcut_status()
-
-    def _refresh_shortcut_status(self):
-        current = hotkey.shortcut_status()
-        self.shortcut_status.setText(
-            t("Registered in {desktop}: {shortcut}",
-              desktop=hotkey.desktop_name(), shortcut=current) if current
-            else t("No global shortcut installed.")
-        )
-
-    def _install_meeting_shortcut(self):
-        combo = self.meeting_shortcut.currentText().strip()
+    def _install_shortcut(self, which):
+        spec = hotkey.SHORTCUTS[which]
+        box, _status, _missing = self._shortcut_rows[which]
+        combo = box.currentText().strip() or spec.fallback
         if not combo:
             QMessageBox.information(self, t("Shortcut"),
                                     t("Type a key combination first."))
             return
-        clashes = hotkey.conflicting_shortcuts(combo, hotkey.MEETING_DESKTOP_ID)
+        clashes = hotkey.conflicting_shortcuts(combo, spec.desktop_id)
         if clashes:
             answer = QMessageBox.question(
                 self, t("Shortcut conflict"),
@@ -1341,64 +1325,26 @@ class SettingsWindow(QDialog):
             if answer != QMessageBox.StandardButton.Yes:
                 return
         ok, message = hotkey.install_shortcut(
-            combo, self.meeting_command, name="Dikte: start/end a meeting recording",
-            desktop_id=hotkey.MEETING_DESKTOP_ID,
+            combo, ipc.command_for(spec.verb), name=spec.name,
+            desktop_id=spec.desktop_id,
         )
         QMessageBox.information(self, t("Shortcut"), message)
         if ok:
-            self.conf["meeting_shortcut"] = combo
+            self.conf[spec.setting] = combo
             self.conf.save()
-        self._refresh_meeting_shortcut_status()
+        self._refresh_shortcut_status(which)
 
-    def _remove_meeting_shortcut(self):
-        hotkey.remove_shortcut(hotkey.MEETING_DESKTOP_ID)
-        self._refresh_meeting_shortcut_status()
+    def _remove_shortcut(self, which):
+        hotkey.remove_shortcut(hotkey.SHORTCUTS[which].desktop_id)
+        self._refresh_shortcut_status(which)
 
-    def _refresh_meeting_shortcut_status(self):
-        current = hotkey.shortcut_status(hotkey.MEETING_DESKTOP_ID)
-        self.meeting_shortcut_status.setText(
+    def _refresh_shortcut_status(self, which):
+        _box, status, missing = self._shortcut_rows[which]
+        current = hotkey.shortcut_status(hotkey.SHORTCUTS[which].desktop_id)
+        status.setText(
             t("Registered in {desktop}: {shortcut}",
               desktop=hotkey.desktop_name(), shortcut=current) if current
-            else t("No global shortcut installed. The tray menu starts a meeting too.")
-        )
-
-    # ---- Claude ----------------------------------------------------------
-
-    def _install_ask_shortcut(self):
-        combo = self.assistant_shortcut.currentText().strip()
-        if not combo:
-            QMessageBox.information(self, t("Shortcut"),
-                                    t("Type a key combination first."))
-            return
-        clashes = hotkey.conflicting_shortcuts(combo, hotkey.ASK_DESKTOP_ID)
-        if clashes:
-            answer = QMessageBox.question(
-                self, t("Shortcut conflict"),
-                t("{shortcut} is also used by:\n\n{list}\n\nInstall anyway?",
-                  shortcut=combo, list="\n".join(clashes[:6])),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-        ok, message = hotkey.install_shortcut(
-            combo, self.ask_command, name="Dikte: ask Claude Code",
-            desktop_id=hotkey.ASK_DESKTOP_ID,
-        )
-        QMessageBox.information(self, t("Shortcut"), message)
-        if ok:
-            self.conf["assistant_shortcut"] = combo
-            self.conf.save()
-        self._refresh_ask_shortcut_status()
-
-    def _remove_ask_shortcut(self):
-        hotkey.remove_shortcut(hotkey.ASK_DESKTOP_ID)
-        self._refresh_ask_shortcut_status()
-
-    def _refresh_ask_shortcut_status(self):
-        current = hotkey.shortcut_status(hotkey.ASK_DESKTOP_ID)
-        self.assistant_shortcut_status.setText(
-            t("Registered in {desktop}: {shortcut}",
-              desktop=hotkey.desktop_name(), shortcut=current) if current
-            else t("No global shortcut installed. The tray menu asks it too.")
+            else missing
         )
 
     def _assistant_provider_changed(self):

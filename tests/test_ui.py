@@ -12,6 +12,7 @@ from unittest import mock
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 import config as cfg
+import hotkey
 import overlay as overlay_module
 import settings_ui
 from tests.support import DikteTest, only_these_tools
@@ -76,6 +77,7 @@ CHANGED = {
     "file_timestamps": True,
     "file_cleanup": False,
     "shortcut": "Ctrl+Alt+Space",
+    "cancel_shortcut": "Meta+Shift+Space",
     "evdev_hotkey": True,
     "history_limit": 50,
 }
@@ -98,7 +100,7 @@ class Settings(DikteTest):
                                             self.path("kglobalshortcutsrc")))
 
     def window(self, conf):
-        window = settings_ui.SettingsWindow(conf, "dikte toggle")
+        window = settings_ui.SettingsWindow(conf)
         self.addCleanup(window.deleteLater)
         self.addCleanup(window.close)
         return window
@@ -135,6 +137,37 @@ class Settings(DikteTest):
         stored = self.read_config_file()
         self.assertEqual(stored["speech_margin_db"], 15.0)
         self.assertEqual(stored["openrouter_base_url"], "http://localhost:1234/v1")
+
+    def test_every_global_shortcut_has_a_row_of_its_own(self):
+        window = self.window(cfg.Config())
+        self.assertEqual(set(window._shortcut_rows), set(hotkey.SHORTCUTS))
+
+    def test_emptying_a_shortcut_turns_it_off_but_not_the_toggle(self):
+        """The application is unusable without the toggle, so that one box
+        falls back. The rest stay empty, which is how they are switched off."""
+        conf = cfg.Config()
+        window = self.window(conf)
+        for box, _status, _missing in window._shortcut_rows.values():
+            box.setCurrentText("")
+        window._save()
+        self.assertEqual(conf["shortcut"], "Ctrl+Space")
+        self.assertEqual(conf["cancel_shortcut"], "")
+        self.assertEqual(conf["assistant_shortcut"], "")
+        self.assertEqual(conf["meeting_shortcut"], "")
+
+    def test_installing_the_discard_key_writes_its_own_entry(self):
+        conf = cfg.Config()
+        window = self.window(conf)
+        window._shortcut_rows["cancel"][0].setCurrentText("Meta+Shift+Space")
+        with mock.patch.object(settings_ui.hotkey, "install_shortcut",
+                               return_value=(True, "saved")) as install:
+            window._install_shortcut("cancel")
+        combo, command = install.call_args.args
+        self.assertEqual(combo, "Meta+Shift+Space")
+        self.assertTrue(command.endswith(" cancel"))
+        self.assertEqual(install.call_args.kwargs["desktop_id"],
+                         hotkey.CANCEL_DESKTOP_ID)
+        self.assertEqual(conf["cancel_shortcut"], "Meta+Shift+Space")
 
     def test_a_prompt_left_at_its_default_is_stored_as_empty(self):
         """So that switching the interface language switches the prompt too."""

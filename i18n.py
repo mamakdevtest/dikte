@@ -56,7 +56,7 @@ TR = {
     "Start recording": "Kaydı başlat",
     "Stop and transcribe": "Kaydı bitir ve yaz",
     "Working…": "İşleniyor…",
-    "Cancel recording": "Kaydı iptal et",
+    "Discard the recording": "Kaydı iptal et",
     "Settings…": "Ayarlar…",
     "Restart": "Yeniden başlat",
     "Quit": "Çık",
@@ -133,6 +133,7 @@ TR = {
     "Cleanup rules": "Temizleme kuralları",
     "Audio file": "Ses dosyası",
     "Shortcut": "Kısayol",
+    "Shortcuts": "Kısayollar",
     "History": "Geçmiş",
     "Save": "Kaydet",
     "Saved successfully.": "Başarıyla kaydedildi.",
@@ -282,6 +283,13 @@ TR = {
         "Global kısayol kurulu değil. Toplantı tepsi menüsünden de başlatılabilir.",
     "No global shortcut installed. The tray menu asks it too.":
         "Global kısayol kurulu değil. Tepsi menüsünden de soru sorulabilir.",
+    "No global shortcut installed. The tray menu discards it too.":
+        "Global kısayol kurulu değil. Kayıt tepsi menüsünden de iptal edilebilir.",
+    "Start and stop": "Başlat ve bitir",
+    "Throws the recording away without transcribing it. Works on a dictation "
+    "and on a command for the agent alike, whichever is running.":
+        "Kaydı yazıya dökmeden atar. Hangisi çalışıyorsa ona işler: dikteye de, "
+        "ajana verilen komuta da.",
     "Shortcut saved: {shortcut}": "Kısayol kaydedildi: {shortcut}",
     "Could not register the GNOME shortcut: {error}":
         "GNOME kısayolu kaydedilemedi: {error}",
