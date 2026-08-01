@@ -25,6 +25,7 @@ import wave
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import api
+import cleanup
 import config as cfg
 import filetranscribe
 import vad
@@ -118,12 +119,18 @@ class MeetingPipeline(QObject):
 
             self._check()
             self._say(t("Writing the minutes…"))
-            writer = self.conf.minutes_target()
-            minutes = api.cleanup(writer, transcript, self.conf.meeting_prompt(),
-                                  timeout=600)
+            minutes = api.cleanup(
+                transcript,
+                self.conf.openrouter_key(),
+                self.conf["meeting_model"],
+                self.conf.meeting_prompt(),
+                reasoning=self.conf["meeting_reasoning"],
+                base_url=self.conf["openrouter_base_url"],
+                timeout=600,
+            )
             title = self._write(doc_path, minutes, transcript, entry)
             cfg.update_meeting(base, status="done", error="", title=title,
-                               model=writer.model)
+                               model=self.conf["meeting_model"])
             self._discard_audio(wav_path)
             self.finished.emit(base, title)
 
@@ -195,7 +202,6 @@ class MeetingPipeline(QObject):
     def _cleanup(self, transcript):
         conf = self.conf
         prompt = conf.cleanup_prompt(with_timestamps=True, with_speakers=True)
-        target = conf.cleanup_target()
         out = []
         blocks = filetranscribe.split_text(transcript, True)
         for index, block in enumerate(blocks, start=1):
@@ -203,7 +209,7 @@ class MeetingPipeline(QObject):
             if len(blocks) > 1:
                 self._say(t("Cleaning up {index}/{count}…",
                             index=index, count=len(blocks)))
-            out.append(api.cleanup(target, block, prompt))
+            out.append(cleanup.run(block, conf, prompt, timeout=600))
         return "\n".join(out)
 
     def _write(self, doc_path, minutes, transcript, entry):

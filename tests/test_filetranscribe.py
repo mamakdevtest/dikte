@@ -197,7 +197,7 @@ class Transcriber(DikteTest):
 
     def test_cleanup_is_told_it_is_writing_subtitles(self):
         _, _, _, cleanup_call = self.run_chain(cleanup=True)
-        prompt = cleanup_call.call_args.args[2]
+        prompt = cleanup_call.call_args.args[3]
         self.assertEqual(prompt, self.conf.cleanup_prompt(subtitles=True))
 
     def test_timestamps_come_back_as_segments_and_as_stamped_lines(self):

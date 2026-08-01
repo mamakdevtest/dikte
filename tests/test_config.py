@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 import api
+import cleanup
 import config as cfg
 import ggml
 import i18n
@@ -126,6 +127,10 @@ class Keys(DikteTest):
     def test_no_key_anywhere(self):
         self.assertEqual(cfg.Config().openai_key(), "")
 
+    def test_every_provider_falls_back_to_the_variable_of_its_own_name(self):
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "gsk-env"}):
+            self.assertEqual(cfg.Config().groq_key(), "gsk-env")
+
 
 class TranscribeTarget(DikteTest):
     def test_this_machine_by_default(self):
@@ -154,6 +159,21 @@ class TranscribeTarget(DikteTest):
         self.assertEqual(target.service, "OpenRouter")
         self.assertEqual(target.api_key, "sk-or-test")
         self.assertEqual(target.model, "openai/whisper-1")
+
+    def test_groq_when_it_is_picked(self):
+        conf = self.config(transcribe_provider="groq", groq_api_key="gsk-test",
+                           groq_transcribe_model="whisper-large-v3")
+        target = conf.transcribe_target()
+        self.assertEqual(target.provider, "groq")
+        self.assertEqual(target.service, "Groq")
+        self.assertEqual(target.api_key, "gsk-test")
+        self.assertEqual(target.base_url, api.GROQ_URL)
+        self.assertEqual(target.model, "whisper-large-v3")
+
+    def test_a_provider_this_version_has_never_heard_of(self):
+        """A config written by a fork, or by a version that dropped one."""
+        target = self.config(transcribe_provider="deepgram").transcribe_target()
+        self.assertEqual(target.provider, "openai")
 
     def test_a_self_hosted_endpoint(self):
         conf = self.config(transcribe_provider="openai",
@@ -438,31 +458,27 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class LocalTargets(DikteTest):
-    def test_cleanup_can_run_here_while_the_minutes_do_not(self):
-        # The two jobs are not the same size: a small model on this machine
-        # strips filler words perfectly well and will not write up an hour.
-        conf = self.config(cleanup_provider="local", local_llm_model="gemma.gguf")
-        self.assertEqual(conf.cleanup_target().provider, "local-llm")
-        self.assertEqual(conf.minutes_target().provider, "openrouter")
-        self.assertEqual(conf.minutes_target().model, cfg.DEFAULTS["meeting_model"])
+class LocalCleanup(DikteTest):
+    def test_the_local_model_is_what_the_history_records(self):
+        conf = self.config(cleanup_provider="local",
+                           local_llm_model="gemma-3-4b-it-Q4_K_M.gguf")
+        self.assertEqual(cleanup.provider(conf), "local")
+        self.assertEqual(cleanup.model(conf), "gemma-3-4b-it-Q4_K_M.gguf")
 
-    def test_the_minutes_can_run_here_on_their_own(self):
-        conf = self.config(meeting_provider="local", local_llm_model="gemma.gguf")
-        self.assertEqual(conf.minutes_target().model, "gemma.gguf")
-        self.assertEqual(conf.cleanup_target().provider, "openrouter")
+    def test_it_needs_no_program_on_the_path(self):
+        # whisper.cpp and llama.cpp are fetched rather than installed, so unlike
+        # Claude Code and Codex there is no executable to look for.
+        self.assertEqual(cleanup.executable("local"), "")
 
-    def test_the_local_cleanup_target_carries_the_thinking_level(self):
-        conf = self.config(cleanup_provider="local", local_llm_model="gemma.gguf",
-                           local_llm_reasoning="none")
-        target = conf.cleanup_target()
-        self.assertEqual(target.reasoning, "none")
-        self.assertEqual(target.api_key, "")
+    def test_the_minutes_do_not_follow_the_cleanup_provider(self):
+        # A 4B model here will strip the filler words out of a dictation and
+        # will not write up an hour long meeting.
+        conf = self.config(cleanup_provider="local")
+        self.assertEqual(conf["meeting_model"], cfg.DEFAULTS["meeting_model"])
 
-    def test_either_of_them_counts_as_using_the_local_model(self):
+    def test_only_the_cleanup_setting_asks_for_the_local_model(self):
         self.assertFalse(cfg.Config().uses_local_llm())
         self.assertTrue(self.config(cleanup_provider="local").uses_local_llm())
-        self.assertTrue(self.config(meeting_provider="local").uses_local_llm())
 
 
 class ReadyToRun(DikteTest):

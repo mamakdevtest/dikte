@@ -17,6 +17,7 @@ import wave
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import api
+import cleanup
 from i18n import t
 
 CHUNK_SECONDS = 600          # 10 min ≈ 19 MB at 16 kHz mono s16
@@ -127,11 +128,10 @@ class FileTranscriber(QObject):
     def _cleanup(self, text, timestamps):
         conf = self.conf
         prompt = conf.cleanup_prompt(with_timestamps=timestamps, subtitles=True)
-        target = conf.cleanup_target()
         out = []
         for block in split_text(text, timestamps):
             self._check()
-            out.append(api.cleanup(target, block, prompt))
+            out.append(cleanup.run(block, conf, prompt))
         return ("\n" if timestamps else "\n\n").join(out)
 
 

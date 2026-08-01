@@ -1,5 +1,6 @@
 """Settings storage in ~/.config/dikte/config.json"""
 
+import collections
 import hashlib
 import json
 import os
@@ -365,10 +366,13 @@ DEFAULTS = {
     "ui_language": "auto",          # auto | tr | en
     "openai_api_key": "",
     "openai_base_url": "https://api.openai.com/v1",
+    "groq_api_key": "",
+    "groq_base_url": "https://api.groq.com/openai/v1",
     "openrouter_api_key": "",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
-    "transcribe_provider": "local",  # local | openai | openrouter
+    "transcribe_provider": "local",  # "local", or a key of TRANSCRIBERS
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
+    "groq_transcribe_model": "whisper-large-v3-turbo",
     "openrouter_transcribe_model": "openai/gpt-4o-transcribe",
     "language": "tr",
     "transcribe_prompt": "",
@@ -387,8 +391,10 @@ DEFAULTS = {
     "local_binary": "",             # empty -> whichever copy ggml.py finds
 
     "cleanup_enabled": True,
-    "cleanup_provider": "openrouter",   # openrouter | local
+    "cleanup_provider": "openrouter",  # a name in cleanup.PROVIDERS
     "cleanup_model": "google/gemini-3.5-flash-lite",
+    "cleanup_claude_model": "haiku",   # Claude Code: an alias, or a full model id
+    "cleanup_codex_model": "",         # empty -> whatever Codex is set to
     "cleanup_reasoning": "",        # empty -> whatever the model does by default
 
     # --- llama.cpp, on this machine -----------------------------------------
@@ -419,6 +425,10 @@ DEFAULTS = {
     "min_voiced_seconds": 0.3,
     "filter_hallucinations": True,
     "shortcut": "Ctrl+Space",
+    # Ctrl+Alt+Space rather than Escape: the combination the recording started
+    # with, one modifier along. Escape belongs to whatever window has focus, and
+    # while you are dictating something else usually has it.
+    "cancel_shortcut": "Ctrl+Alt+Space",
     "evdev_hotkey": False,
     "overlay_corner": "bottom-left",
     "keep_audio": False,
@@ -434,7 +444,6 @@ DEFAULTS = {
     "meeting_language": "",         # empty -> the dictation speech language
     "meeting_max_seconds": 14400,   # 4 hours
     "meeting_cleanup": True,
-    "meeting_provider": "openrouter",   # openrouter | local
     "meeting_model": "google/gemini-3.5-flash",
     "meeting_reasoning": "",
     "meeting_prompt": "",           # empty -> language-specific default
@@ -472,6 +481,22 @@ LEGACY_PROMPTS = {
     "a318043a6fef0022d969f3b15221b29de4ec8777",  # 1.1 Turkish
     "2a8d55b8c9156944615ed988e0f27c5cc26e979f",  # 1.2 Turkish
     "154fc5aca1166f00eebda705f848f0391bfbf5fe",  # 1.2 English
+}
+
+# Every provider speech to text can run on, and the four settings that describe
+# one. A fifth is a row here rather than another branch in transcribe_target(),
+# another key row in the settings window and another line in save and load. The
+# order is the order the provider box offers them in. `service` is the name the
+# user sees; the environment variable that stands in for an empty key is the
+# name of its setting, shouted.
+Transcriber = collections.namedtuple("Transcriber", "service key url model")
+TRANSCRIBERS = {
+    "openai": Transcriber("OpenAI", "openai_api_key", "openai_base_url",
+                          "transcribe_model"),
+    "groq": Transcriber("Groq", "groq_api_key", "groq_base_url",
+                        "groq_transcribe_model"),
+    "openrouter": Transcriber("OpenRouter", "openrouter_api_key",
+                              "openrouter_base_url", "openrouter_transcribe_model"),
 }
 
 # Corners used to be stored with Turkish names.
@@ -522,55 +547,40 @@ class Config:
     def get(self, key, default=None):
         return self.data.get(key, DEFAULTS.get(key, default))
 
+    def api_key(self, setting):
+        """A stored key, or the environment variable that shares its name."""
+        return self[setting].strip() or os.environ.get(setting.upper(), "").strip()
+
     def openai_key(self):
-        """Fall back to the environment when no key is stored."""
-        return self["openai_api_key"].strip() or os.environ.get("OPENAI_API_KEY", "").strip()
+        return self.api_key("openai_api_key")
+
+    def groq_key(self):
+        return self.api_key("groq_api_key")
 
     def openrouter_key(self):
-        return self["openrouter_api_key"].strip() or os.environ.get("OPENROUTER_API_KEY", "").strip()
+        return self.api_key("openrouter_api_key")
 
     def transcribe_target(self):
         """Key, endpoint and model for whichever provider does speech to text.
 
-        The local one leaves its base URL empty on purpose: the server picks a
-        port when it starts, and starting it here would make reading a setting
-        launch a process. api.py fills the address in when it is about to send
-        the request, which is the moment the server is needed anyway.
+        The local one is not in the table and leaves its base URL empty on
+        purpose: the server picks a port when it starts, and reading a setting
+        must not be what launches a process. api.py fills the address in when it
+        is about to send the request, which is the moment the server is needed
+        anyway.
         """
-        provider = self["transcribe_provider"]
-        if provider == "local":
+        name = self["transcribe_provider"]
+        if name == "local":
             return api.Target("local", t("Local whisper"), "", "",
                               self["local_model"])
-        if provider == "openrouter":
-            return api.Target("openrouter", "OpenRouter", self.openrouter_key(),
-                              self["openrouter_base_url"],
-                              self["openrouter_transcribe_model"])
-        return api.Target("openai", "OpenAI", self.openai_key(),
-                          self["openai_base_url"], self["transcribe_model"])
-
-    def cleanup_target(self):
-        """The same, for the model that tidies a transcript up."""
-        if self["cleanup_provider"] == "local":
-            return api.Target("local-llm", t("Local model"), "", "",
-                              self["local_llm_model"], self["local_llm_reasoning"])
-        return api.Target("openrouter", "OpenRouter", self.openrouter_key(),
-                          self["openrouter_base_url"], self["cleanup_model"],
-                          self["cleanup_reasoning"])
-
-    def minutes_target(self):
-        """The same again, for the minutes.
-
-        Its own provider rather than the cleanup one. The two jobs are not the
-        same size: a 4B model on this machine will strip the filler words out of
-        a dictation perfectly well and will not write up an hour long meeting,
-        so choosing it for the first must not quietly choose it for the second.
-        """
-        if self["meeting_provider"] == "local":
-            return api.Target("local-llm", t("Local model"), "", "",
-                              self["local_llm_model"], self["local_llm_reasoning"])
-        return api.Target("openrouter", "OpenRouter", self.openrouter_key(),
-                          self["openrouter_base_url"], self["meeting_model"],
-                          self["meeting_reasoning"])
+        if name not in TRANSCRIBERS:
+            # A config written by a fork, or by a version that dropped one. The
+            # shipped default is not in the table, so this names the hosted one
+            # to land on rather than reading it from there.
+            name = "openai"
+        who = TRANSCRIBERS[name]
+        return api.Target(name, who.service, self.api_key(who.key),
+                          self[who.url], self[who.model])
 
     def transcribe_ready(self):
         """Whether speech to text could run right now, without opening Settings."""
@@ -606,7 +616,7 @@ class Config:
 
     def uses_local_llm(self):
         """Whether anything is set to run the local cleanup model."""
-        return "local" in (self["cleanup_provider"], self["meeting_provider"])
+        return self["cleanup_provider"] == "local"
 
     def cleanup_prompt(self, with_timestamps=False, with_speakers=False,
                        subtitles=False):

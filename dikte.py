@@ -160,8 +160,10 @@ class Dikte:
         self.ask_cancel_action.setEnabled(False)
         self.menu.addAction(self.ask_cancel_action)
 
-        self.cancel_action = QAction(t("Cancel recording"), self.menu)
-        self.cancel_action.triggered.connect(self.cancel)
+        self.cancel_action = QAction(t("Discard the recording"), self.menu)
+        # The inner method, so that a menu click is never mistaken for the KDE
+        # shortcut echoing the built-in listener's press.
+        self.cancel_action.triggered.connect(self._cancel)
         self.cancel_action.setEnabled(False)
         self.menu.addAction(self.cancel_action)
         self.menu.addSeparator()
@@ -314,6 +316,9 @@ class Dikte:
     def toggle_meeting(self):
         self._external("meeting", self._toggle_meeting)
 
+    def cancel(self):
+        self._external("cancel", self._cancel)
+
     def _external(self, name, handler):
         # The built-in listener sees the key press the instant it happens, so a
         # toggle arriving right behind one is the KDE shortcut catching up on
@@ -331,7 +336,8 @@ class Dikte:
         if timer is None:
             timer = self.last_evdev[name] = QElapsedTimer()
         timer.restart()
-        handlers = {"meeting": self._toggle_meeting, "ask": self._toggle_ask}
+        handlers = {"meeting": self._toggle_meeting, "ask": self._toggle_ask,
+                    "cancel": self._cancel}
         handlers.get(name, self._toggle)()
 
     def _retire_listener(self):
@@ -524,7 +530,7 @@ class Dikte:
         self.ask_overlay.show_busy(t("Transcribing…"))
         self.recorder.stop()
 
-    def cancel(self):
+    def _cancel(self):
         """Throw away whichever recording is running."""
         if not self.recording:
             return
@@ -548,7 +554,7 @@ class Dikte:
     def cancel_ask(self):
         """Call off the agent, whether it is still recording or already working."""
         if self.ask_state == RECORDING:
-            self.cancel()
+            self._cancel()
         elif self.ask_state == BUSY:
             self.ask_overlay.show_busy(t("Stopping…"))
             self.ask_pipeline.cancel()
@@ -796,10 +802,7 @@ class Dikte:
 
     def open_settings(self):
         if self.settings_window is None:
-            self.settings_window = SettingsWindow(
-                self.conf, launch_command(), meeting_command(), self.meetings,
-                ask_command(),
-            )
+            self.settings_window = SettingsWindow(self.conf, self.meetings)
             self.settings_window.applied.connect(self._apply_settings)
             self.settings_window.finished.connect(self._settings_closed)
         self.settings_window.show()
@@ -851,9 +854,8 @@ class Dikte:
         self._build_tray()
         self._refresh_tray()
         if self.conf["evdev_hotkey"]:
-            self.evdev.start({"toggle": self.conf["shortcut"],
-                              "ask": self.conf["assistant_shortcut"],
-                              "meeting": self.conf["meeting_shortcut"]})
+            self.evdev.start({name: self.conf[spec.setting]
+                              for name, spec in hotkey.SHORTCUTS.items()})
         else:
             self.evdev.stop()
 
@@ -893,19 +895,6 @@ def _clock(seconds):
     hours, minutes = divmod(minutes, 60)
     return (f"{hours}:{minutes:02d}:{secs:02d}" if hours
             else f"{minutes}:{secs:02d}")
-
-
-def launch_command():
-    """The command the KDE shortcut will run."""
-    return ipc.command_for("toggle")
-
-
-def meeting_command():
-    return ipc.command_for("meeting")
-
-
-def ask_command():
-    return ipc.command_for("ask")
 
 
 def main():

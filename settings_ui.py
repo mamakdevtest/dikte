@@ -16,10 +16,12 @@ from PyQt6.QtWidgets import (
 import api
 import assistant
 import audio
+import cleanup
 import config as cfg
 import filetranscribe
 import ggml
 import hotkey
+import ipc
 import meeting
 from filetranscribe import FileTranscriber
 from i18n import t
@@ -30,14 +32,15 @@ LANGUAGES = [
     ("German", "de"), ("French", "fr"), ("Spanish", "es"), ("Arabic", "ar"),
 ]
 CORNERS = ["bottom-left", "bottom-right", "top-left", "top-right"]
-TRANSCRIBE_PROVIDERS = [("This machine (whisper.cpp)", "local"),
-                        ("OpenAI", "openai"), ("OpenRouter", "openrouter")]
-CLEANUP_PROVIDERS = [("OpenRouter", "openrouter"),
-                     ("This machine (llama.cpp)", "local")]
+# The provider box offers what config knows how to reach, this machine first.
+TRANSCRIBE_PROVIDERS = ([("This machine (whisper.cpp)", "local")]
+                        + [(who.service, name)
+                           for name, who in cfg.TRANSCRIBERS.items()])
 # Starting points for the model box; "Fetch model list" replaces them with
 # whatever the provider offers today.
 TRANSCRIBE_MODELS = {
     "openai": ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"],
+    "groq": ["whisper-large-v3-turbo", "whisper-large-v3"],
     "openrouter": [
         "openai/gpt-4o-transcribe", "openai/gpt-4o-mini-transcribe",
         "openai/whisper-1", "openai/whisper-large-v3",
@@ -50,6 +53,16 @@ CLEANUP_MODELS = [
     "google/gemini-2.5-flash-lite", "anthropic/claude-haiku-4.5",
     "openai/gpt-5-mini", "meta-llama/llama-3.3-70b-instruct",
 ]
+# In the order they answer in. A request to OpenRouter is over in a second, a
+# model here takes a little longer and costs nothing, and the two CLIs the agent
+# can run on open a whole session to do the smaller job.
+CLEANUP_PROVIDERS = [
+    ("OpenRouter", "openrouter"), ("This machine (llama.cpp)", "local"),
+    ("Claude Code", "claude"), ("Codex", "codex"),
+]
+# Cleaning up a sentence is the lightest thing either of them will ever be
+# asked, so the small model comes first.
+CLEANUP_CLAUDE_MODELS = ["haiku", "sonnet", "opus", "fable"]
 # Minutes are a harder job than cleanup: an hour of talk has to be read whole
 # and turned into decisions, so the starting points are the larger models.
 MEETING_MODELS = [
@@ -94,9 +107,9 @@ REASONING_LEVELS = [
     ("Very high", "xhigh"), ("Maximum", "max"),
 ]
 PASTE_SHORTCUTS = ["ctrl+v", "ctrl+shift+v", "shift+insert"]
-# Offered for all three global shortcuts, which keeps them one kind of field
-# rather than three. The boxes stay editable: this is a shortlist of
-# combinations that are usually free, not the set of ones that work.
+# Offered for every global shortcut, which keeps them one kind of field rather
+# than four. The boxes stay editable: this is a shortlist of combinations that
+# are usually free, not the set of ones that work.
 SHORTCUTS = [
     "Ctrl+Space", "Ctrl+Alt+Space", "Ctrl+Shift+Space", "Meta+Space",
     "Ctrl+Alt+A", "Ctrl+Alt+D", "Ctrl+Alt+M", "Ctrl+Alt+Q",
@@ -444,20 +457,23 @@ class SettingsWindow(QDialog):
 
     _models_loaded = pyqtSignal(list, str)
     _transcribe_models_loaded = pyqtSignal(list, str)
-    _test_done = pyqtSignal(bool, str)
-    _or_test_done = pyqtSignal(bool, str)
+    # Which key was tested, whether it worked, and what to write under it.
+    _test_done = pyqtSignal(str, bool, str)
 
-    def __init__(self, conf, launch_command, meeting_command=None,
-                 meetings=None, ask_command=None, parent=None):
+    def __init__(self, conf, meetings=None, parent=None):
         super().__init__(parent)
         self.conf = conf
-        self.launch_command = launch_command
-        self.meeting_command = meeting_command or launch_command
-        self.ask_command = ask_command or launch_command
         self.meetings = meetings
+        # Filled in by _shortcut_row as the tabs are built: which combination
+        # box, status label and "nothing installed" line belong to each of the
+        # global shortcuts. One dictionary is what lets install, remove and the
+        # status line be written once instead of once per key.
+        self._shortcut_rows = {}
         # Each provider keeps its own transcription model, so switching the
         # provider back and forth never overwrites the other one's.
-        self._models = {"openai": "", "openrouter": ""}
+        self._models = dict.fromkeys(cfg.TRANSCRIBERS, "")
+        self._key_fields = {}
+        self._testers = {}
         self._shown_provider = ""
         self.transcriber = FileTranscriber(conf, self)
         self.setWindowTitle(t("Dikte Settings"))
@@ -471,7 +487,7 @@ class SettingsWindow(QDialog):
         tabs.addTab(self._meeting_tab(), t("Meeting"))
         tabs.addTab(self._minutes_tab(), t("Minutes"))
         tabs.addTab(self._file_tab(), t("Audio file"))
-        tabs.addTab(self._shortcut_tab(), t("Shortcut"))
+        tabs.addTab(self._shortcut_tab(), t("Shortcuts"))
         tabs.addTab(self._history_tab(), t("History"))
 
         # Save keeps the window open, so the window is closed with the titlebar
@@ -488,7 +504,6 @@ class SettingsWindow(QDialog):
         self._models_loaded.connect(self._on_models_loaded)
         self._transcribe_models_loaded.connect(self._on_transcribe_models_loaded)
         self._test_done.connect(self._on_test_done)
-        self._or_test_done.connect(self._on_or_test_done)
         self.transcriber.progress.connect(self._on_file_progress)
         self.transcriber.finished.connect(self._on_file_finished)
         self.transcriber.failed.connect(self._on_file_failed)
@@ -584,25 +599,15 @@ class SettingsWindow(QDialog):
         # them and a key no longer belongs to a single job.
         keys = QGroupBox(t("Keys"))
         keys_form = QFormLayout(keys)
-        self.openai_key = QLineEdit()
-        self.openai_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.openai_key.setPlaceholderText(t("sk-… (falls back to OPENAI_API_KEY)"))
-        self.test_button = QPushButton(t("Test"))
-        self.test_button.clicked.connect(self._test_openai)
-        self.test_label = QLabel("")
-        self.test_label.setWordWrap(True)
-        keys_form.addRow("OpenAI", self._row(self.openai_key, self.test_button))
-        keys_form.addRow("", self.test_label)
-
-        self.openrouter_key = QLineEdit()
-        self.openrouter_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.openrouter_key.setPlaceholderText(t("sk-or-… (falls back to OPENROUTER_API_KEY)"))
-        self.or_test_button = QPushButton(t("Test"))
-        self.or_test_button.clicked.connect(self._test_openrouter)
-        self.or_test_label = QLabel("")
-        self.or_test_label.setWordWrap(True)
-        keys_form.addRow("OpenRouter", self._row(self.openrouter_key, self.or_test_button))
-        keys_form.addRow("", self.or_test_label)
+        self.openai_key = self._key_row(
+            keys_form, "openai", t("sk-… (falls back to OPENAI_API_KEY)"),
+            self._test_openai)
+        self.groq_key = self._key_row(
+            keys_form, "groq", t("gsk_… (falls back to GROQ_API_KEY)"),
+            self._test_groq)
+        self.openrouter_key = self._key_row(
+            keys_form, "openrouter", t("sk-or-… (falls back to OPENROUTER_API_KEY)"),
+            self._test_openrouter)
         outer.addWidget(keys)
 
         stt = QGroupBox(t("Speech to text"))
@@ -612,25 +617,22 @@ class SettingsWindow(QDialog):
             self.transcribe_provider.addItem(t(label), value)
         stt_form.addRow(t("Provider"), self.transcribe_provider)
 
-        # The hosted providers take any model id that is typed at them; the
-        # local one offers what has been published, so the two are separate
-        # blocks and only one of them is ever visible.
-        self.hosted_stt = QWidget()
-        hosted_form = QFormLayout(self.hosted_stt)
-        hosted_form.setContentsMargins(0, 0, 0, 0)
+        # A hosted provider takes any model id that is typed at it; the local
+        # one offers what has been published. One row each, and only the rows of
+        # whoever is chosen are on screen.
+        self.stt_form = stt_form
         self.transcribe_model = QComboBox()
         self.transcribe_model.setEditable(True)
         self.refresh_transcribe_models = QPushButton(t("Fetch model list"))
         self.refresh_transcribe_models.clicked.connect(self._load_transcribe_models)
-        hosted_form.addRow(t("Model"),
-                           self._row(self.transcribe_model,
-                                     self.refresh_transcribe_models))
+        self.transcribe_model_row = self._row(self.transcribe_model,
+                                              self.refresh_transcribe_models)
+        stt_form.addRow(t("Model"), self.transcribe_model_row)
         # A spanning row: in the narrow field column a wrapped label gets a
         # height that fits one line, and the rest of the text is cut off.
         self.transcribe_status = QLabel("")
         self.transcribe_status.setWordWrap(True)
-        hosted_form.addRow(self.transcribe_status)
-        stt_form.addRow(self.hosted_stt)
+        stt_form.addRow(self.transcribe_status)
 
         self.local_whisper = LocalModelBox(
             ggml.WHISPER, t("On this machine"),
@@ -662,26 +664,43 @@ class SettingsWindow(QDialog):
         outer.addWidget(stt)
 
         orr = QGroupBox(t("Transcript cleanup"))
-        orr_form = QFormLayout(orr)
+        orr_form = self.cleanup_form = QFormLayout(orr)
         self.cleanup_enabled = QCheckBox(t("Clean the transcript with a model"))
         orr_form.addRow("", self.cleanup_enabled)
 
         self.cleanup_provider = QComboBox()
         for label, value in CLEANUP_PROVIDERS:
             self.cleanup_provider.addItem(t(label), value)
+        self.cleanup_provider.setToolTip(t(
+            "OpenRouter is the quickest and the only one that needs nothing "
+            "installed. llama.cpp runs here, on a model downloaded below. Claude "
+            "Code and Codex clean up on the subscription you already have, "
+            "without a second key, and take a few seconds longer because each "
+            "one opens a session to do it."
+        ))
         self.cleanup_provider.currentIndexChanged.connect(self._cleanup_provider_changed)
-        orr_form.addRow(t("Provider"), self.cleanup_provider)
+        orr_form.addRow(t("Runs on"), self.cleanup_provider)
 
-        self.hosted_cleanup = QWidget()
-        cleanup_form = QFormLayout(self.hosted_cleanup)
-        cleanup_form.setContentsMargins(0, 0, 0, 0)
         self.cleanup_model = QComboBox()
         self.cleanup_model.setEditable(True)
         self.cleanup_model.addItems(CLEANUP_MODELS)
         self.refresh_models = QPushButton(t("Fetch model list"))
         self.refresh_models.clicked.connect(self._load_models)
-        cleanup_form.addRow(t("Model"), self._row(self.cleanup_model,
-                                                  self.refresh_models))
+        self.cleanup_model_row = self._row(self.cleanup_model, self.refresh_models)
+        orr_form.addRow(t("Model"), self.cleanup_model_row)
+
+        # One row per provider rather than one box that means a different thing
+        # in each: an OpenRouter id and a Claude alias do not belong in the same
+        # field, and only the row of whoever is chosen is on screen.
+        self.cleanup_claude_model = QComboBox()
+        self.cleanup_claude_model.setEditable(True)
+        self.cleanup_claude_model.addItems(CLEANUP_CLAUDE_MODELS)
+        orr_form.addRow(t("Model"), self.cleanup_claude_model)
+
+        self.cleanup_codex_model = QComboBox()
+        self.cleanup_codex_model.setEditable(True)
+        self.cleanup_codex_model.addItems([t("Codex's own default")] + CODEX_MODELS)
+        orr_form.addRow(t("Model"), self.cleanup_codex_model)
 
         self.cleanup_reasoning = QComboBox()
         for label, value in REASONING_LEVELS:
@@ -691,12 +710,11 @@ class SettingsWindow(QDialog):
               "a light job, so more thinking mostly costs time and tokens. Models "
               "that cannot think ignore this.")
         )
-        cleanup_form.addRow(t("Thinking"), self.cleanup_reasoning)
+        orr_form.addRow(t("Thinking"), self.cleanup_reasoning)
 
         self.models_label = QLabel(t("Runs on OpenRouter."))
         self.models_label.setWordWrap(True)
-        cleanup_form.addRow(self.models_label)
-        orr_form.addRow(self.hosted_cleanup)
+        orr_form.addRow(self.models_label)
 
         self.local_llm = LocalModelBox(
             ggml.LLAMA, t("On this machine"),
@@ -717,6 +735,7 @@ class SettingsWindow(QDialog):
               "waiting. Off is what cleanup wants."))
         self.local_llm_options = QWidget()
         llm_form = QFormLayout(self.local_llm_options)
+
         llm_form.setContentsMargins(0, 0, 0, 0)
         llm_form.addRow("", self.local_llm_gpu)
         llm_form.addRow("", self.local_llm_preload)
@@ -779,16 +798,10 @@ class SettingsWindow(QDialog):
 
         how = QGroupBox(t("How it runs"))
         how_form = QFormLayout(how)
-        self.assistant_shortcut = self._shortcut_box(t("none"))
-        install = QPushButton(t("Install as a KDE shortcut"))
-        install.clicked.connect(self._install_ask_shortcut)
-        remove = QPushButton(t("Remove"))
-        remove.clicked.connect(self._remove_ask_shortcut)
-        how_form.addRow(t("Shortcut"),
-                        self._row(self.assistant_shortcut, install, remove))
-        self.assistant_shortcut_status = QLabel("")
-        self.assistant_shortcut_status.setWordWrap(True)
-        how_form.addRow(self.assistant_shortcut_status)
+        self._shortcut_row(
+            how_form, "ask", t("Shortcut"),
+            t("No global shortcut installed. The tray menu asks it too."),
+        )
 
         self.assistant_provider = QComboBox()
         for label, value in ASSISTANT_PROVIDERS:
@@ -1041,16 +1054,10 @@ class SettingsWindow(QDialog):
         ))
         recording_form.addRow("", self.meeting_keep_audio)
 
-        self.meeting_shortcut = self._shortcut_box(t("none"))
-        install = QPushButton(t("Install as a KDE shortcut"))
-        install.clicked.connect(self._install_meeting_shortcut)
-        remove = QPushButton(t("Remove"))
-        remove.clicked.connect(self._remove_meeting_shortcut)
-        recording_form.addRow(t("Shortcut"),
-                              self._row(self.meeting_shortcut, install, remove))
-        self.meeting_shortcut_status = QLabel("")
-        self.meeting_shortcut_status.setWordWrap(True)
-        recording_form.addRow(self.meeting_shortcut_status)
+        self._shortcut_row(
+            recording_form, "meeting", t("Shortcut"),
+            t("No global shortcut installed. The tray menu starts a meeting too."),
+        )
         layout.addWidget(recording)
 
         prompt_label = QLabel(t("System instruction given to the minutes model."))
@@ -1191,24 +1198,26 @@ class SettingsWindow(QDialog):
     def _shortcut_tab(self):
         page = QWidget()
         layout = QVBoxLayout(page)
+        # Both keys in one form, the way the Meeting and Agent tabs already lay
+        # theirs out. Two forms would give each row a label column of its own,
+        # and two combination boxes starting at different places read as two
+        # unrelated settings rather than the pair they are.
         form = QFormLayout()
-        self.shortcut = self._shortcut_box("Ctrl+Space")
-        form.addRow(t("Shortcut"), self.shortcut)
+        self._shortcut_row(
+            form, "toggle", t("Start and stop"),
+            t("No global shortcut installed."), placeholder="Ctrl+Space",
+        )
+        # Stopping is what sends the recording off to be transcribed, and that
+        # is the step there is no taking back. By the time the tray menu is
+        # open the sentence you did not mean to dictate is already on its way.
+        self._shortcut_row(
+            form, "cancel", t("Discard the recording"),
+            t("No global shortcut installed. The tray menu discards it too."),
+            tooltip=t("Throws the recording away without transcribing it. Works "
+                      "on a dictation and on a command for the agent alike, "
+                      "whichever is running."),
+        )
         layout.addLayout(form)
-
-        install = QPushButton(t("Install as a KDE shortcut"))
-        install.clicked.connect(self._install_shortcut)
-        remove = QPushButton(t("Remove"))
-        remove.clicked.connect(self._remove_shortcut)
-        row = QHBoxLayout()
-        row.addWidget(install)
-        row.addWidget(remove)
-        row.addStretch(1)
-        layout.addLayout(row)
-
-        self.shortcut_status = QLabel("")
-        self.shortcut_status.setWordWrap(True)
-        layout.addWidget(self.shortcut_status)
 
         self.evdev_enabled = QCheckBox(t(
             "Use the built-in listener (/dev/input), for when the KDE shortcut is "
@@ -1303,6 +1312,45 @@ class SettingsWindow(QDialog):
             box.lineEdit().setPlaceholderText(placeholder)
         return box
 
+    def _key_row(self, form, provider, placeholder, tester):
+        """A key field, its Test button and the line the answer lands on.
+
+        The field and the pair the answer needs are filed under the provider's
+        name, so saving, loading and the test handler find them by name rather
+        than through three attributes each.
+        """
+        field = QLineEdit()
+        field.setEchoMode(QLineEdit.EchoMode.Password)
+        field.setPlaceholderText(placeholder)
+        button = QPushButton(t("Test"))
+        button.clicked.connect(tester)
+        answer = QLabel("")
+        answer.setWordWrap(True)
+        form.addRow(cfg.TRANSCRIBERS[provider].service, self._row(field, button))
+        form.addRow("", answer)
+        self._key_fields[provider] = field
+        self._testers[provider] = (button, answer)
+        return field
+
+    def _shortcut_row(self, form, which, label, missing, placeholder="",
+                      tooltip=""):
+        """One global shortcut: the combination, Install, Remove, and a line
+        saying what the desktop has registered. `missing` is what that line
+        says when nothing is."""
+        box = self._shortcut_box(placeholder or t("none"))
+        if tooltip:
+            box.setToolTip(tooltip)
+        install = QPushButton(t("Install as a KDE shortcut"))
+        install.clicked.connect(lambda: self._install_shortcut(which))
+        remove = QPushButton(t("Remove"))
+        remove.clicked.connect(lambda: self._remove_shortcut(which))
+        form.addRow(label, self._row(box, install, remove))
+        status = QLabel("")
+        status.setWordWrap(True)
+        form.addRow(status)
+        self._shortcut_rows[which] = (box, status, missing)
+        return box
+
     @staticmethod
     def _row(*widgets):
         """Widgets side by side in one form row; the first one takes the space."""
@@ -1331,10 +1379,9 @@ class SettingsWindow(QDialog):
         self.filter_hallucinations.setChecked(conf["filter_hallucinations"])
         self.keep_audio.setChecked(conf["keep_audio"])
 
-        self.openai_key.setText(conf["openai_api_key"])
-        self.openrouter_key.setText(conf["openrouter_api_key"])
-        self._models = {"openai": conf["transcribe_model"],
-                        "openrouter": conf["openrouter_transcribe_model"]}
+        for name, who in cfg.TRANSCRIBERS.items():
+            self._key_fields[name].setText(conf[who.key])
+            self._models[name] = conf[who.model]
         self._shown_provider = ""
         self._select_data(self.transcribe_provider, conf["transcribe_provider"])
         self._provider_changed()  # selecting index 0 fires no signal
@@ -1344,9 +1391,13 @@ class SettingsWindow(QDialog):
         self.local_whisper.load(conf["local_model"])
 
         self.cleanup_enabled.setChecked(conf["cleanup_enabled"])
-        self._select_data(self.cleanup_provider, conf["cleanup_provider"])
-        self._cleanup_provider_changed()
         self.cleanup_model.setCurrentText(conf["cleanup_model"])
+        self.cleanup_claude_model.setCurrentText(conf["cleanup_claude_model"])
+        self.cleanup_codex_model.setCurrentText(
+            conf["cleanup_codex_model"] or t("Codex's own default")
+        )
+        self._select_data(self.cleanup_provider, conf["cleanup_provider"])
+        self._cleanup_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.cleanup_reasoning, conf["cleanup_reasoning"])
         self.local_llm_gpu.setChecked(conf["local_llm_gpu"])
         self.local_llm_preload.setChecked(conf["local_llm_preload"])
@@ -1358,7 +1409,6 @@ class SettingsWindow(QDialog):
         )
         self.transcribe_prompt.setPlainText(conf["transcribe_prompt"])
 
-        self.assistant_shortcut.setCurrentText(conf["assistant_shortcut"])
         self._select_data(self.assistant_provider, conf["assistant_provider"])
         self.assistant_model.setCurrentText(conf["assistant_model"])
         self._select_data(self.assistant_permission, conf["assistant_permission_mode"])
@@ -1387,7 +1437,6 @@ class SettingsWindow(QDialog):
         self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
         self.meeting_max_minutes.setValue(max(5, int(conf["meeting_max_seconds"]) // 60))
         self.meeting_keep_audio.setChecked(conf["meeting_keep_audio"])
-        self.meeting_shortcut.setCurrentText(conf["meeting_shortcut"])
         self.meeting_prompt.setPlainText(
             conf["meeting_prompt"] or cfg.default_meeting_prompt()
         )
@@ -1396,14 +1445,14 @@ class SettingsWindow(QDialog):
         self.file_cleanup.setChecked(conf["file_cleanup"])
         self.file_path = ""
 
-        self.shortcut.setCurrentText(conf["shortcut"])
+        for which, (box, _status, _missing) in self._shortcut_rows.items():
+            box.setCurrentText(conf[hotkey.SHORTCUTS[which].setting])
         self.evdev_enabled.setChecked(conf["evdev_hotkey"])
 
         self.history_limit.setValue(max(0, int(conf["history_limit"])))
 
-        self._refresh_shortcut_status()
-        self._refresh_meeting_shortcut_status()
-        self._refresh_ask_shortcut_status()
+        for which in self._shortcut_rows:
+            self._refresh_shortcut_status(which)
         self._refresh_assistant_status()
         self._load_history()
         self._load_minutes()
@@ -1423,16 +1472,13 @@ class SettingsWindow(QDialog):
         conf["filter_hallucinations"] = self.filter_hallucinations.isChecked()
         conf["keep_audio"] = self.keep_audio.isChecked()
 
-        conf["openai_api_key"] = self.openai_key.text().strip()
-        conf["openrouter_api_key"] = self.openrouter_key.text().strip()
-
         provider = self.transcribe_provider.currentData() or "local"
-        if provider in TRANSCRIBE_MODELS:
+        if provider in self._models:
             self._models[provider] = self.transcribe_model.currentText().strip()
         conf["transcribe_provider"] = provider
-        for key, name in (("openai", "transcribe_model"),
-                          ("openrouter", "openrouter_transcribe_model")):
-            conf[name] = self._models[key].strip() or cfg.DEFAULTS[name]
+        for name, who in cfg.TRANSCRIBERS.items():
+            conf[who.key] = self._key_fields[name].text().strip()
+            conf[who.model] = self._models[name].strip() or cfg.DEFAULTS[who.model]
         conf["local_model"] = self.local_whisper.selected()
         conf["local_gpu"] = self.local_gpu.isChecked()
         conf["local_preload"] = self.local_preload.isChecked()
@@ -1441,6 +1487,12 @@ class SettingsWindow(QDialog):
         conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
         conf["cleanup_provider"] = self.cleanup_provider.currentData() or "openrouter"
         conf["cleanup_model"] = self.cleanup_model.currentText().strip()
+        conf["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip()
+                                        or cfg.DEFAULTS["cleanup_claude_model"])
+        codex_cleanup_model = self.cleanup_codex_model.currentText().strip()
+        conf["cleanup_codex_model"] = (
+            "" if codex_cleanup_model == t("Codex's own default") else codex_cleanup_model
+        )
         conf["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
         conf["local_llm_model"] = self.local_llm.selected()
         conf["local_llm_repo"] = self.local_llm.repository()
@@ -1457,7 +1509,6 @@ class SettingsWindow(QDialog):
                                        else file_prompt)
         conf["transcribe_prompt"] = self.transcribe_prompt.toPlainText().strip()
 
-        conf["assistant_shortcut"] = self.assistant_shortcut.currentText().strip()
         conf["assistant_provider"] = self.assistant_provider.currentData() or "claude"
         conf["assistant_model"] = (self.assistant_model.currentText().strip()
                                    or cfg.DEFAULTS["assistant_model"])
@@ -1497,7 +1548,6 @@ class SettingsWindow(QDialog):
         conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
         conf["meeting_max_seconds"] = self.meeting_max_minutes.value() * 60
         conf["meeting_keep_audio"] = self.meeting_keep_audio.isChecked()
-        conf["meeting_shortcut"] = self.meeting_shortcut.currentText().strip()
         meeting_prompt = self.meeting_prompt.toPlainText().strip()
         conf["meeting_prompt"] = ("" if meeting_prompt == cfg.default_meeting_prompt()
                                   else meeting_prompt)
@@ -1505,7 +1555,12 @@ class SettingsWindow(QDialog):
         conf["file_timestamps"] = self.file_timestamps.isChecked()
         conf["file_cleanup"] = self.file_cleanup.isChecked()
 
-        conf["shortcut"] = self.shortcut.currentText().strip() or "Ctrl+Space"
+        # Left empty, only the toggle falls back to a default: the application
+        # is unusable without it. The other three stay empty, which is what
+        # turns them off.
+        for which, (box, _status, _missing) in self._shortcut_rows.items():
+            spec = hotkey.SHORTCUTS[which]
+            conf[spec.setting] = box.currentText().strip() or spec.fallback
         conf["evdev_hotkey"] = self.evdev_enabled.isChecked()
         conf["history_limit"] = self.history_limit.value()
         conf.save()
@@ -1532,9 +1587,10 @@ class SettingsWindow(QDialog):
         provider = self.transcribe_provider.currentData() or "local"
         self._shown_provider = provider
         local = provider == "local"
-        self.hosted_stt.setVisible(not local)
-        self.local_whisper.setVisible(local)
-        self.local_options.setVisible(local)
+        self.stt_form.setRowVisible(self.transcribe_model_row, not local)
+        self.stt_form.setRowVisible(self.transcribe_status, not local)
+        self.stt_form.setRowVisible(self.local_whisper, local)
+        self.stt_form.setRowVisible(self.local_options, local)
         if local:
             return
         self.transcribe_model.clear()
@@ -1542,26 +1598,19 @@ class SettingsWindow(QDialog):
         self.transcribe_model.setCurrentText(self._models[provider])
         self.transcribe_status.setText("")
 
-    def _cleanup_provider_changed(self):
-        local = (self.cleanup_provider.currentData() or "openrouter") == "local"
-        self.hosted_cleanup.setVisible(not local)
-        self.local_llm.setVisible(local)
-        self.local_llm_options.setVisible(local)
-
     def _load_transcribe_models(self):
         """The model list of whichever provider is selected."""
         provider = self.transcribe_provider.currentData() or "openai"
         self.refresh_transcribe_models.setEnabled(False)
         self.transcribe_status.setText(t("Fetching model list…"))
-        openai_key = self.openai_key.text().strip() or self.conf.openai_key()
-        openrouter_key = self.openrouter_key.text().strip() or self.conf.openrouter_key()
-        base = self.conf["openai_base_url"]
+        key, base = self._typed_key(provider)
+        service = cfg.TRANSCRIBERS[provider].service
 
         def work():
             try:
-                models = (api.openrouter_models(openrouter_key, transcription=True)
+                models = (api.openrouter_models(key, transcription=True)
                           if provider == "openrouter"
-                          else api.openai_models(openai_key, base))
+                          else api.openai_models(key, base, service))
                 self._transcribe_models_loaded.emit(models, "")
             except api.ApiError as exc:
                 self._transcribe_models_loaded.emit([], str(exc))
@@ -1605,42 +1654,51 @@ class SettingsWindow(QDialog):
         self.models_label.setText(t("{count} models loaded.", count=len(models)))
 
     def _test_openai(self):
-        self.test_button.setEnabled(False)
-        self.test_label.setText(t("Trying…"))
-        key = self.openai_key.text().strip() or self.conf.openai_key()
-        base = self.conf["openai_base_url"]
+        key, base = self._typed_key("openai")
+        self._test_key("openai", lambda: t(
+            "Connection works. {count} audio models visible.",
+            count=len(api.openai_models(key, base)),
+        ))
 
-        def work():
-            try:
-                models = api.openai_models(key, base)
-                self._test_done.emit(
-                    True, t("Connection works. {count} audio models visible.", count=len(models))
-                )
-            except api.ApiError as exc:
-                self._test_done.emit(False, str(exc))
-
-        threading.Thread(target=work, daemon=True).start()
+    def _test_groq(self):
+        key, base = self._typed_key("groq")
+        self._test_key("groq", lambda: t(
+            "Connection works. {count} audio models visible.",
+            count=len(api.openai_models(key, base, cfg.TRANSCRIBERS["groq"].service)),
+        ))
 
     def _test_openrouter(self):
-        self.or_test_button.setEnabled(False)
-        self.or_test_label.setText(t("Trying…"))
-        key = self.openrouter_key.text().strip() or self.conf.openrouter_key()
+        key, _ = self._typed_key("openrouter")
+        self._test_key("openrouter", lambda: api.openrouter_key_status(key))
+
+    def _typed_key(self, provider):
+        """(key, base URL) for a provider, preferring what is in the field now."""
+        who = cfg.TRANSCRIBERS[provider]
+        typed = self._key_fields[provider].text().strip()
+        return typed or self.conf.api_key(who.key), self.conf[who.url]
+
+    def _test_key(self, provider, ask):
+        """Run `ask` off the interface thread and write its answer under the key.
+
+        `ask` returns the line to show, or raises ApiError with the line to show
+        instead; either way it is read from a field before the thread starts.
+        """
+        button, answer = self._testers[provider]
+        button.setEnabled(False)
+        answer.setText(t("Trying…"))
 
         def work():
             try:
-                self._or_test_done.emit(True, api.openrouter_key_status(key))
+                self._test_done.emit(provider, True, ask())
             except api.ApiError as exc:
-                self._or_test_done.emit(False, str(exc))
+                self._test_done.emit(provider, False, str(exc))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _on_or_test_done(self, ok, message):
-        self.or_test_button.setEnabled(True)
-        self.or_test_label.setText(("✓ " if ok else "✗ ") + message)
-
-    def _on_test_done(self, ok, message):
-        self.test_button.setEnabled(True)
-        self.test_label.setText(("✓ " if ok else "✗ ") + message)
+    def _on_test_done(self, provider, ok, message):
+        button, answer = self._testers[provider]
+        button.setEnabled(True)
+        answer.setText(("✓ " if ok else "✗ ") + message)
 
     # ---- audio file ------------------------------------------------------
 
@@ -1722,45 +1780,17 @@ class SettingsWindow(QDialog):
         except OSError as exc:
             self.file_status.setText(t("Failed: {error}", error=exc))
 
-    # ---- shortcut --------------------------------------------------------
+    # ---- shortcuts -------------------------------------------------------
 
-    def _install_shortcut(self):
-        combo = self.shortcut.currentText().strip() or "Ctrl+Space"
-        clashes = hotkey.conflicting_shortcuts(combo)
-        if clashes:
-            answer = QMessageBox.question(
-                self, t("Shortcut conflict"),
-                t("{shortcut} is also used by:\n\n{list}\n\nInstall anyway?",
-                  shortcut=combo, list="\n".join(clashes[:6])),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-        ok, message = hotkey.install_shortcut(combo, self.launch_command)
-        QMessageBox.information(self, t("Shortcut"), message)
-        if ok:
-            self.conf["shortcut"] = combo
-            self.conf.save()
-        self._refresh_shortcut_status()
-
-    def _remove_shortcut(self):
-        hotkey.remove_shortcut()
-        self._refresh_shortcut_status()
-
-    def _refresh_shortcut_status(self):
-        current = hotkey.shortcut_status()
-        self.shortcut_status.setText(
-            t("Registered in {desktop}: {shortcut}",
-              desktop=hotkey.desktop_name(), shortcut=current) if current
-            else t("No global shortcut installed.")
-        )
-
-    def _install_meeting_shortcut(self):
-        combo = self.meeting_shortcut.currentText().strip()
+    def _install_shortcut(self, which):
+        spec = hotkey.SHORTCUTS[which]
+        box, _status, _missing = self._shortcut_rows[which]
+        combo = box.currentText().strip() or spec.fallback
         if not combo:
             QMessageBox.information(self, t("Shortcut"),
                                     t("Type a key combination first."))
             return
-        clashes = hotkey.conflicting_shortcuts(combo, hotkey.MEETING_DESKTOP_ID)
+        clashes = hotkey.conflicting_shortcuts(combo, spec.desktop_id)
         if clashes:
             answer = QMessageBox.question(
                 self, t("Shortcut conflict"),
@@ -1770,65 +1800,54 @@ class SettingsWindow(QDialog):
             if answer != QMessageBox.StandardButton.Yes:
                 return
         ok, message = hotkey.install_shortcut(
-            combo, self.meeting_command, name="Dikte: start/end a meeting recording",
-            desktop_id=hotkey.MEETING_DESKTOP_ID,
+            combo, ipc.command_for(spec.verb), name=spec.name,
+            desktop_id=spec.desktop_id,
         )
         QMessageBox.information(self, t("Shortcut"), message)
         if ok:
-            self.conf["meeting_shortcut"] = combo
+            self.conf[spec.setting] = combo
             self.conf.save()
-        self._refresh_meeting_shortcut_status()
+        self._refresh_shortcut_status(which)
 
-    def _remove_meeting_shortcut(self):
-        hotkey.remove_shortcut(hotkey.MEETING_DESKTOP_ID)
-        self._refresh_meeting_shortcut_status()
+    def _remove_shortcut(self, which):
+        hotkey.remove_shortcut(hotkey.SHORTCUTS[which].desktop_id)
+        self._refresh_shortcut_status(which)
 
-    def _refresh_meeting_shortcut_status(self):
-        current = hotkey.shortcut_status(hotkey.MEETING_DESKTOP_ID)
-        self.meeting_shortcut_status.setText(
+    def _refresh_shortcut_status(self, which):
+        _box, status, missing = self._shortcut_rows[which]
+        current = hotkey.shortcut_status(hotkey.SHORTCUTS[which].desktop_id)
+        status.setText(
             t("Registered in {desktop}: {shortcut}",
               desktop=hotkey.desktop_name(), shortcut=current) if current
-            else t("No global shortcut installed. The tray menu starts a meeting too.")
+            else missing
         )
 
-    # ---- Claude ----------------------------------------------------------
-
-    def _install_ask_shortcut(self):
-        combo = self.assistant_shortcut.currentText().strip()
-        if not combo:
-            QMessageBox.information(self, t("Shortcut"),
-                                    t("Type a key combination first."))
-            return
-        clashes = hotkey.conflicting_shortcuts(combo, hotkey.ASK_DESKTOP_ID)
-        if clashes:
-            answer = QMessageBox.question(
-                self, t("Shortcut conflict"),
-                t("{shortcut} is also used by:\n\n{list}\n\nInstall anyway?",
-                  shortcut=combo, list="\n".join(clashes[:6])),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-        ok, message = hotkey.install_shortcut(
-            combo, self.ask_command, name="Dikte: ask Claude Code",
-            desktop_id=hotkey.ASK_DESKTOP_ID,
-        )
-        QMessageBox.information(self, t("Shortcut"), message)
-        if ok:
-            self.conf["assistant_shortcut"] = combo
-            self.conf.save()
-        self._refresh_ask_shortcut_status()
-
-    def _remove_ask_shortcut(self):
-        hotkey.remove_shortcut(hotkey.ASK_DESKTOP_ID)
-        self._refresh_ask_shortcut_status()
-
-    def _refresh_ask_shortcut_status(self):
-        current = hotkey.shortcut_status(hotkey.ASK_DESKTOP_ID)
-        self.assistant_shortcut_status.setText(
-            t("Registered in {desktop}: {shortcut}",
-              desktop=hotkey.desktop_name(), shortcut=current) if current
-            else t("No global shortcut installed. The tray menu asks it too.")
-        )
+    def _cleanup_provider_changed(self):
+        provider = self.cleanup_provider.currentData() or "openrouter"
+        self.cleanup_form.setRowVisible(self.cleanup_model_row,
+                                        provider == "openrouter")
+        self.cleanup_form.setRowVisible(self.cleanup_claude_model,
+                                        provider == "claude")
+        self.cleanup_form.setRowVisible(self.cleanup_codex_model,
+                                        provider == "codex")
+        self.cleanup_form.setRowVisible(self.cleanup_reasoning,
+                                        provider != "local")
+        self.cleanup_form.setRowVisible(self.local_llm, provider == "local")
+        self.cleanup_form.setRowVisible(self.local_llm_options, provider == "local")
+        binary = cleanup.executable(provider)
+        found = shutil.which(binary) if binary else ""
+        if provider == "local":
+            self.models_label.setText(t("Runs on this machine, on llama.cpp."))
+        elif not binary:
+            self.models_label.setText(t("Runs on OpenRouter."))
+        elif found:
+            self.models_label.setText(t("Found: {path}", path=found))
+        else:
+            self.models_label.setText(t(
+                "{binary} is not on your PATH, so cleanup would fail and the raw "
+                "transcript would be pasted. Install it, or pick another one "
+                "above.", binary=binary,
+            ))
 
     def _assistant_provider_changed(self):
         provider = self.assistant_provider.currentData() or "claude"

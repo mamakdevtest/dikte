@@ -1,14 +1,13 @@
-"""OpenAI, OpenRouter and this machine, stdlib only.
+"""OpenAI, Groq, OpenRouter and this machine, stdlib only.
 
-Transcription runs on any of three providers and cleanup on two, and none of
-them needs code of its own. OpenRouter mirrors OpenAI's /audio/transcriptions
-endpoint field for field, and ggml.py starts whisper.cpp on that same path, so
-one multipart request serves all three; llama.cpp answers /chat/completions the
-way OpenRouter does, so one JSON request serves both. What changes between them
-is the key, the base URL and the model id.
+Transcription runs on any of the four: Groq and OpenRouter both mirror OpenAI's
+/audio/transcriptions endpoint field for field, and ggml.py starts whisper.cpp
+on that same path, so one multipart request serves all of them and only the key,
+the base URL and the model id change. llama.cpp answers /chat/completions the way
+OpenRouter does, so cleanup here is the same request too.
 
-The local ones have no key, and their base URL is not known until a server is
-up, which is the one thing this module has to fill in for them.
+What is on this machine has no key, and its base URL is not known until a server
+is up, which is the one thing this module has to fill in for it.
 """
 
 import collections
@@ -25,6 +24,7 @@ from i18n import t
 APP_URL = "https://github.com/yusufipk/dikte"
 USER_AGENT = f"dikte/1.0 (+{APP_URL})"
 OPENAI_URL = "https://api.openai.com/v1"
+GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 
 # The floor for a local request. The timeouts elsewhere are sized for a hosted
@@ -33,23 +33,23 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1"
 # deal of it. Cutting that off would throw the work away for nothing.
 LOCAL_TIMEOUT = 3600
 
-# Where a request goes; built by config.Config's *_target() methods. `service`
-# is the name the user sees in an error, `provider` the one the code branches
-# on. `reasoning` is only read by cleanup, which is the only job with a model
-# that might think about anything.
-Target = collections.namedtuple(
-    "Target", "provider service api_key base_url model reasoning", defaults=("",))
+# Where a transcription request goes; built by config.Config.transcribe_target().
+# `service` is the name the user sees in an error, `provider` the one the code
+# branches on.
+Target = collections.namedtuple("Target", "provider service api_key base_url model")
 
 
-def timestamp_model(provider, model):
-    """Only whisper-1 returns segment times, and OpenRouter namespaces the id.
+def timestamp_model(provider, selected=""):
+    """Which model answers with segment times.
 
-    Whisper is what the local server runs whatever the file is called, so there
-    it stays on the model that is already loaded; asking for another one would
-    name a model that server has never heard of.
+    OpenAI keeps them to whisper-1 and OpenRouter namespaces that id. Everything
+    Groq transcribes with is a whisper, so the model already chosen does it and
+    the fallback is only for a provider left on its default. So is everything the
+    local server runs, whatever the file is called, and there asking for another
+    model would name one it has never heard of.
     """
-    if provider == "local":
-        return model
+    if provider in ("groq", "local"):
+        return selected or "whisper-large-v3-turbo"
     return "openai/whisper-1" if provider == "openrouter" else "whisper-1"
 
 
@@ -141,34 +141,36 @@ def _headers(provider, api_key, content_type=None):
     return headers
 
 
-def _serving(target, server, timeout):
-    """A local target with the address of a running server in it.
+def serving(server):
+    """The base URL of a local server, started if it is not up yet.
 
-    The server is started on demand and picks its own port, so this is the first
-    moment its address exists. serve() is idempotent: once it is up this costs
-    nothing.
+    It picks its own port, so this is the first moment its address exists.
+    serve() is idempotent: once it is running this costs nothing.
     """
     try:
-        return target._replace(base_url=server.serve()), max(timeout, LOCAL_TIMEOUT)
+        return server.serve()
     except ggml.LocalError as exc:
         raise ApiError(str(exc)) from None
 
 
-def _local_failure(target, server, exc):
+def local_failure(service, server, exc):
     """A server that died mid-request, explained by its own output.
 
     Without this the message is that the connection dropped, when the reason for
     it was printed by the process at the other end.
     """
     detail = server.error()
-    return ApiError(f"{target.service}: {exc}" + (f" ({detail})" if detail else ""),
+    return ApiError(f"{service}: {exc}" + (f" ({detail})" if detail else ""),
                     exc.status)
 
 
 def _transcribe_request(target, wav_path, language, prompt, response_format,
                         granularity=None, timeout=300):
     if target.provider == "local":
-        target, timeout = _serving(target, ggml.whisper, timeout)
+        # The timeouts here are sized for a hosted API, where a slow answer is a
+        # bill running. Locally the only thing being spent is time.
+        target = target._replace(base_url=serving(ggml.whisper))
+        timeout = max(timeout, LOCAL_TIMEOUT)
     elif not target.api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
                          service=target.service))
@@ -178,7 +180,7 @@ def _transcribe_request(target, wav_path, language, prompt, response_format,
     # OpenRouter takes the hint field and throws it away, so spare it the bytes.
     # The same words still reach the cleanup model as a glossary. whisper.cpp
     # takes it as the initial prompt, the way OpenAI does.
-    if prompt and target.provider in ("openai", "local"):
+    if prompt and target.provider != "openrouter":
         fields.append(("prompt", prompt))
     if granularity:
         fields.append(("timestamp_granularities[]", granularity))
@@ -190,7 +192,7 @@ def _transcribe_request(target, wav_path, language, prompt, response_format,
         )
     except ApiError as exc:
         if target.provider == "local":
-            raise _local_failure(target, ggml.whisper, exc) from None
+            raise local_failure(target.service, ggml.whisper, exc) from None
         raise explain(exc, target.service) from None
 
 
@@ -274,29 +276,27 @@ def transcribe_segments(target, wav_path, language="", prompt="", timeout=300):
     return out
 
 
-def _thinking(target, payload):
+def _thinking(payload, provider, reasoning):
     """Ask for as much thinking as this provider understands, or for none.
 
     An empty level means "whatever the model does on its own", so nothing is
-    sent. The two providers mean opposite things by that, which is why the
-    setting is kept per provider: OpenRouter's cleanup models answer straight
-    away, while a local model that was trained to think will think, and cleanup
-    is punctuation rather than a job worth thinking about.
+    sent. The two mean opposite things by that, which is why the setting is kept
+    per provider: OpenRouter's cleanup models answer straight away, while a local
+    model that was trained to think will think, and cleanup is punctuation rather
+    than a job worth thinking about.
     """
-    if not target.reasoning:
+    if not reasoning:
         return
-    if target.provider == "local-llm":
-        # What llama.cpp passes to the chat template. The models that think
-        # read it; the ones that do not ignore it.
-        payload["chat_template_kwargs"] = {
-            "enable_thinking": target.reasoning != "none"}
-        return
-    if target.reasoning != "none":
+    if provider == "local-llm":
+        # What llama.cpp passes to the chat template. The models that think read
+        # it; the ones that do not ignore it.
+        payload["chat_template_kwargs"] = {"enable_thinking": reasoning != "none"}
+    elif reasoning != "none":
         # The thinking itself is never shown, so ask for it to be left out.
-        payload["reasoning"] = {"effort": target.reasoning, "exclude": True}
+        payload["reasoning"] = {"effort": reasoning, "exclude": True}
 
 
-def _local_ceiling(text):
+def local_ceiling(text):
     """How much of a reply is worth waiting for from a model on this machine.
 
     Cleanup gives back what it was given, near enough, so a reply several times
@@ -309,34 +309,32 @@ def _local_ceiling(text):
     return max(512, len(text))
 
 
-def cleanup(target, text, system_prompt, timeout=180):
-    if target.provider == "local-llm":
-        target, timeout = _serving(target, ggml.llm, timeout)
-    elif not target.api_key:
+def cleanup(text, api_key, model, system_prompt, reasoning="",
+            base_url=OPENROUTER_URL, timeout=180, provider="openrouter",
+            service="OpenRouter"):
+    if not api_key and provider != "local-llm":
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
-                         service=target.service))
+                         service=service))
     payload = {
-        "model": target.model,
+        "model": model,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"<transcript>\n{text}\n</transcript>"},
         ],
     }
-    if target.provider == "local-llm":
-        payload["max_tokens"] = _local_ceiling(text)
-    _thinking(target, payload)
+    if provider == "local-llm":
+        payload["max_tokens"] = local_ceiling(text)
+    _thinking(payload, provider, reasoning)
     try:
         data = _request(
-            f"{target.base_url.rstrip('/')}/chat/completions",
+            f"{base_url.rstrip('/')}/chat/completions",
             json.dumps(payload).encode("utf-8"),
-            _headers(target.provider, target.api_key, "application/json"),
+            _headers(provider, api_key, "application/json"),
             timeout=timeout,
         )
     except ApiError as exc:
-        if target.provider == "local-llm":
-            raise _local_failure(target, ggml.llm, exc) from None
-        raise explain(exc, target.service) from None
+        raise explain(exc, service) from None
     choices = data.get("choices") or []
     if not choices:
         raise ApiError(_extract_error(json.dumps(data)))
@@ -348,7 +346,7 @@ def cleanup(target, text, system_prompt, timeout=180):
         # than a retry: cleanup is not a job that wants thinking.
         if message.get("reasoning_content") or message.get("reasoning"):
             raise ApiError(t("The cleanup model spent its whole reply on "
-                             "thinking. Set Thinking to “Off”."))
+                             "thinking. Set Thinking to \u201cOff\u201d."))
         raise ApiError(t("The cleanup model returned an empty reply."))
     return content
 
@@ -441,17 +439,22 @@ def openrouter_models(api_key="", transcription=False):
     return sorted(m["id"] for m in models if m.get("id"))
 
 
-def openai_models(api_key, base_url=OPENAI_URL):
+def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI"):
+    """The audio models of anything that speaks OpenAI's /models, Groq included.
+
+    `service` is only the name an error is written in, so a Groq key that is
+    refused says Groq rather than OpenAI.
+    """
     if not api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
-                         service="OpenAI"))
+                         service=service))
     try:
         data = _get_json(
             f"{base_url.rstrip('/')}/models",
             {"Authorization": f"Bearer {api_key}", "User-Agent": USER_AGENT},
         )
     except ApiError as exc:
-        raise explain(exc, "OpenAI") from None
+        raise explain(exc, service) from None
     ids = [m["id"] for m in data.get("data", []) if m.get("id")]
     audio = [i for i in ids if "transcribe" in i or "whisper" in i]
     return sorted(audio or ids)
