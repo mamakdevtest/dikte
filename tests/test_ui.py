@@ -315,6 +315,18 @@ class LocalModels(DikteTest):
         self.assertIn("2.3 GB", box.status.text())
         self.assertNotIn("-", box.status.text())
 
+    def test_a_long_model_name_is_not_cut_in_half(self):
+        # The list under a combo box takes the box's width and elides what does
+        # not fit, in the middle: "ggml-org/Qwen....7B-Base-GGUF".
+        box = self.window(cfg.Config()).local_llm
+        box.repo.addItem("ggml-org/a-model-with-a-name-that-runs-on-and-on-GGUF")
+        box._fit_popup(box.repo)
+        view = box.repo.view()
+        self.assertEqual(view.textElideMode(), settings_ui.Qt.TextElideMode.ElideNone)
+        widest = max(box.repo.fontMetrics().horizontalAdvance(box.repo.itemText(row))
+                     for row in range(box.repo.count()))
+        self.assertGreaterEqual(view.minimumWidth(), widest)
+
     def test_the_hosted_boxes_go_away_when_the_work_happens_here(self):
         window = self.window(self.config(transcribe_provider="openai"))
         self.assertTrue(window.hosted_stt.isVisibleTo(window))

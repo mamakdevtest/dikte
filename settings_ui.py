@@ -176,6 +176,23 @@ class LocalModelBox(QGroupBox):
         self._installed.connect(self._on_installed)
 
     @staticmethod
+    def _fit_popup(combo):
+        """Let the list that drops down be as wide as its longest row.
+
+        A combo box hands its own width to the list under it and elides
+        whatever does not fit, which lands in the middle of the name:
+        `ggml-org/Qwen....7B-Base-GGUF` is not a model anybody can choose
+        between. The box itself stays the width the form gave it.
+        """
+        view = combo.view()
+        view.setTextElideMode(Qt.TextElideMode.ElideNone)
+        metrics = combo.fontMetrics()
+        widest = max((metrics.horizontalAdvance(combo.itemText(row))
+                      for row in range(combo.count())), default=0)
+        # Room for the frame and for a scroll bar, which a long list will have.
+        view.setMinimumWidth(widest + view.verticalScrollBar().sizeHint().width() + 24)
+
+    @staticmethod
     def _side_by_side(*widgets):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -209,6 +226,7 @@ class LocalModelBox(QGroupBox):
             self.repo.addItems(list(ggml.SUGGESTED_LLM))
             self.repo.setCurrentText(repo or ggml.SUGGESTED_LLM[0])
             self.repo.blockSignals(False)
+            self._fit_popup(self.repo)
         self._fill_models([])
 
     def showEvent(self, event):
@@ -274,6 +292,7 @@ class LocalModelBox(QGroupBox):
             self.repo.addItems(found)
             self.repo.setCurrentText(current)
             self.repo.blockSignals(False)
+            self._fit_popup(self.repo)
             return
         self._fill_models(found)
 
@@ -302,6 +321,7 @@ class LocalModelBox(QGroupBox):
         index = self.model.findData(wanted)
         self.model.setCurrentIndex(max(index, 0))
         self.model.blockSignals(False)
+        self._fit_popup(self.model)
         self._wanted = ""
         self._model_changed()
 
