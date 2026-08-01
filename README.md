@@ -17,7 +17,8 @@ just the Python standard library and PyQt6.
 |  |  |
 |---|---|
 | <img src="docs/settings-api.webp" width="410" alt="API and models"> | <img src="docs/settings-cleanup.webp" width="410" alt="Cleanup rules"> |
-| <img src="docs/settings-audio-file.webp" width="410" alt="Audio file"> | <img src="docs/settings-history.webp" width="410" alt="History"> |
+| <img src="docs/settings-agent.webp" width="410" alt="Agent"> | <img src="docs/settings-meeting.webp" width="410" alt="Meeting"> |
+| <img src="docs/settings-audio-file.webp" width="410" alt="Audio file"> | <img src="docs/settings-shortcuts.webp" width="410" alt="Shortcuts"> |
 
 ## Install
 
@@ -42,16 +43,14 @@ puts all of that back, keeping the keys you chose; `./uninstall.sh` takes it awa
 again and leaves your settings and dictations alone unless you pass `--purge`.
 
 Speech to text and cleanup each pick a provider in the settings window, and both
-can run here, on whisper.cpp and llama.cpp: the program and the model are
-downloaded from that window, checksummed, so nothing has to be installed first
-and nothing leaves the machine. Otherwise speech to text runs on **OpenAI**,
-**Groq** or **OpenRouter** (`gpt-4o-transcribe` by default) and cleanup on
-OpenRouter (`google/gemini-3.5-flash-lite`) or, when either is installed, on
-Claude Code or Codex. The keys fall back to `OPENAI_API_KEY`, `GROQ_API_KEY` and
-`OPENROUTER_API_KEY`, and are
-stored in `~/.config/dikte/config.json`, mode 600. Cleanup can be switched off,
-in which case the raw transcript is pasted, and a thinking model's effort can be
-set next to it.
+run here by default, on models of your own. The cloud is the other option:
+speech to text on **OpenAI**, **Groq** or **OpenRouter** (`gpt-4o-transcribe`),
+cleanup on OpenRouter (`google/gemini-3.5-flash-lite`) or, when either is
+installed, on Claude Code or Codex. The keys fall back to `OPENAI_API_KEY`,
+`GROQ_API_KEY` and `OPENROUTER_API_KEY`, and are stored in
+`~/.config/dikte/config.json`, mode 600. Cleanup can be switched off, in which
+case the raw transcript is pasted, and a thinking model's effort can be set next
+to it.
 
 ## Using it
 
@@ -81,6 +80,12 @@ running.
 
 ## What it does
 
+- **It all runs on this machine by default.** Speech to text on whisper.cpp and
+  cleanup on llama.cpp, neither installed beforehand: the settings window fetches
+  the program and the model, verifies the sha256 and refuses a download published
+  without one, then keeps a server alive while you dictate. The graphics card is
+  reached through CUDA, ROCm or Vulkan where the build allows. No key, no
+  account, nothing leaving the machine.
 - **Silence never reaches the API.** Handed near-silence, a transcription model
   invents a sentence instead of returning nothing ("Thanks for watching", or in
   Turkish "Altyazı M.K."). A recording is dropped when nothing rose 10 dB above

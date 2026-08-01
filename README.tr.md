@@ -16,7 +16,8 @@ sadece Python standart kütüphanesi ve PyQt6.
 |  |  |
 |---|---|
 | <img src="docs/settings-api.webp" width="410" alt="API ve modeller"> | <img src="docs/settings-cleanup.webp" width="410" alt="Temizleme kuralları"> |
-| <img src="docs/settings-audio-file.webp" width="410" alt="Ses dosyası"> | <img src="docs/settings-history.webp" width="410" alt="Geçmiş"> |
+| <img src="docs/settings-agent.webp" width="410" alt="Ajan"> | <img src="docs/settings-meeting.webp" width="410" alt="Toplantı"> |
+| <img src="docs/settings-audio-file.webp" width="410" alt="Ses dosyası"> | <img src="docs/settings-shortcuts.webp" width="410" alt="Kısayollar"> |
 
 ## Kurulum
 
@@ -42,11 +43,9 @@ son sürümü çeker ve bunları senin seçtiğin tuşlarla yerine koyar;
 diktelerine dokunmaz.
 
 Sesi yazıya çevirme ve temizleme, ayarlar penceresinde ayrı ayrı sağlayıcı
-seçer; ikisi de burada çalışabilir, whisper.cpp ve llama.cpp üzerinde: program da
-model de o pencereden, sha256 doğrulamasıyla indirilir, yani önceden hiçbir şey
-kurman gerekmez ve makineden hiçbir şey çıkmaz. Bulutu seçersen sesi yazıya
-çevirme **OpenAI**, **Groq** ya da **OpenRouter**'da (varsayılan
-`gpt-4o-transcribe`), temizleme OpenRouter'da
+seçer; ikisi de varsayılan olarak burada, kendi modellerinle çalışır. Bulutu
+seçersen sesi yazıya çevirme **OpenAI**, **Groq** ya da **OpenRouter**'da
+(varsayılan `gpt-4o-transcribe`), temizleme OpenRouter'da
 (`google/gemini-3.5-flash-lite`) ya da kuruluysa Claude Code veya Codex'te
 çalışır. Anahtarları boş bırakırsan `OPENAI_API_KEY`, `GROQ_API_KEY` ve
 `OPENROUTER_API_KEY` kullanılır; anahtarlar `~/.config/dikte/config.json`
@@ -81,6 +80,12 @@ olmasını ister.
 
 ## Neler yapıyor
 
+- **Her şey varsayılan olarak bu makinede çalışır.** Sesi yazıya çevirme
+  whisper.cpp, temizleme llama.cpp üzerinde; ikisini de önceden kurman gerekmez:
+  ayarlar penceresi programı ve modeli indirir, sha256'sını doğrular,
+  checksum'suz yayınlanmış bir indirmeyi reddeder, sen dikte ettikçe sunucuyu
+  ayakta tutar. Derleme destekliyorsa ekran kartına CUDA, ROCm ya da Vulkan
+  üzerinden ulaşılır. Anahtar yok, hesap yok, makineden çıkan bir şey yok.
 - **Sessizlik API'ye gitmez.** Sessize yakın bir ses verildiğinde model boş dize
   döndürmez, bir cümle uydurur ("Altyazı M.K.", "Thanks for watching"). *O
   kaydın kendi* gürültü tabanının 10 dB üstüne en az 0,3 saniye çıkan bir şey
