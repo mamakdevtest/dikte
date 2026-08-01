@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 import api
 import assistant
 import audio
+import cleanup
 import config as cfg
 import filetranscribe
 import hotkey
@@ -49,6 +50,15 @@ CLEANUP_MODELS = [
     "google/gemini-2.5-flash-lite", "anthropic/claude-haiku-4.5",
     "openai/gpt-5-mini", "meta-llama/llama-3.3-70b-instruct",
 ]
+# The same two CLIs the agent can run on, doing the smaller job instead. They
+# are offered second: a request to OpenRouter is over in a second, and a CLI
+# opens a session first.
+CLEANUP_PROVIDERS = [
+    ("OpenRouter", "openrouter"), ("Claude Code", "claude"), ("Codex", "codex"),
+]
+# Cleaning up a sentence is the lightest thing either of them will ever be
+# asked, so the small model comes first.
+CLEANUP_CLAUDE_MODELS = ["haiku", "sonnet", "opus", "fable"]
 # Minutes are a harder job than cleanup: an hour of talk has to be read whole
 # and turned into decisions, so the starting points are the larger models.
 MEETING_MODELS = [
@@ -282,16 +292,42 @@ class SettingsWindow(QDialog):
         outer.addWidget(stt)
 
         orr = QGroupBox(t("Transcript cleanup"))
-        orr_form = QFormLayout(orr)
+        orr_form = self.cleanup_form = QFormLayout(orr)
         self.cleanup_enabled = QCheckBox(t("Clean the transcript with a model"))
         orr_form.addRow("", self.cleanup_enabled)
+
+        self.cleanup_provider = QComboBox()
+        for label, value in CLEANUP_PROVIDERS:
+            self.cleanup_provider.addItem(t(label), value)
+        self.cleanup_provider.setToolTip(t(
+            "OpenRouter is the quickest and the only one that needs nothing "
+            "installed. Claude Code and Codex clean up on the subscription you "
+            "already have, without a second key, and take a few seconds longer "
+            "because each one opens a session to do it."
+        ))
+        self.cleanup_provider.currentIndexChanged.connect(self._cleanup_provider_changed)
+        orr_form.addRow(t("Runs on"), self.cleanup_provider)
 
         self.cleanup_model = QComboBox()
         self.cleanup_model.setEditable(True)
         self.cleanup_model.addItems(CLEANUP_MODELS)
         self.refresh_models = QPushButton(t("Fetch model list"))
         self.refresh_models.clicked.connect(self._load_models)
-        orr_form.addRow(t("Model"), self._row(self.cleanup_model, self.refresh_models))
+        self.cleanup_model_row = self._row(self.cleanup_model, self.refresh_models)
+        orr_form.addRow(t("Model"), self.cleanup_model_row)
+
+        # One row per provider rather than one box that means a different thing
+        # in each: an OpenRouter id and a Claude alias do not belong in the same
+        # field, and only the row of whoever is chosen is on screen.
+        self.cleanup_claude_model = QComboBox()
+        self.cleanup_claude_model.setEditable(True)
+        self.cleanup_claude_model.addItems(CLEANUP_CLAUDE_MODELS)
+        orr_form.addRow(t("Model"), self.cleanup_claude_model)
+
+        self.cleanup_codex_model = QComboBox()
+        self.cleanup_codex_model.setEditable(True)
+        self.cleanup_codex_model.addItems([t("Codex's own default")] + CODEX_MODELS)
+        orr_form.addRow(t("Model"), self.cleanup_codex_model)
 
         self.cleanup_reasoning = QComboBox()
         for label, value in REASONING_LEVELS:
@@ -951,6 +987,12 @@ class SettingsWindow(QDialog):
         self._provider_changed()  # selecting index 0 fires no signal
         self.cleanup_enabled.setChecked(conf["cleanup_enabled"])
         self.cleanup_model.setCurrentText(conf["cleanup_model"])
+        self.cleanup_claude_model.setCurrentText(conf["cleanup_claude_model"])
+        self.cleanup_codex_model.setCurrentText(
+            conf["cleanup_codex_model"] or t("Codex's own default")
+        )
+        self._select_data(self.cleanup_provider, conf["cleanup_provider"])
+        self._cleanup_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.cleanup_reasoning, conf["cleanup_reasoning"])
         self.cleanup_prompt.setPlainText(conf["cleanup_prompt"] or cfg.default_cleanup_prompt())
         self.file_cleanup_prompt.setPlainText(
@@ -1029,7 +1071,14 @@ class SettingsWindow(QDialog):
             conf[who.model] = self._models[name].strip() or cfg.DEFAULTS[who.model]
 
         conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
+        conf["cleanup_provider"] = self.cleanup_provider.currentData() or "openrouter"
         conf["cleanup_model"] = self.cleanup_model.currentText().strip()
+        conf["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip()
+                                        or cfg.DEFAULTS["cleanup_claude_model"])
+        codex_cleanup_model = self.cleanup_codex_model.currentText().strip()
+        conf["cleanup_codex_model"] = (
+            "" if codex_cleanup_model == t("Codex's own default") else codex_cleanup_model
+        )
         conf["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
 
         # Store an empty prompt when it matches the default, so switching the
@@ -1346,6 +1395,27 @@ class SettingsWindow(QDialog):
               desktop=hotkey.desktop_name(), shortcut=current) if current
             else missing
         )
+
+    def _cleanup_provider_changed(self):
+        provider = self.cleanup_provider.currentData() or "openrouter"
+        self.cleanup_form.setRowVisible(self.cleanup_model_row,
+                                        provider == "openrouter")
+        self.cleanup_form.setRowVisible(self.cleanup_claude_model,
+                                        provider == "claude")
+        self.cleanup_form.setRowVisible(self.cleanup_codex_model,
+                                        provider == "codex")
+        binary = cleanup.executable(provider)
+        found = shutil.which(binary) if binary else ""
+        if not binary:
+            self.models_label.setText(t("Runs on OpenRouter."))
+        elif found:
+            self.models_label.setText(t("Found: {path}", path=found))
+        else:
+            self.models_label.setText(t(
+                "{binary} is not on your PATH, so cleanup would fail and the raw "
+                "transcript would be pasted. Install it, or pick another one "
+                "above.", binary=binary,
+            ))
 
     def _assistant_provider_changed(self):
         provider = self.assistant_provider.currentData() or "claude"

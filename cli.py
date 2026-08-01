@@ -25,6 +25,7 @@ from PyQt6.QtCore import QCoreApplication, QTimer
 import api
 import assistant
 import audio
+import cleanup
 import config as cfg
 import filetranscribe
 import hotkey
@@ -764,16 +765,18 @@ def cmd_status(opts):
 def cmd_doctor(opts):
     """What the settings window checks behind its buttons, in one pass."""
     conf = cfg.Config()
-    programs = {name: shutil.which(name) or ""
-                for name in ("pw-record", "wl-copy", "ydotool", "ffmpeg",
-                             "pactl", "kwriteconfig6",
-                             assistant.executable(assistant.provider(conf)) or "claude")}
+    wanted = ["pw-record", "wl-copy", "ydotool", "ffmpeg", "pactl", "kwriteconfig6",
+              assistant.executable(assistant.provider(conf)) or "claude",
+              cleanup.executable(cleanup.provider(conf))]
+    programs = {name: shutil.which(name) or "" for name in wanted if name}
     target = conf.transcribe_target()
+    cleaner = cleanup.provider(conf)
     checks = {
         "programs": programs,
         "transcription": {"provider": target.provider, "model": target.model,
                           "key": bool(target.api_key)},
-        "cleanup": {"enabled": conf["cleanup_enabled"], "model": conf["cleanup_model"],
+        "cleanup": {"enabled": conf["cleanup_enabled"], "provider": cleaner,
+                    "model": cleanup.model(conf),
                     "key": bool(conf.openrouter_key())},
         "agent": {"provider": assistant.provider(conf),
                   "directory": assistant.working_dir(conf)},
@@ -784,8 +787,11 @@ def cmd_doctor(opts):
     lines += [
         f"{'✓' if target.api_key else '✗'} {target.service} key, transcribing on "
         f"{target.model}",
-        f"{'✓' if conf.openrouter_key() else '✗'} OpenRouter key, cleaning up on "
-        f"{conf['cleanup_model']}",
+        # Cleanup on a CLI needs no key, so what is checked is the program.
+        (f"{'✓' if conf.openrouter_key() else '✗'} OpenRouter key, cleaning up on "
+         f"{conf['cleanup_model']}") if cleaner == "openrouter" else
+        (f"{'✓' if programs[cleanup.executable(cleaner)] else '✗'} "
+         f"{cleanup.executable(cleaner)}, cleaning up on {cleanup.model(conf)}"),
         f"{'✓' if checks['running'] else '·'} application "
         + ("running" if checks["running"] else "not running"),
     ]

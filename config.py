@@ -375,7 +375,10 @@ DEFAULTS = {
     "language": "tr",
     "transcribe_prompt": "",
     "cleanup_enabled": True,
+    "cleanup_provider": "openrouter",  # openrouter | claude | codex
     "cleanup_model": "google/gemini-3.5-flash-lite",
+    "cleanup_claude_model": "haiku",   # Claude Code: an alias, or a full model id
+    "cleanup_codex_model": "",         # empty -> whatever Codex is set to
     "cleanup_reasoning": "",        # empty -> whatever the model does by default
     "cleanup_prompt": "",           # empty -> language-specific default
     "auto_paste": True,

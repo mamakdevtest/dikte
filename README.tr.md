@@ -1,7 +1,7 @@
 # Dikte
 
 `Ctrl+Space`'e bas, konuş, tekrar bas. Ses OpenAI'ye ya da OpenRouter'a gidip
-yazıya çevrilir, OpenRouter'daki bir model transkripti temizler (ıı'lar,
+yazıya çevrilir, bir model transkripti temizler (ıı'lar,
 tekrarlar, eksik noktalama), sonuç panoya kopyalanır ve o an yazdığın pencereye
 yapıştırılır.
 
@@ -44,8 +44,8 @@ diktelerine dokunmaz.
 
 Ayarlar penceresinde üç anahtar istenir: **OpenAI**, **Groq** ve **OpenRouter**.
 Sesi yazıya çevirme üçünden birinde çalışır (varsayılan `gpt-4o-transcribe`),
-temizleme her zaman OpenRouter'da (`google/gemini-3.5-flash-lite`), yani tek bir
-OpenRouter anahtarı ikisine de yeter. Boş bırakırsan `OPENAI_API_KEY`,
+temizleme OpenRouter'da (`google/gemini-3.5-flash-lite`) ya da kuruluysa Claude
+Code veya Codex'te, yani tek bir OpenRouter anahtarı ikisine de yeter. Boş bırakırsan `OPENAI_API_KEY`,
 `GROQ_API_KEY` ve `OPENROUTER_API_KEY` kullanılır;
 anahtarlar `~/.config/dikte/config.json`
 içinde, izinler 600. Temizlemeyi tamamen kapatabilirsin, o zaman ham transkript
@@ -147,6 +147,7 @@ audio.py          PCM kaydı: diktede pw-record, toplantıda ffmpeg
 meeting.py        kanal ayırma, konuşmacı etiketi, temizleme, tutanak
 assistant.py      dikteyi Claude Code, Codex ya da OpenRouter'dan geçirme
 api.py            iki sağlayıcıda transkript + OpenRouter temizleme (yalnız stdlib)
+cleanup.py        transkripti kim temizler: OpenRouter, Claude Code ya da Codex
 worker.py         transkript → temizleme → pano → yapıştırma
 vad.py            kayıtta gerçekten konuşma var mı kararı
 filetranscribe.py dosyadan transkript: ffmpeg, parçalama, zaman damgaları

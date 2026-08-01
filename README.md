@@ -1,7 +1,7 @@
 # Dikte
 
 Press `Ctrl+Space`, talk, press again. The recording goes to OpenAI or OpenRouter
-for transcription, a model on OpenRouter cleans it up (dropping the *uh*s, the
+for transcription, a model cleans it up (dropping the *uh*s, the
 restarts, the missing punctuation), and the result lands in your clipboard and
 is pasted into whatever window you were typing in.
 
@@ -43,8 +43,8 @@ again and leaves your settings and dictations alone unless you pass `--purge`.
 
 Three keys go in the settings window: **OpenAI**, **Groq** and **OpenRouter**.
 Speech to text runs on any of them (`gpt-4o-transcribe` by default), cleanup
-always on OpenRouter (`google/gemini-3.5-flash-lite`), so a single OpenRouter key
-can cover both. They fall back to `OPENAI_API_KEY`, `GROQ_API_KEY` and
+on OpenRouter (`google/gemini-3.5-flash-lite`) or, when either is installed, on
+Claude Code or Codex instead, so a single OpenRouter key can cover both. They fall back to `OPENAI_API_KEY`, `GROQ_API_KEY` and
 `OPENROUTER_API_KEY`, and are
 stored in `~/.config/dikte/config.json`, mode 600. Cleanup can be switched off,
 in which case the raw transcript is pasted, and a thinking model's effort can be
@@ -148,6 +148,7 @@ audio.py          PCM capture: pw-record for dictation, ffmpeg for a meeting
 meeting.py        channel split, speaker labelling, cleanup, minutes
 assistant.py      running a dictation through Claude Code, Codex or OpenRouter
 api.py            transcription on either provider, OpenRouter cleanup (stdlib only)
+cleanup.py        who rewrites the transcript: OpenRouter, Claude Code or Codex
 worker.py         transcribe → clean up → clipboard → paste
 vad.py            deciding whether a recording holds speech at all
 filetranscribe.py file transcription: ffmpeg, chunking, timestamps
