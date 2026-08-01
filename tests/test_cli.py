@@ -14,6 +14,7 @@ from unittest import mock
 
 import cli
 import config as cfg
+import hotkey
 import ipc
 from tests.support import DikteTest, fake_urlopen
 
@@ -143,6 +144,22 @@ class Parser(unittest.TestCase):
         opts = self.parse()
         self.assertIsNone(opts.verb)
         self.assertEqual(opts.func, cli.cmd_plain)
+
+    def test_every_global_shortcut_runs_a_verb_that_exists(self):
+        """A shortcut registers a command line; a verb the parser never heard of
+        is a key that does nothing at all when it is pressed."""
+        for name, spec in hotkey.SHORTCUTS.items():
+            with self.subTest(name=name):
+                opts = self.parse(spec.verb)
+                self.assertTrue(callable(opts.func))
+
+    def test_every_shortcut_can_be_installed_and_removed_by_name(self):
+        for name in hotkey.SHORTCUTS:
+            with self.subTest(name=name):
+                self.assertEqual(self.parse("shortcut", "install", name).which,
+                                 name)
+                self.assertEqual(self.parse("shortcut", "remove", name).which,
+                                 name)
 
     def test_every_verb_is_wired_to_something(self):
         for verb in ("record", "toggle", "start", "stop", "cancel", "ask",

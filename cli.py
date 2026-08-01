@@ -44,14 +44,6 @@ GUI_VERBS = {"", "settings", "toggle", "ask", "meeting"}
 IDEMPOTENT_VERBS = {"cancel", "stop", "quit", "restart", "ask-cancel",
                     "ask-reset", "meeting-cancel"}
 
-# Which desktop entry, name and setting belong to each of the three shortcuts.
-SHORTCUTS = {
-    "toggle": (hotkey.DESKTOP_ID, "Dikte: start/stop recording", "shortcut"),
-    "ask": (hotkey.ASK_DESKTOP_ID, "Dikte: ask Claude Code", "assistant_shortcut"),
-    "meeting": (hotkey.MEETING_DESKTOP_ID, "Dikte: start/end a meeting recording",
-                "meeting_shortcut"),
-}
-
 _app = None
 
 
@@ -705,9 +697,9 @@ def cmd_shortcut(opts):
     conf = cfg.Config()
     if opts.shortcut == "status":
         rows = {}
-        for name, (desktop_id, _label, key) in SHORTCUTS.items():
-            rows[name] = {"registered": hotkey.shortcut_status(desktop_id),
-                          "configured": conf[key]}
+        for name, spec in hotkey.SHORTCUTS.items():
+            rows[name] = {"registered": hotkey.shortcut_status(spec.desktop_id),
+                          "configured": conf[spec.setting]}
         lines = [f"{name:8} {row['registered'] or '(not installed)':16} "
                  f"setting: {row['configured'] or '(none)'}"
                  for name, row in rows.items()]
@@ -715,28 +707,29 @@ def cmd_shortcut(opts):
         return out(opts, {"ok": True, "shortcuts": rows,
                           "listener": conf["evdev_hotkey"]}, "\n".join(lines))
 
-    desktop_id, label, key = SHORTCUTS[opts.which]
+    spec = hotkey.SHORTCUTS[opts.which]
     if opts.shortcut == "remove":
-        hotkey.remove_shortcut(desktop_id)
+        hotkey.remove_shortcut(spec.desktop_id)
         return out(opts, {"ok": True, "removed": opts.which},
                    f"Removed the {opts.which} shortcut.")
 
-    combo = (opts.combo or conf[key] or ("Ctrl+Space" if opts.which == "toggle" else "")).strip()
+    combo = (opts.combo or conf[spec.setting] or spec.fallback).strip()
     if not combo:
         return fail(opts, "no combination given and none stored; pass --combo", 2)
     if hotkey.parse_shortcut(combo) == (None, None):
         return fail(opts, f"cannot parse that combination: {combo}", 2)
-    clashes = hotkey.conflicting_shortcuts(combo, desktop_id)
+    clashes = hotkey.conflicting_shortcuts(combo, spec.desktop_id)
     if clashes and not opts.force:
         return fail(opts, f"{combo} is also used by: {', '.join(clashes[:6])}. "
                           "Pass --force to install it anyway.", 1, conflicts=clashes)
 
     ok, message = hotkey.install_shortcut(
-        combo, ipc.command_for(opts.which), name=label, desktop_id=desktop_id,
+        combo, ipc.command_for(spec.verb), name=spec.name,
+        desktop_id=spec.desktop_id,
     )
     if not ok:
         return fail(opts, message)
-    conf[key] = combo
+    conf[spec.setting] = combo
     try:
         conf.save()
     except OSError as exc:
@@ -1001,19 +994,20 @@ def build_parser():
     test.set_defaults(func=cmd_test_key)
     leaf(subs, "doctor", "keys, programs, and what is missing").set_defaults(func=cmd_doctor)
 
-    shortcut = leaf(subs, "shortcut", "the KDE global shortcuts")
+    shortcut = leaf(subs, "shortcut", "the desktop's global shortcuts")
     inner = shortcut.add_subparsers(dest="shortcut", metavar="")
     shortcut.set_defaults(func=_needs_subcommand(shortcut))
     leaf(inner, "status", "what is registered").set_defaults(func=cmd_shortcut)
     install = leaf(inner, "install", "register one")
     install.add_argument("which", nargs="?", default="toggle",
-                         choices=tuple(SHORTCUTS))
+                         choices=tuple(hotkey.SHORTCUTS))
     install.add_argument("--combo", help="e.g. Ctrl+Alt+Space")
     install.add_argument("--force", action="store_true",
                          help="install it even if something else uses it")
     install.set_defaults(func=cmd_shortcut)
     remove = leaf(inner, "remove", "unregister one")
-    remove.add_argument("which", nargs="?", default="toggle", choices=tuple(SHORTCUTS))
+    remove.add_argument("which", nargs="?", default="toggle",
+                        choices=tuple(hotkey.SHORTCUTS))
     remove.set_defaults(func=cmd_shortcut)
 
     # --- the application --------------------------------------------------

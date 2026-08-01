@@ -25,7 +25,7 @@ sadece Python standart kütüphanesi ve PyQt6.
 sudo pacman -S --needed pipewire-audio wl-clipboard ydotool ffmpeg python-pyqt6
 systemctl --user enable --now ydotool     # otomatik yapıştırma için
 
-./install.sh                 # ya da:  ./install.sh "Ctrl+Alt+Space"
+./install.sh                 # ya da:  ./install.sh "Meta+Space" "Meta+Shift+Space"
 dikte                        # ilk açılışta ayarlar penceresi gelir
 ```
 
@@ -36,8 +36,11 @@ araçlarıyla çalışır:
 sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 ```
 
-`install.sh` `dikte` komutunu, menü girdisini ve oturum açılışında otomatik
-başlatmayı kurar. Ayarlar penceresi GNOME veya KDE global kısayolunu kurar.
+`install.sh` `dikte` komutunu, menü girdisini, oturum açılışında otomatik
+başlatmayı ve iki global kısayolu kurar; tuşları da iki argümanı. `./update.sh`
+son sürümü çeker ve bunları senin seçtiğin tuşlarla yerine koyar;
+`./uninstall.sh` hepsini geri alır, `--purge` demedikçe ayarlarına ve
+diktelerine dokunmaz.
 
 Ayarlar penceresinde üç anahtar istenir: **OpenAI**, **Groq** ve **OpenRouter**.
 Sesi yazıya çevirme üçünden birinde çalışır (varsayılan `gpt-4o-transcribe`),
@@ -53,7 +56,7 @@ yapıştırılır; modelin yanındaki kutudan düşünme seviyesini de seçebili
 | Ne | Nasıl |
 | --- | --- |
 | Kaydı başlat / bitir | `Ctrl+Space`, ya da tepsi simgesine tıkla |
-| Kaydı iptal et | Tepsi menüsü → *Kaydı iptal et*, ya da `dikte cancel` |
+| Kaydı iptal et | `Ctrl+Alt+Space`, tepsi menüsü, ya da `dikte cancel` |
 | Ajana sesle komut ver | Tepsi menüsü → *Claude'a sor*, ya da `dikte ask` |
 | Toplantıyı başlat / bitir | Tepsi menüsü → *Toplantı kaydet*, ya da `dikte meeting` |
 | Ayarlar | Tepsi menüsü → *Ayarlar*, ya da `dikte settings` |
@@ -125,11 +128,11 @@ olmasını ister.
   silebilirsin.
 - **Türkçe ve İngilizce arayüz**, varsayılan olarak sistem dilini izler.
 
-## Global kısayol için bir kez oturum kapatmak gerekir
+## Global kısayollar için bir kez oturum kapatmak gerekir
 
 KWin `kglobalshortcutsrc` dosyasını yalnızca açılışta okur, yani `install.sh`'ın
-yazdığı kısayol oturumu yeniden açana kadar tetiklenmez. O zamana kadar Ayarlar →
-Kısayol → **yerleşik dinleyici** `/dev/input` üzerinden kombinasyonu kendisi
+yazdığı kısayollar oturumu yeniden açana kadar tetiklenmez. O zamana kadar Ayarlar →
+Kısayollar → **yerleşik dinleyici** `/dev/input` üzerinden kombinasyonu kendisi
 yakalar. Tek farkı: tuşu yutmaz, yani `Ctrl+Space` odaktaki uygulamaya da iletilir
 (bazı editörlerde otomatik tamamlama açılabilir). Dinleyici kullanıcının `input`
 grubunda olmasını gerektirir: `sudo usermod -aG input $USER`.

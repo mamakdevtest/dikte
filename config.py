@@ -389,6 +389,10 @@ DEFAULTS = {
     "min_voiced_seconds": 0.3,
     "filter_hallucinations": True,
     "shortcut": "Ctrl+Space",
+    # Ctrl+Alt+Space rather than Escape: the combination the recording started
+    # with, one modifier along. Escape belongs to whatever window has focus, and
+    # while you are dictating something else usually has it.
+    "cancel_shortcut": "Ctrl+Alt+Space",
     "evdev_hotkey": False,
     "overlay_corner": "bottom-left",
     "keep_audio": False,
