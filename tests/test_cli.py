@@ -15,7 +15,7 @@ from unittest import mock
 import cli
 import config as cfg
 import ipc
-from tests.support import DikteTest
+from tests.support import DikteTest, fake_urlopen
 
 
 class Options:
@@ -314,6 +314,39 @@ class ConfigCommands(DikteTest):
         _, out, _ = self.run_cmd(cli.cmd_prompt, which=None, json=True)
         self.assertEqual(set(json.loads(out)["prompts"]),
                          {"cleanup", "subtitles", "meeting", "agent"})
+
+
+class Providers(DikteTest):
+    """The terminal reaches every provider the settings window does."""
+
+    def run_cmd(self, func, **values):
+        with captured() as (out, err):
+            code = func(Options(**values))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_provider_the_settings_window_offers_is_a_choice_here_too(self):
+        parser = cli.build_parser()
+        for provider in cfg.TRANSCRIBERS:
+            with self.subTest(provider=provider):
+                opts = parser.parse_args(["models", "--provider", provider])
+                self.assertEqual(opts.provider, provider)
+                self.assertEqual(parser.parse_args(["test-key", provider]).which,
+                                 provider)
+
+    def test_the_model_list_is_read_from_the_chosen_provider(self):
+        self.write_config({"groq_api_key": "gsk-test"})
+        with fake_urlopen({"data": [{"id": "whisper-large-v3"}]}) as calls:
+            code, out, _ = self.run_cmd(cli.cmd_models, provider="groq",
+                                        transcription=False)
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0].full_url, "https://api.groq.com/openai/v1/models")
+        self.assertEqual(out.strip(), "whisper-large-v3")
+
+    def test_a_key_that_is_not_there_is_reported_under_its_own_name(self):
+        code, out, _ = self.run_cmd(cli.cmd_test_key, which="groq")
+        self.assertEqual(code, 1)
+        self.assertIn("groq", out)
+        self.assertIn("Groq", out)
 
 
 class Finding(DikteTest):

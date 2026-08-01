@@ -79,10 +79,10 @@ next port breaks all of them.
 
 ## What a pull request should carry
 
-A change to behaviour comes with a test for it. Adding a provider means a test
-that the request goes to the right URL with the right fields; adding a platform
-means a test for whatever the parsing of its device list, clipboard or shortcuts
-looks like. Adding a setting means both halves of `settings_ui.py`: the round
+A change to behaviour comes with a test for it. Adding a provider means a row in
+`config.TRANSCRIBERS` and a test that the request goes to the right URL with the
+right fields; adding a platform means a test for whatever the parsing of its
+device list, clipboard or shortcuts looks like. Adding a setting means both halves of `settings_ui.py`: the round
 trip in `tests/test_ui.py` is what catches only one of them being written.
 
 Match the surrounding code: it is plain Python with no framework, comments

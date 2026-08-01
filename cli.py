@@ -662,12 +662,14 @@ def cmd_devices(opts):
 
 def cmd_models(opts):
     conf = cfg.Config()
+    who = cfg.TRANSCRIBERS[opts.provider]
     try:
-        if opts.provider == "openai":
-            models = api.openai_models(conf.openai_key(), conf["openai_base_url"])
-        else:
+        if opts.provider == "openrouter":
             models = api.openrouter_models(conf.openrouter_key(),
                                            transcription=opts.transcription)
+        else:
+            models = api.openai_models(conf.api_key(who.key), conf[who.url],
+                                       who.service)
     except api.ApiError as exc:
         return fail(opts, exc)
     return out(opts, {"ok": True, "provider": opts.provider, "models": models},
@@ -677,19 +679,21 @@ def cmd_models(opts):
 def cmd_test_key(opts):
     conf = cfg.Config()
     results = {}
-    if opts.which in ("openai", "all"):
+    for name, who in cfg.TRANSCRIBERS.items():
+        if opts.which not in (name, "all"):
+            continue
         try:
-            count = len(api.openai_models(conf.openai_key(), conf["openai_base_url"]))
-            results["openai"] = {"ok": True,
-                                 "message": f"connection works, {count} models visible"}
+            if name == "openrouter":
+                # The one key that also pays for cleanup, so it reports credit
+                # rather than a model count.
+                message = api.openrouter_key_status(conf.openrouter_key())
+            else:
+                count = len(api.openai_models(conf.api_key(who.key), conf[who.url],
+                                              who.service))
+                message = f"connection works, {count} models visible"
+            results[name] = {"ok": True, "message": message}
         except api.ApiError as exc:
-            results["openai"] = {"ok": False, "message": str(exc)}
-    if opts.which in ("openrouter", "all"):
-        try:
-            results["openrouter"] = {"ok": True,
-                                     "message": api.openrouter_key_status(conf.openrouter_key())}
-        except api.ApiError as exc:
-            results["openrouter"] = {"ok": False, "message": str(exc)}
+            results[name] = {"ok": False, "message": str(exc)}
     everything_ok = all(item["ok"] for item in results.values())
     lines = [f"{'✓' if item['ok'] else '✗'} {name}: {item['message']}"
              for name, item in results.items()]
@@ -986,14 +990,14 @@ def build_parser():
     # --- the machine ------------------------------------------------------
     leaf(subs, "devices", "microphones and monitors").set_defaults(func=cmd_devices)
     models = leaf(subs, "models", "model ids a provider offers")
-    models.add_argument("--provider", choices=("openrouter", "openai"),
+    models.add_argument("--provider", choices=tuple(cfg.TRANSCRIBERS),
                         default="openrouter")
     models.add_argument("--transcription", action="store_true",
                         help="only the speech-to-text ones")
     models.set_defaults(func=cmd_models)
     test = leaf(subs, "test-key", "check the API keys")
     test.add_argument("which", nargs="?", default="all",
-                      choices=("all", "openai", "openrouter"))
+                      choices=("all", *cfg.TRANSCRIBERS))
     test.set_defaults(func=cmd_test_key)
     leaf(subs, "doctor", "keys, programs, and what is missing").set_defaults(func=cmd_doctor)
 

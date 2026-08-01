@@ -1,9 +1,9 @@
-"""OpenAI and OpenRouter calls, stdlib only.
+"""OpenAI, Groq and OpenRouter calls, stdlib only.
 
-Transcription runs on either provider: OpenRouter mirrors OpenAI's
+Transcription runs on any of the three: Groq and OpenRouter both mirror OpenAI's
 /audio/transcriptions endpoint field for field, so one multipart request serves
-both and only the key, the base URL and the model id change. Cleanup is always
-OpenRouter.
+all of them and only the key, the base URL and the model id change. Cleanup is
+always OpenRouter.
 """
 
 import collections
@@ -19,6 +19,7 @@ from i18n import t
 APP_URL = "https://github.com/yusufipk/dikte"
 USER_AGENT = f"dikte/1.0 (+{APP_URL})"
 OPENAI_URL = "https://api.openai.com/v1"
+GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 
 # Where a transcription request goes; built by config.Config.transcribe_target().
@@ -27,8 +28,15 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1"
 Target = collections.namedtuple("Target", "provider service api_key base_url model")
 
 
-def timestamp_model(provider):
-    """Only whisper-1 returns segment times, and OpenRouter namespaces the id."""
+def timestamp_model(provider, selected=""):
+    """Which model answers with segment times.
+
+    OpenAI keeps them to whisper-1 and OpenRouter namespaces that id. Everything
+    Groq transcribes with is a whisper, so the model already chosen does it and
+    the fallback is only for a provider left on its default.
+    """
+    if provider == "groq":
+        return selected or "whisper-large-v3-turbo"
     return "openai/whisper-1" if provider == "openrouter" else "whisper-1"
 
 
@@ -126,7 +134,7 @@ def _transcribe_request(target, wav_path, language, prompt, response_format,
         fields.append(("language", language))
     # OpenRouter takes the hint field and throws it away, so spare it the bytes.
     # The same words still reach the cleanup model as a glossary.
-    if prompt and target.provider == "openai":
+    if prompt and target.provider != "openrouter":
         fields.append(("prompt", prompt))
     if granularity:
         fields.append(("timestamp_granularities[]", granularity))
@@ -153,7 +161,7 @@ def transcribe(target, wav_path, language="", prompt="", timeout=300):
 def transcribe_segments(target, wav_path, language="", prompt="", timeout=300):
     """[(start_seconds, end_seconds, text)] using whisper-1's verbose response."""
     data = _transcribe_request(
-        target._replace(model=timestamp_model(target.provider)),
+        target._replace(model=timestamp_model(target.provider, target.model)),
         wav_path, language, prompt, "verbose_json",
         granularity="segment", timeout=timeout,
     )
@@ -297,17 +305,22 @@ def openrouter_models(api_key="", transcription=False):
     return sorted(m["id"] for m in models if m.get("id"))
 
 
-def openai_models(api_key, base_url=OPENAI_URL):
+def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI"):
+    """The audio models of anything that speaks OpenAI's /models, Groq included.
+
+    `service` is only the name an error is written in, so a Groq key that is
+    refused says Groq rather than OpenAI.
+    """
     if not api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
-                         service="OpenAI"))
+                         service=service))
     try:
         data = _get_json(
             f"{base_url.rstrip('/')}/models",
             {"Authorization": f"Bearer {api_key}", "User-Agent": USER_AGENT},
         )
     except ApiError as exc:
-        raise explain(exc, "OpenAI") from None
+        raise explain(exc, service) from None
     ids = [m["id"] for m in data.get("data", []) if m.get("id")]
     audio = [i for i in ids if "transcribe" in i or "whisper" in i]
     return sorted(audio or ids)

@@ -1,5 +1,6 @@
 """Settings storage in ~/.config/dikte/config.json"""
 
+import collections
 import hashlib
 import json
 import os
@@ -363,10 +364,13 @@ DEFAULTS = {
     "ui_language": "auto",          # auto | tr | en
     "openai_api_key": "",
     "openai_base_url": "https://api.openai.com/v1",
+    "groq_api_key": "",
+    "groq_base_url": "https://api.groq.com/openai/v1",
     "openrouter_api_key": "",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
-    "transcribe_provider": "openai",  # openai | openrouter
+    "transcribe_provider": "openai",  # a key of TRANSCRIBERS
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
+    "groq_transcribe_model": "whisper-large-v3-turbo",
     "openrouter_transcribe_model": "openai/gpt-4o-transcribe",
     "language": "tr",
     "transcribe_prompt": "",
@@ -439,6 +443,22 @@ LEGACY_PROMPTS = {
     "154fc5aca1166f00eebda705f848f0391bfbf5fe",  # 1.2 English
 }
 
+# Every provider speech to text can run on, and the four settings that describe
+# one. A fifth is a row here rather than another branch in transcribe_target(),
+# another key row in the settings window and another line in save and load. The
+# order is the order the provider box offers them in. `service` is the name the
+# user sees; the environment variable that stands in for an empty key is the
+# name of its setting, shouted.
+Transcriber = collections.namedtuple("Transcriber", "service key url model")
+TRANSCRIBERS = {
+    "openai": Transcriber("OpenAI", "openai_api_key", "openai_base_url",
+                          "transcribe_model"),
+    "groq": Transcriber("Groq", "groq_api_key", "groq_base_url",
+                        "groq_transcribe_model"),
+    "openrouter": Transcriber("OpenRouter", "openrouter_api_key",
+                              "openrouter_base_url", "openrouter_transcribe_model"),
+}
+
 # Corners used to be stored with Turkish names.
 _CORNER_MIGRATION = {
     "sol-alt": "bottom-left", "sağ-alt": "bottom-right",
@@ -487,21 +507,27 @@ class Config:
     def get(self, key, default=None):
         return self.data.get(key, DEFAULTS.get(key, default))
 
+    def api_key(self, setting):
+        """A stored key, or the environment variable that shares its name."""
+        return self[setting].strip() or os.environ.get(setting.upper(), "").strip()
+
     def openai_key(self):
-        """Fall back to the environment when no key is stored."""
-        return self["openai_api_key"].strip() or os.environ.get("OPENAI_API_KEY", "").strip()
+        return self.api_key("openai_api_key")
+
+    def groq_key(self):
+        return self.api_key("groq_api_key")
 
     def openrouter_key(self):
-        return self["openrouter_api_key"].strip() or os.environ.get("OPENROUTER_API_KEY", "").strip()
+        return self.api_key("openrouter_api_key")
 
     def transcribe_target(self):
         """Key, endpoint and model for whichever provider does speech to text."""
-        if self["transcribe_provider"] == "openrouter":
-            return api.Target("openrouter", "OpenRouter", self.openrouter_key(),
-                              self["openrouter_base_url"],
-                              self["openrouter_transcribe_model"])
-        return api.Target("openai", "OpenAI", self.openai_key(),
-                          self["openai_base_url"], self["transcribe_model"])
+        name = self["transcribe_provider"]
+        if name not in TRANSCRIBERS:
+            name = DEFAULTS["transcribe_provider"]
+        who = TRANSCRIBERS[name]
+        return api.Target(name, who.service, self.api_key(who.key),
+                          self[who.url], self[who.model])
 
     def cleanup_prompt(self, with_timestamps=False, with_speakers=False,
                        subtitles=False):

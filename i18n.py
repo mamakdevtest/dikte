@@ -177,6 +177,7 @@ TR = {
     "Model": "Model",
     "Provider": "Sağlayıcı",
     "sk-… (falls back to OPENAI_API_KEY)": "sk-… (boşsa OPENAI_API_KEY kullanılır)",
+    "gsk_… (falls back to GROQ_API_KEY)": "gsk_… (boşsa GROQ_API_KEY kullanılır)",
     "sk-or-… (falls back to OPENROUTER_API_KEY)": "sk-or-… (boşsa OPENROUTER_API_KEY kullanılır)",
     "Test": "Test et",
     "Trying…": "Deneniyor…",

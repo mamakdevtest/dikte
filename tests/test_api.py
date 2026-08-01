@@ -21,6 +21,7 @@ from tests.support import (
 )
 
 OPENAI = api.Target("openai", "OpenAI", "sk-test", api.OPENAI_URL, "gpt-4o-transcribe")
+GROQ = api.Target("groq", "Groq", "gsk-test", api.GROQ_URL, "whisper-large-v3-turbo")
 OPENROUTER = api.Target("openrouter", "OpenRouter", "sk-or-test",
                         api.OPENROUTER_URL, "openai/gpt-4o-transcribe")
 
@@ -31,6 +32,18 @@ class TimestampModel(unittest.TestCase):
 
     def test_openrouter_namespaces_the_id(self):
         self.assertEqual(api.timestamp_model("openrouter"), "openai/whisper-1")
+
+    def test_groq_keeps_the_model_that_was_chosen(self):
+        """Every model it transcribes with is a whisper, so all of them do times."""
+        self.assertEqual(api.timestamp_model("groq", "whisper-large-v3"),
+                         "whisper-large-v3")
+
+    def test_groq_with_nothing_chosen_falls_back(self):
+        self.assertEqual(api.timestamp_model("groq"), "whisper-large-v3-turbo")
+
+    def test_the_others_ignore_what_was_chosen(self):
+        self.assertEqual(api.timestamp_model("openai", "gpt-4o-transcribe"),
+                         "whisper-1")
 
 
 class Explain(DikteTest):
@@ -176,13 +189,28 @@ class Transcribe(DikteTest):
         self.assertEqual(multipart_fields(calls[0])["language"], "tr")
         self.assertNotIn("language", multipart_fields(calls[1]))
 
-    def test_the_glossary_goes_to_openai_only(self):
+    def test_the_glossary_goes_everywhere_but_openrouter(self):
         """OpenRouter takes the field and throws it away, so spare it the bytes."""
         with fake_urlopen({"text": "hi"}) as calls:
             api.transcribe(OPENAI, self.wav, prompt="Paraşüt, OpenFrame")
+            api.transcribe(GROQ, self.wav, prompt="Paraşüt, OpenFrame")
             api.transcribe(OPENROUTER, self.wav, prompt="Paraşüt, OpenFrame")
         self.assertIn("prompt", multipart_fields(calls[0]))
-        self.assertNotIn("prompt", multipart_fields(calls[1]))
+        self.assertIn("prompt", multipart_fields(calls[1]))
+        self.assertNotIn("prompt", multipart_fields(calls[2]))
+
+    def test_groq_goes_to_groq(self):
+        with fake_urlopen({"text": "hi"}) as calls:
+            api.transcribe(GROQ, self.wav)
+        self.assertEqual(calls[0].full_url,
+                         "https://api.groq.com/openai/v1/audio/transcriptions")
+        self.assertEqual(multipart_fields(calls[0])["model"], "whisper-large-v3-turbo")
+
+    def test_a_refused_groq_key_is_explained_in_groq_s_name(self):
+        with fake_urlopen(http_error(401, '{"error": {"message": "bad key"}}')), \
+                self.assertRaises(api.ApiError) as caught:
+            api.transcribe(GROQ, self.wav)
+        self.assertIn("Groq", str(caught.exception))
 
     def test_openrouter_is_attributed(self):
         with fake_urlopen({"text": "hi"}) as calls:
@@ -241,6 +269,12 @@ class TranscribeSegments(DikteTest):
         with fake_urlopen(self.reply([{"start": 0, "end": 1, "text": "hi"}])) as calls:
             api.transcribe_segments(OPENROUTER, self.wav)
         self.assertEqual(multipart_fields(calls[0])["model"], "openai/whisper-1")
+
+    def test_groq_stays_on_the_model_it_was_given(self):
+        target = GROQ._replace(model="whisper-large-v3")
+        with fake_urlopen(self.reply([{"start": 0, "end": 1, "text": "hi"}])) as calls:
+            api.transcribe_segments(target, self.wav)
+        self.assertEqual(multipart_fields(calls[0])["model"], "whisper-large-v3")
 
     def test_the_segments_come_back_as_numbers(self):
         with fake_urlopen(self.reply([
@@ -431,6 +465,18 @@ class ModelLists(DikteTest):
     def test_openai_needs_a_key(self):
         with self.assertRaises(api.ApiError):
             api.openai_models("")
+
+    def test_the_same_list_read_from_groq(self):
+        with fake_urlopen({"data": [{"id": "llama-3.3-70b"},
+                                    {"id": "whisper-large-v3"}]}) as calls:
+            models = api.openai_models("gsk-test", api.GROQ_URL, "Groq")
+        self.assertEqual(calls[0].full_url, "https://api.groq.com/openai/v1/models")
+        self.assertEqual(models, ["whisper-large-v3"])
+
+    def test_a_missing_groq_key_says_groq(self):
+        with self.assertRaises(api.ApiError) as caught:
+            api.openai_models("", api.GROQ_URL, "Groq")
+        self.assertIn("Groq", str(caught.exception))
 
 
 if __name__ == "__main__":

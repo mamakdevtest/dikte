@@ -39,11 +39,12 @@ sudo apt install pulseaudio-utils xclip xdotool ffmpeg
 `install.sh` `dikte` komutunu, menü girdisini ve oturum açılışında otomatik
 başlatmayı kurar. Ayarlar penceresi GNOME veya KDE global kısayolunu kurar.
 
-Ayarlar penceresinde iki anahtar istenir: **OpenAI** ve **OpenRouter**. Sesi
-yazıya çevirme ikisinden birinde çalışır (varsayılan `gpt-4o-transcribe`),
+Ayarlar penceresinde üç anahtar istenir: **OpenAI**, **Groq** ve **OpenRouter**.
+Sesi yazıya çevirme üçünden birinde çalışır (varsayılan `gpt-4o-transcribe`),
 temizleme her zaman OpenRouter'da (`google/gemini-3.5-flash-lite`), yani tek bir
-OpenRouter anahtarı ikisine de yeter. Boş bırakırsan `OPENAI_API_KEY` ve
-`OPENROUTER_API_KEY` kullanılır; anahtarlar `~/.config/dikte/config.json`
+OpenRouter anahtarı ikisine de yeter. Boş bırakırsan `OPENAI_API_KEY`,
+`GROQ_API_KEY` ve `OPENROUTER_API_KEY` kullanılır;
+anahtarlar `~/.config/dikte/config.json`
 içinde, izinler 600. Temizlemeyi tamamen kapatabilirsin, o zaman ham transkript
 yapıştırılır; modelin yanındaki kutudan düşünme seviyesini de seçebilirsin.
 
