@@ -29,18 +29,15 @@ systemctl --user enable --now ydotool     # otomatik yapıştırma için
 dikte                        # ilk açılışta ayarlar penceresi gelir
 ```
 
-Fedora KDE'de paket adları farklı, `ydotool` da bir adım fazla istiyor:
+Fedora'da paket adları farklı, Fedora'nın kendi depolarındaki `ffmpeg-free`
+yetiyor çünkü Dikte video dosyasının yalnızca ses izini alıyor, `ydotool` da
+bir adım fazla istiyor: sistem servisi olarak geliyor, soketi de root'a ait
+kalıp oturumun erişemediği yerde durduğu için servis çalışırken bile otomatik
+yapıştırma tutmuyor. Soketi istemcinin zaten baktığı yola al ve sahipliğini
+devret:
 
 ```sh
 sudo dnf install pipewire-utils wl-clipboard ydotool ffmpeg-free python3-pyqt6
-```
-
-Fedora `ydotool`'u kullanıcı servisi değil sistem servisi olarak kuruyor;
-`ydotoold` de root'a ait bir sokete bağlanıyor, oturumun oraya yazamadığı için
-servis çalışırken bile otomatik yapıştırma tutmuyor. Soketi `ydotool`
-istemcisinin zaten baktığı yola al ve sahipliğini devret:
-
-```sh
 sudo mkdir -p /etc/systemd/system/ydotool.service.d
 printf '[Service]\nExecStart=\nExecStart=/usr/bin/ydotoold --socket-path=%s/.ydotool_socket --socket-own=%s:%s\n' \
   "$XDG_RUNTIME_DIR" "$(id -u)" "$(id -g)" \
@@ -48,19 +45,6 @@ printf '[Service]\nExecStart=\nExecStart=/usr/bin/ydotoold --socket-path=%s/.ydo
 sudo systemctl daemon-reload
 sudo systemctl enable --now ydotool
 ```
-
-O çalışma dizini oturumuna ait olduğu için yeniden başlatmanın ardından servis
-sen giriş yapana kadar kendini yeniden deneyip ondan sonra oturuyor. Fedora'nın
-kendi depolarındaki `ffmpeg-free` yetiyor, RPM Fusion gerekmiyor: özgür yapının
-dışarıda bıraktığı şey H.264 ve HEVC video çözümü, Dikte ise video dosyasının
-yalnızca ses izini alıyor; onun AAC, MP3 ve Opus çözücüleri yapının içinde.
-
-Bu makinede koşan modeller için de eklenecek bir şey yok. O sürümler Ubuntu'da
-derleniyor ve burada olduğu gibi çalışıyor; `libvulkan.so.1`'i KWin'in kendisi
-bağladığı için Plasma masaüstünde llama.cpp'nin Vulkan yapısıyla gelip
-gelmeyeceğini belirleyen yükleyici zaten kurulu, Mesa sürücüleri de onunla
-birlikte geliyor. whisper.cpp ise Linux için hiç GPU yapısı yayımlamıyor,
-nerede çalışırsa çalışsın işlemcide çeviriyor.
 
 Ubuntu/GNOME X11 için kayıt PulseAudio üzerinden, pano ve yapıştırma ise X11
 araçlarıyla çalışır:

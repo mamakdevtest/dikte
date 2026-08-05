@@ -52,21 +52,17 @@ fi
 # What auto-paste needs is a socket it may write to, which is not the same
 # question as whether the unit is up: Fedora ships ydotool as a system service
 # only, and its socket stays root-owned at mode 600, so there the daemon can be
-# running while every paste is refused.
+# running while every paste is refused. The socket file outlives the daemon,
+# though, so the process has to be there as well for the answer to be yes.
 if [[ "${XDG_SESSION_TYPE:-}" != "x11" ]] && command -v ydotool >/dev/null; then
   socket="${YDOTOOL_SOCKET:-${XDG_RUNTIME_DIR:-/tmp}/.ydotool_socket}"
-  if [[ -w "$socket" ]]; then
+  alive() { pgrep -x ydotoold >/dev/null 2>&1; }
+  if [[ -w "$socket" ]] && alive; then
     ok "ydotoold is running (auto-paste ready)"
   elif systemctl is-active --quiet ydotool 2>/dev/null; then
-    warn "ydotoold runs as a system service, whose socket is not yours to"
-    say  "write to. Hand it over in /etc/systemd/system/ydotool.service.d/"
-    say  "override.conf, which is what the README's Fedora section does:"
-    say  "  [Service]"
-    say  "  ExecStart="
-    say  "  ExecStart=/usr/bin/ydotoold --socket-path=$socket --socket-own=$(id -u):$(id -g)"
-    say  "then sudo systemctl daemon-reload && sudo systemctl restart ydotool"
-  elif systemctl --user is-active --quiet ydotool 2>/dev/null \
-       || systemctl --user is-active --quiet ydotoold 2>/dev/null; then
+    warn "ydotoold's socket is not yours to write to, so auto-paste will fail"
+    say  "Hand it over with the drop-in in the README's Fedora section."
+  elif alive; then
     warn "ydotoold is running, but it did not put its socket at $socket"
     say  "Point Dikte at the one it did make: export YDOTOOL_SOCKET=..."
   else
