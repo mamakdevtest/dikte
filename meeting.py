@@ -119,18 +119,34 @@ class MeetingPipeline(QObject):
 
             self._check()
             self._say(t("Writing the minutes…"))
+            # OpenRouter has always written the minutes; LLM API answers the
+            # same request, so the only change is who answers it.
+            if self.conf["meeting_provider"] == "llmapi":
+                minutes_key = self.conf.llmapi_key()
+                minutes_model = self.conf["meeting_llmapi_model"]
+                minutes_url = self.conf["llmapi_base_url"]
+                minutes_provider = "llmapi"
+                minutes_service = "LLM API"
+            else:
+                minutes_key = self.conf.openrouter_key()
+                minutes_model = self.conf["meeting_model"]
+                minutes_url = self.conf["openrouter_base_url"]
+                minutes_provider = "openrouter"
+                minutes_service = "OpenRouter"
             minutes = api.cleanup(
                 transcript,
-                self.conf.openrouter_key(),
-                self.conf["meeting_model"],
+                minutes_key,
+                minutes_model,
                 self.conf.meeting_prompt(),
                 reasoning=self.conf["meeting_reasoning"],
-                base_url=self.conf["openrouter_base_url"],
+                base_url=minutes_url,
                 timeout=600,
+                provider=minutes_provider,
+                service=minutes_service,
             )
             title = self._write(doc_path, minutes, transcript, entry)
             cfg.update_meeting(base, status="done", error="", title=title,
-                               model=self.conf["meeting_model"])
+                               model=minutes_model)
             self._discard_audio(wav_path)
             self.finished.emit(base, title)
 

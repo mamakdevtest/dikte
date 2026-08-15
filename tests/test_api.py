@@ -481,10 +481,79 @@ class ModelLists(DikteTest):
         self.assertEqual(calls[0].full_url, "https://api.groq.com/openai/v1/models")
         self.assertEqual(models, ["whisper-large-v3"])
 
-    def test_a_missing_groq_key_says_groq(self):
-        with self.assertRaises(api.ApiError) as caught:
-            api.openai_models("", api.GROQ_URL, "Groq")
-        self.assertIn("Groq", str(caught.exception))
+    def test_llmapi_keeps_text_models_and_silent_ones(self):
+        """The filter is told by the catalog's own modalities; a model the
+        catalog says nothing about stays, because the box is editable."""
+        with fake_urlopen({"data": [
+            {"id": "z/text", "architecture": {"input_modalities": ["text"],
+                                              "output_modalities": ["text"]}},
+            {"id": "a/text"},
+            {"id": "an/audio", "architecture": {"input_modalities": ["audio"],
+                                                "output_modalities": ["text"]}},
+            {"id": "b/text", "architecture": {"input_modalities": ["text"],
+                                              "output_modalities": ["text"]}},
+        ]}):
+            self.assertEqual(api.llmapi_models(), ["a/text", "b/text", "z/text"])
+
+    def test_llmapi_the_recommended_cleanup_models_lead_the_list(self):
+        """Cleanup is a short, frequent job, so the small and fast ones come
+        first and the alphabet follows; one that has dropped out of the
+        catalog simply stops leading."""
+        with fake_urlopen({"data": [
+            {"id": "z/model"}, {"id": api.LLMAPI_RECOMMENDED[2]},
+            {"id": api.LLMAPI_RECOMMENDED[0]}, {"id": "a/model"},
+        ]}):
+            self.assertEqual(api.llmapi_models(),
+                             [api.LLMAPI_RECOMMENDED[0], api.LLMAPI_RECOMMENDED[2],
+                              "a/model", "z/model"])
+
+    def test_llmapi_works_without_a_key(self):
+        with fake_urlopen({"data": []}) as calls:
+            api.llmapi_models()
+        self.assertIsNone(calls[0].get_header("Authorization"))
+        self.assertEqual(calls[0].full_url, api.LLMAPI_URL + "/models")
+
+    def test_llmapi_sends_a_key_when_there_is_one(self):
+        with fake_urlopen({"data": []}) as calls:
+            api.llmapi_models("sk-test", "http://localhost:1234/v1/")
+        self.assertEqual(calls[0].get_header("Authorization"), "Bearer sk-test")
+        self.assertEqual(calls[0].full_url, "http://localhost:1234/v1/models")
+
+    def test_llmapi_transcription_keeps_only_what_audio_transcriptions_takes(self):
+        """Filtered by name the way openai_models() does it: the catalog's
+        modalities are not reliable enough about which whisper a key may
+        call."""
+        with fake_urlopen({"data": [
+            {"id": "gpt-4o-transcribe"}, {"id": "gpt-4o"},
+            {"id": "whisper-1"}, {"id": "claude-3.5"},
+        ]}):
+            self.assertEqual(api.llmapi_models("sk-test", transcription=True),
+                             ["gpt-4o-transcribe", "whisper-1"])
+
+    def test_llmapi_transcription_reads_the_same_catalog(self):
+        with fake_urlopen({"data": [{"id": "whisper-1"}]}) as calls:
+            api.llmapi_models(transcription=True)
+        self.assertEqual(calls[0].full_url, api.LLMAPI_URL + "/models")
+
+    def test_llmapi_key_status(self):
+        """There is no /key endpoint; /models refuses a key it does not know
+        and its list says how much the key sees."""
+        with fake_urlopen({"data": [{"id": "a"}, {"id": "b"}]}) as calls:
+            self.assertEqual(api.llmapi_key_status("sk-test"),
+                             "Key works. 2 models visible.")
+        self.assertEqual(calls[0].full_url, api.LLMAPI_URL + "/models")
+        self.assertEqual(calls[0].get_header("Authorization"), "Bearer sk-test")
+
+    def test_llmapi_key_status_needs_a_key(self):
+        with self.assertRaises(api.ApiError):
+            api.llmapi_key_status("")
+
+    def test_a_rejected_llmapi_key_says_llm_api(self):
+        with fake_urlopen(http_error(401)), \
+                self.assertRaises(api.ApiError) as caught:
+            api.llmapi_key_status("sk-bad")
+        self.assertEqual(caught.exception.status, 401)
+        self.assertIn("LLM API", str(caught.exception))
 
 
 if __name__ == "__main__":

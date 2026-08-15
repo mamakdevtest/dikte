@@ -507,6 +507,32 @@ class AskOpenRouter(DikteTest):
             assistant.ask("when is it", conf)
 
 
+class AskLlmapi(DikteTest):
+    """Same plain question and answer as OpenRouter, over the other key."""
+
+    def test_the_request_goes_to_llm_api_and_keeps_its_own_thread(self):
+        conf = self.config(assistant_provider="llmapi", llmapi_api_key="sk-test",
+                           assistant_llmapi_model="some/asker")
+        with fake_urlopen({"choices": [{"message": {"content": "on Thursday"}}]}) as calls:
+            answer, warning = assistant.ask("when is it", conf)
+        self.assertEqual(answer, "on Thursday")
+        self.assertEqual(warning, "")
+        self.assertEqual(calls[0].full_url,
+                         conf["llmapi_base_url"].rstrip("/") + "/chat/completions")
+        sent = json.loads(calls[0].data.decode("utf-8"))
+        self.assertEqual(sent["model"], "some/asker")
+        stored = assistant.read_messages("llmapi", 1800)
+        self.assertEqual([row["content"] for row in stored],
+                         ["when is it", "on Thursday"])
+        # The two plain-HTTP providers keep their threads apart.
+        self.assertEqual(assistant.read_messages("openrouter", 1800), [])
+
+    def test_it_is_named_llm_api(self):
+        self.assertEqual(
+            assistant.display_name(self.config(assistant_provider="llmapi")),
+            "LLM API")
+
+
 class Ask(DikteTest):
     def test_a_cli_that_is_not_installed_says_where_to_change_it(self):
         with only_these_tools(), \

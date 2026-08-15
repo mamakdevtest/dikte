@@ -211,7 +211,8 @@ def cmd_ask(opts):
         conf["assistant_provider"] = opts.provider
     if opts.model:
         key = {"claude": "assistant_model", "codex": "assistant_codex_model",
-               "openrouter": "assistant_openrouter_model"}[assistant.provider(conf)]
+               "openrouter": "assistant_openrouter_model",
+               "llmapi": "assistant_llmapi_model"}[assistant.provider(conf)]
         conf[key] = opts.model
     if opts.dir:
         conf["assistant_dir"] = opts.dir
@@ -500,7 +501,7 @@ def cmd_history_clear(opts):
 
 # --- settings ---------------------------------------------------------------
 
-SECRET_KEYS = ("openai_api_key", "openrouter_api_key")
+SECRET_KEYS = ("openai_api_key", "openrouter_api_key", "llmapi_api_key")
 
 
 def _mask(key, value):
@@ -655,12 +656,15 @@ def cmd_devices(opts):
 
 def cmd_models(opts):
     conf = cfg.Config()
-    who = cfg.TRANSCRIBERS[opts.provider]
     try:
-        if opts.provider == "openrouter":
+        if opts.provider == "llmapi":
+            models = api.llmapi_models(conf.llmapi_key(), conf["llmapi_base_url"],
+                                       transcription=opts.transcription)
+        elif opts.provider == "openrouter":
             models = api.openrouter_models(conf.openrouter_key(),
                                            transcription=opts.transcription)
         else:
+            who = cfg.TRANSCRIBERS[opts.provider]
             models = api.openai_models(conf.api_key(who.key), conf[who.url],
                                        who.service)
     except api.ApiError as exc:
@@ -680,6 +684,12 @@ def cmd_test_key(opts):
                 # The one key that also pays for cleanup, so it reports credit
                 # rather than a model count.
                 message = api.openrouter_key_status(conf.openrouter_key())
+            elif name == "llmapi":
+                # There is no /key endpoint to ask; /models is what accepts
+                # or refuses the key, and llmapi_key_status counts what it
+                # shows.
+                message = api.llmapi_key_status(conf.api_key(who.key),
+                                                conf[who.url])
             else:
                 count = len(api.openai_models(conf.api_key(who.key), conf[who.url],
                                               who.service))

@@ -253,6 +253,27 @@ class Pipeline(DikteTest):
         self.assertEqual(done[0], (self.base, "Kickoff"))
         self.assertIn("Agreed.", self.doc.read_text(encoding="utf-8"))
 
+    def test_llm_api_answers_the_minutes_when_chosen(self):
+        """Same request as OpenRouter: only the key, the model, the base URL
+        and the service an error speaks in are different."""
+        self.conf["meeting_provider"] = "llmapi"
+        self.conf["llmapi_api_key"] = "sk-test"
+        self.conf["meeting_llmapi_model"] = "some/minutes"
+        self.conf["meeting_cleanup"] = False
+        with mock.patch.object(api, "transcribe_segments",
+                               return_value=[(0.0, 1.0, "hello")]), \
+                mock.patch.object(api, "cleanup",
+                                  return_value="# Kickoff\n\nAgreed.") as call:
+            worker = meeting.MeetingPipeline(self.conf)
+            worker._work(dict(cfg.read_meetings()[0]))
+        key, model = call.call_args.args[1:3]
+        self.assertEqual((key, model), ("sk-test", "some/minutes"))
+        self.assertEqual(call.call_args.kwargs["base_url"],
+                         self.conf["llmapi_base_url"])
+        self.assertEqual(call.call_args.kwargs["provider"], "llmapi")
+        self.assertEqual(call.call_args.kwargs["service"], "LLM API")
+        self.assertEqual(cfg.read_meetings()[0]["model"], "some/minutes")
+
     def test_the_row_ends_up_done_with_its_title(self):
         self.run_pipeline()
         row = cfg.read_meetings()[0]

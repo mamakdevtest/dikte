@@ -384,10 +384,13 @@ DEFAULTS = {
     "groq_base_url": "https://api.groq.com/openai/v1",
     "openrouter_api_key": "",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
+    "llmapi_api_key": "",
+    "llmapi_base_url": "https://api.llmapi.ai/v1",
     "transcribe_provider": "local",  # "local", or a key of TRANSCRIBERS
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
     "groq_transcribe_model": "whisper-large-v3-turbo",
     "openrouter_transcribe_model": "openai/gpt-4o-transcribe",
+    "llmapi_transcribe_model": "gpt-4o-transcribe",
     "language": "tr",
     "transcribe_prompt": "",
 
@@ -407,6 +410,7 @@ DEFAULTS = {
     "cleanup_enabled": True,
     "cleanup_provider": "openrouter",  # a name in cleanup.PROVIDERS
     "cleanup_model": "google/gemini-3.5-flash-lite",
+    "cleanup_llmapi_model": "gpt-4o-mini",  # LLM API keeps its own choice
     "cleanup_claude_model": "haiku",   # Claude Code: an alias, or a full model id
     "cleanup_codex_model": "",         # empty -> whatever Codex is set to
     "cleanup_reasoning": "",        # empty -> whatever the model does by default
@@ -458,7 +462,9 @@ DEFAULTS = {
     "meeting_language": "",         # empty -> the dictation speech language
     "meeting_max_seconds": 14400,   # 4 hours
     "meeting_cleanup": True,
+    "meeting_provider": "openrouter",  # openrouter | llmapi
     "meeting_model": "google/gemini-3.5-flash",
+    "meeting_llmapi_model": "gpt-4o",
     "meeting_reasoning": "",
     "meeting_prompt": "",           # empty -> language-specific default
     "meeting_self_name": "",        # empty -> "Me" in the interface language
@@ -469,12 +475,13 @@ DEFAULTS = {
 
     # --- speaking a command to an agent -------------------------------------
     "assistant_shortcut": "",       # empty -> tray only
-    "assistant_provider": "claude",  # claude | codex | openrouter
+    "assistant_provider": "claude",  # claude | codex | openrouter | llmapi
     "assistant_model": "sonnet",    # Claude Code: an alias, or a full model id
     "assistant_permission_mode": "auto",
     "assistant_codex_model": "",    # empty -> whatever Codex is set to
     "assistant_codex_sandbox": "workspace-write",
     "assistant_openrouter_model": "google/gemini-3.5-flash",
+    "assistant_llmapi_model": "gpt-4o-mini",
     "assistant_reasoning": "",      # empty -> the model's own default
     "assistant_dir": "",            # empty -> the home directory
     "assistant_prompt": "",         # empty -> language-specific default
@@ -511,6 +518,8 @@ TRANSCRIBERS = {
                         "groq_transcribe_model"),
     "openrouter": Transcriber("OpenRouter", "openrouter_api_key",
                               "openrouter_base_url", "openrouter_transcribe_model"),
+    "llmapi": Transcriber("LLM API", "llmapi_api_key", "llmapi_base_url",
+                          "llmapi_transcribe_model"),
 }
 
 # Corners used to be stored with Turkish names.
@@ -573,6 +582,9 @@ class Config:
 
     def openrouter_key(self):
         return self.api_key("openrouter_api_key")
+
+    def llmapi_key(self):
+        return self.api_key("llmapi_api_key")
 
     def transcribe_target(self):
         """Key, endpoint and model for whichever provider does speech to text.

@@ -1,10 +1,14 @@
-"""OpenAI, Groq, OpenRouter and this machine, stdlib only.
+"""OpenAI, Groq, OpenRouter, LLM API and this machine, stdlib only.
 
 Transcription runs on any of the four: Groq and OpenRouter both mirror OpenAI's
 /audio/transcriptions endpoint field for field, and ggml.py starts whisper.cpp
 on that same path, so one multipart request serves all of them and only the key,
 the base URL and the model id change. llama.cpp answers /chat/completions the way
 OpenRouter does, so cleanup here is the same request too.
+
+LLM API (llmapi.ai) speaks the same OpenAI shapes: cleanup and the assistant
+reach its /chat/completions, model discovery its /models, and speech to text
+its /audio/transcriptions, each with nothing changed but the base URL.
 
 What is on this machine has no key, and its base URL is not known until a server
 is up, which is the one thing this module has to fill in for it.
@@ -30,6 +34,7 @@ USER_AGENT = f"dikte/1.0 (+{APP_URL})"
 OPENAI_URL = "https://api.openai.com/v1"
 GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
+LLMAPI_URL = "https://api.llmapi.ai/v1"
 
 # The floor for a local request. The timeouts elsewhere are sized for a hosted
 # API, where a slow answer is a bill running; here the only thing being spent is
@@ -285,7 +290,6 @@ def _headers(provider, api_key, content_type=None):
         headers["X-Title"] = "Dikte"
     return headers
 
-
 def serving(server):
     """The base URL of a local server, started if it is not up yet.
 
@@ -499,15 +503,18 @@ def cleanup(text, api_key, model, system_prompt, reasoning="",
 
 
 def chat(messages, api_key, model, system_prompt, reasoning="",
-         base_url=OPENROUTER_URL, timeout=180):
+         base_url=OPENROUTER_URL, timeout=180, provider="openrouter",
+         service="OpenRouter"):
     """A conversation, rather than one transcript rewritten.
 
     The messages are the whole history and come back unchanged; the caller keeps
-    them, because there is no session on OpenRouter's side to resume.
+    them, because there is no session on the other end to resume. The same
+    request reaches anything that answers OpenAI's /chat/completions, which is
+    how LLM API joins in: another base URL and service name, nothing else.
     """
     if not api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
-                         service="OpenRouter"))
+                         service=service))
     payload = {
         "model": model,
         "messages": [{"role": "system", "content": system_prompt}] + list(messages),
@@ -518,11 +525,11 @@ def chat(messages, api_key, model, system_prompt, reasoning="",
         data = _request(
             f"{base_url.rstrip('/')}/chat/completions",
             json.dumps(payload).encode("utf-8"),
-            _headers("openrouter", api_key, "application/json"),
+            _headers(provider, api_key, "application/json"),
             timeout=timeout,
         )
     except ApiError as exc:
-        raise explain(exc, "OpenRouter") from None
+        raise explain(exc, service) from None
     choices = data.get("choices") or []
     if not choices:
         raise ApiError(_extract_error(json.dumps(data)))
@@ -605,3 +612,77 @@ def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI"):
     ids = [m["id"] for m in data.get("data", []) if m.get("id")]
     audio = [i for i in ids if "transcribe" in i or "whisper" in i]
     return sorted(audio or ids)
+
+
+def llmapi_models(api_key="", base_url=LLMAPI_URL, text_only=True,
+                  transcription=False):
+    """The model ids on LLM API's /models.
+
+    The catalog is open without a key, so an empty one still hands it back; the
+    request is sent the way a keyed one would be, because a base URL pointed
+    somewhere private may want its key after all. `text_only` keeps just the
+    models that read and write text, on the modalities the catalog itself
+    reports rather than on a guess from the name: speech and picture models
+    stay out of a box that could not use them. One the catalog says nothing
+    about is kept, because the box is editable and the user's word beats the
+    filter's. `transcription` asks for the opposite: only ids
+    /audio/transcriptions accepts, filtered by name the way openai_models()
+    does it, because the catalog's modalities are not reliable enough about
+    which whisper a key may call.
+    """
+    headers = {"User-Agent": USER_AGENT}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        data = _get_json(f"{base_url.rstrip('/')}/models", headers)
+    except ApiError as exc:
+        raise explain(exc, "LLM API") from None
+
+    def writes_text(model):
+        arch = model.get("architecture") or {}
+        ins = arch.get("input_modalities") or []
+        outs = arch.get("output_modalities") or []
+        if not ins and not outs:
+            return True
+        return "text" in ins and "text" in outs
+
+    models = [m for m in data.get("data", []) if m.get("id")]
+    if transcription:
+        ids = sorted(m["id"] for m in models)
+        return [i for i in ids if "transcribe" in i or "whisper" in i]
+    if text_only:
+        models = [m for m in models if writes_text(m)]
+    ids = sorted(m["id"] for m in models)
+    recommended = [i for i in LLMAPI_RECOMMENDED if i in ids]
+    return recommended + [i for i in ids if i not in recommended]
+
+
+# Cleanup is a short, frequent job, so the small and fast ones lead the list
+# the settings window fetches; whatever else the catalog holds follows
+# alphabetically. One that drops out of the catalog one day simply stops
+# leading rather than breaking anything.
+LLMAPI_RECOMMENDED = [
+    "gemini-3.5-flash-lite", "claude-haiku-4-5", "gpt-5.4-mini",
+    "gemini-3.6-flash", "gpt-4o-mini",
+]
+
+
+def llmapi_key_status(api_key, base_url=LLMAPI_URL):
+    """Whether LLM API accepts the key, asked of its /models.
+
+    There is no /key endpoint — a request to it answers "The requested model
+    is unavailable", which is not a key verdict at all. /models answers
+    without a key but refuses one it does not know, which is the answer the
+    Test button wants; and the list it hands back says how much the key sees.
+    """
+    if not api_key:
+        raise ApiError(t("{service} API key is empty. Add it in Settings.",
+                         service="LLM API"))
+    try:
+        data = _get_json(
+            f"{base_url.rstrip('/')}/models",
+            {"Authorization": f"Bearer {api_key}", "User-Agent": USER_AGENT})
+    except ApiError as exc:
+        raise explain(exc, "LLM API") from None
+    count = len([m for m in data.get("data", []) if m.get("id")])
+    return t("Key works. {count} models visible.", count=count)
