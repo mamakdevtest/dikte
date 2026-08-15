@@ -34,7 +34,7 @@ import config as cfg
 from i18n import t
 
 SESSION_FILE = cfg.DATA_DIR / "assistant.json"
-PROVIDERS = ("claude", "codex", "openrouter")
+PROVIDERS = ("claude", "codex", "openrouter", "llmapi")
 
 # How many messages of an OpenRouter conversation are carried forward. The two
 # CLIs keep their own history and need no such number; here every turn is resent
@@ -103,7 +103,8 @@ def executable(name):
 
 def display_name(conf):
     """What to call the thing being asked, in the tray and in the corner."""
-    return {"claude": "Claude", "codex": "Codex"}.get(provider(conf), "OpenRouter")
+    return {"claude": "Claude", "codex": "Codex",
+            "llmapi": "LLM API"}.get(provider(conf), "OpenRouter")
 
 
 # --- the conversation -----------------------------------------------------
@@ -196,8 +197,8 @@ def ask(prompt, conf, on_stage=None, should_stop=None):
     one, and only the denial explains why it did not do what it was asked to.
     """
     name = provider(conf)
-    if name == "openrouter":
-        return _ask_openrouter(prompt, conf, on_stage)
+    if name in ("openrouter", "llmapi"):
+        return _ask_plain_http(name, prompt, conf, on_stage)
 
     binary = executable(name)
     if not shutil.which(binary):
@@ -340,27 +341,37 @@ def _codex_label(item):
 
 # --- OpenRouter -----------------------------------------------------------
 
-def _ask_openrouter(prompt, conf, on_stage):
+def _ask_plain_http(name, prompt, conf, on_stage):
     """No tools, no files, no calendar: a question and an answer.
 
     It is the fallback for a machine with neither CLI on it, so it says what it
     knows and nothing else. The conversation is ours to keep here, since there
-    is no session on the other end to resume.
+    is no session on the other end to resume. OpenRouter and LLM API both answer
+    the same /chat/completions, so they share this path and differ only in the
+    key, the model, the base URL and the name an error speaks in.
     """
     if on_stage:
         on_stage(t("Thinking…"))
-    history = read_messages("openrouter", conf["assistant_session_minutes"] * 60)
+    if name == "llmapi":
+        key, model, base, service = (conf.llmapi_key(),
+                                     conf["assistant_llmapi_model"],
+                                     conf["llmapi_base_url"], "LLM API")
+    else:
+        key, model, base, service = (conf.openrouter_key(),
+                                     conf["assistant_openrouter_model"],
+                                     conf["openrouter_base_url"], "OpenRouter")
+    history = read_messages(name, conf["assistant_session_minutes"] * 60)
     messages = history + [{"role": "user", "content": prompt}]
     try:
         answer = api.chat(
-            messages, conf.openrouter_key(), conf["assistant_openrouter_model"],
+            messages, key, model,
             conf.assistant_prompt(), reasoning=conf["assistant_reasoning"],
-            base_url=conf["openrouter_base_url"],
-            timeout=conf["assistant_timeout"],
+            base_url=base, timeout=conf["assistant_timeout"],
+            provider=name, service=service,
         )
     except api.ApiError as exc:
         raise AssistantError(str(exc)) from exc
-    write_session("openrouter",
+    write_session(name,
                   messages=messages + [{"role": "assistant", "content": answer}])
     return answer, ""
 

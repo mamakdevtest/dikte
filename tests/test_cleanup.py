@@ -86,6 +86,33 @@ class OpenRouter(DikteTest):
         self.assertEqual(calls, [])
 
 
+class Llmapi(DikteTest):
+    """The same request as OpenRouter, answered from the LLM API base URL."""
+
+    def test_the_request_is_sent_with_llm_api_in_charge_of_the_words(self):
+        conf = self.config(cleanup_provider="llmapi", llmapi_api_key="sk-test",
+                           cleanup_llmapi_model="some/model",
+                           cleanup_reasoning="low")
+        with mock.patch.object(api, "cleanup", return_value="Done.") as call:
+            self.assertEqual(cleanup.run("uh, done", conf, "the rules"), "Done.")
+        text, key, model, prompt = call.call_args.args
+        self.assertEqual((text, key, model, prompt),
+                         ("uh, done", "sk-test", "some/model", "the rules"))
+        self.assertEqual(call.call_args.kwargs["reasoning"], "low")
+        self.assertEqual(call.call_args.kwargs["base_url"],
+                         conf["llmapi_base_url"])
+        self.assertEqual(call.call_args.kwargs["provider"], "llmapi")
+        self.assertEqual(call.call_args.kwargs["service"], "LLM API")
+
+    def test_the_model_reported_in_the_history_is_its_own(self):
+        self.assertEqual(
+            cleanup.model(self.config(cleanup_provider="llmapi")), "gpt-4o-mini")
+        self.assertEqual(
+            cleanup.model(self.config(cleanup_provider="llmapi",
+                                      cleanup_llmapi_model="some/model")),
+            "some/model")
+
+
 class ClaudeCode(DikteTest):
     def setUp(self):
         super().setUp()

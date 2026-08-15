@@ -188,17 +188,23 @@ TR = {
     "sk-… (falls back to OPENAI_API_KEY)": "sk-… (boşsa OPENAI_API_KEY kullanılır)",
     "gsk_… (falls back to GROQ_API_KEY)": "gsk_… (boşsa GROQ_API_KEY kullanılır)",
     "sk-or-… (falls back to OPENROUTER_API_KEY)": "sk-or-… (boşsa OPENROUTER_API_KEY kullanılır)",
+    "falls back to LLM_API_KEY": "boşsa LLM_API_KEY kullanılır",
     "Test": "Test et",
     "Trying…": "Deneniyor…",
     "Runs on OpenRouter.": "OpenRouter üzerinde çalışır.",
+    "Runs on LLM API.": "LLM API üzerinde çalışır.",
     "Connection works. {count} audio models visible.":
         "Bağlantı tamam. {count} ses modeli görünüyor.",
+    "Key works. {count} models visible.":
+        "Anahtar çalışıyor. {count} model görünüyor.",
     "Clean the transcript with a model": "Transkripti bir modelle temizle",
-    "OpenRouter is the quickest and the only one that needs nothing installed. "
-    "Claude Code and Codex clean up on the subscription you already have, "
-    "without a second key, and take a few seconds longer because each one opens "
-    "a session to do it.":
-        "En hızlısı OpenRouter'dır ve kurulu bir program istemeyen tek seçenektir. "
+    "OpenRouter and LLM API are the quickest and need nothing installed. "
+    "llama.cpp runs here, on a model downloaded below. Claude Code and "
+    "Codex clean up on the subscription you already have, without a "
+    "second key, and take a few seconds longer because each one opens a "
+    "session to do it.":
+        "En hızlıları OpenRouter ile LLM API'dir ve kurulu bir program istemezler. "
+        "llama.cpp bu makinede, aşağıdan indirilen bir modelle çalışır. "
         "Claude Code ile Codex, temizliği hâlihazırda ödediğin abonelik üzerinden "
         "yapar, ikinci bir anahtar istemez; her biri bunun için bir oturum açtığından "
         "birkaç saniye daha uzun sürer.",
@@ -464,8 +470,17 @@ TR = {
         "Komut çalıştırmaz, dosya açmaz, servislerinin hiçbirine erişmez; yani "
         "Peru'nun başkentini söyler ama takviminde ne olduğunu söyleyemez. "
         "Yukarıdaki çalışma dizini ve izinler burada bir şey ifade etmez.",
-    "Needs no program installed, only the OpenRouter key.":
-        "Kurulu bir programa değil, yalnızca OpenRouter anahtarına ihtiyaç duyar.",
+    "Needs no program installed, only the {service} key.":
+        "Kurulu bir programa değil, yalnızca {service} anahtarına ihtiyaç duyar.",
+    "A plain question and a plain answer, over the LLM API key you "
+    "already have. It runs no commands, opens no files and reaches none "
+    "of your services, so it can tell you what the capital of Peru is "
+    "but not what is in your calendar. Working directory and permissions "
+    "above mean nothing here.":
+        "Elindeki LLM API anahtarı üzerinden düz bir soru ve düz bir cevap. "
+        "Komut çalıştırmaz, dosya açmaz, servislerinin hiçbirine erişmez; yani "
+        "Peru'nun başkentini söyler ama takviminde ne olduğunu söyleyemez. "
+        "Yukarıdaki çalışma dizini ve izinler burada bir şey ifade etmez.",
     "{binary} is not on your PATH, so this cannot run yet. Install it, or pick "
     "another one above.":
         "{binary} PATH'te değil, dolayısıyla bu henüz çalışamaz. Kur ya da "

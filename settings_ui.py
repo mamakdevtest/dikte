@@ -48,6 +48,7 @@ TRANSCRIBE_MODELS = {
         "openai/whisper-large-v3-turbo", "mistralai/voxtral-mini-transcribe",
         "deepgram/nova-3", "google/chirp-3",
     ],
+    "llmapi": ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"],
 }
 CLEANUP_MODELS = [
     "google/gemini-3.5-flash-lite", "google/gemini-3.1-flash-lite",
@@ -58,7 +59,8 @@ CLEANUP_MODELS = [
 # model here takes a little longer and costs nothing, and the two CLIs the agent
 # can run on open a whole session to do the smaller job.
 CLEANUP_PROVIDERS = [
-    ("OpenRouter", "openrouter"), ("This machine (llama.cpp)", "local"),
+    ("OpenRouter", "openrouter"), ("LLM API", "llmapi"),
+    ("This machine (llama.cpp)", "local"),
     ("Claude Code", "claude"), ("Codex", "codex"),
 ]
 # Cleaning up a sentence is the lightest thing either of them will ever be
@@ -72,6 +74,7 @@ MEETING_MODELS = [
 ]
 ASSISTANT_PROVIDERS = [
     ("Claude Code", "claude"), ("Codex", "codex"), ("OpenRouter", "openrouter"),
+    ("LLM API", "llmapi"),
 ]
 # Aliases resolve to the newest model of that name, so they age better than an
 # id does; a full id can be typed in when a particular one is wanted.
@@ -627,6 +630,9 @@ class SettingsWindow(QDialog):
         self.openrouter_key = self._key_row(
             keys_form, "openrouter", t("sk-or-… (falls back to OPENROUTER_API_KEY)"),
             self._test_openrouter)
+        self.llmapi_key = self._key_row(
+            keys_form, "llmapi", t("falls back to LLM_API_KEY"),
+            self._test_llmapi)
         outer.addWidget(keys)
 
         stt = QGroupBox(t("Speech to text"))
@@ -691,11 +697,11 @@ class SettingsWindow(QDialog):
         for label, value in CLEANUP_PROVIDERS:
             self.cleanup_provider.addItem(t(label), value)
         self.cleanup_provider.setToolTip(t(
-            "OpenRouter is the quickest and the only one that needs nothing "
-            "installed. llama.cpp runs here, on a model downloaded below. Claude "
-            "Code and Codex clean up on the subscription you already have, "
-            "without a second key, and take a few seconds longer because each "
-            "one opens a session to do it."
+            "OpenRouter and LLM API are the quickest and need nothing installed. "
+            "llama.cpp runs here, on a model downloaded below. Claude Code and "
+            "Codex clean up on the subscription you already have, without a "
+            "second key, and take a few seconds longer because each one opens a "
+            "session to do it."
         ))
         self.cleanup_provider.currentIndexChanged.connect(self._cleanup_provider_changed)
         orr_form.addRow(t("Runs on"), self.cleanup_provider)
@@ -711,6 +717,15 @@ class SettingsWindow(QDialog):
         # One row per provider rather than one box that means a different thing
         # in each: an OpenRouter id and a Claude alias do not belong in the same
         # field, and only the row of whoever is chosen is on screen.
+        self.cleanup_llmapi_model = QComboBox()
+        self.cleanup_llmapi_model.setEditable(True)
+        self.cleanup_llmapi_model.addItems(api.LLMAPI_RECOMMENDED)
+        self.refresh_llmapi_models = QPushButton(t("Fetch model list"))
+        self.refresh_llmapi_models.clicked.connect(self._load_models)
+        self.cleanup_llmapi_model_row = self._row(
+            self.cleanup_llmapi_model, self.refresh_llmapi_models)
+        orr_form.addRow(t("Model"), self.cleanup_llmapi_model_row)
+
         self.cleanup_claude_model = QComboBox()
         self.cleanup_claude_model.setEditable(True)
         self.cleanup_claude_model.addItems(CLEANUP_CLAUDE_MODELS)
@@ -917,6 +932,24 @@ class SettingsWindow(QDialog):
         or_form.addRow(or_note)
         layout.addWidget(self.openrouter_box)
 
+        self.llmapi_box = QGroupBox("LLM API")
+        llmapi_form = QFormLayout(self.llmapi_box)
+        self.assistant_llmapi_model = QComboBox()
+        self.assistant_llmapi_model.setEditable(True)
+        self.assistant_llmapi_model.addItems(
+            [cfg.DEFAULTS["assistant_llmapi_model"], cfg.DEFAULTS["meeting_llmapi_model"]])
+        llmapi_form.addRow(t("Model"), self.assistant_llmapi_model)
+        llmapi_note = QLabel(t(
+            "A plain question and a plain answer, over the LLM API key you "
+            "already have. It runs no commands, opens no files and reaches none "
+            "of your services, so it can tell you what the capital of Peru is "
+            "but not what is in your calendar. Working directory and permissions "
+            "above mean nothing here."
+        ))
+        llmapi_note.setWordWrap(True)
+        llmapi_form.addRow(llmapi_note)
+        layout.addWidget(self.llmapi_box)
+
         thread = QGroupBox(t("The conversation"))
         thread_form = QFormLayout(thread)
         self.assistant_session_minutes = QSpinBox()
@@ -1041,11 +1074,24 @@ class SettingsWindow(QDialog):
         layout.addWidget(people)
 
         models = QGroupBox(t("Minutes"))
-        models_form = QFormLayout(models)
+        models_form = self.meeting_form = QFormLayout(models)
+        self.meeting_provider = QComboBox()
+        # Both write the minutes over one /chat/completions request, so the
+        # choice is a matter of which key and which bill, nothing else.
+        self.meeting_provider.addItem("OpenRouter", "openrouter")
+        self.meeting_provider.addItem("LLM API", "llmapi")
+        self.meeting_provider.currentIndexChanged.connect(
+            self._meeting_provider_changed)
+        models_form.addRow(t("Runs on"), self.meeting_provider)
         self.meeting_model = QComboBox()
         self.meeting_model.setEditable(True)
         self.meeting_model.addItems(MEETING_MODELS)
         models_form.addRow(t("Model"), self.meeting_model)
+        self.meeting_llmapi_model = QComboBox()
+        self.meeting_llmapi_model.setEditable(True)
+        self.meeting_llmapi_model.addItems(
+            [cfg.DEFAULTS["meeting_llmapi_model"], cfg.DEFAULTS["cleanup_llmapi_model"]])
+        models_form.addRow(t("Model"), self.meeting_llmapi_model)
         self.meeting_reasoning = QComboBox()
         for label, value in REASONING_LEVELS:
             self.meeting_reasoning.addItem(t(label), value)
@@ -1369,7 +1415,8 @@ class SettingsWindow(QDialog):
         button.clicked.connect(tester)
         answer = QLabel("")
         answer.setWordWrap(True)
-        form.addRow(cfg.TRANSCRIBERS[provider].service, self._row(field, button))
+        form.addRow(cfg.TRANSCRIBERS[provider].service,
+                    self._row(field, button))
         form.addRow("", answer)
         self._key_fields[provider] = field
         self._testers[provider] = (button, answer)
@@ -1440,6 +1487,7 @@ class SettingsWindow(QDialog):
         for name, who in cfg.TRANSCRIBERS.items():
             self._key_fields[name].setText(conf[who.key])
             self._models[name] = conf[who.model]
+        self._key_fields["llmapi"].setText(conf["llmapi_api_key"])
         self._shown_provider = ""
         self._select_data(self.transcribe_provider, conf["transcribe_provider"])
         self._provider_changed()  # selecting index 0 fires no signal
@@ -1450,6 +1498,7 @@ class SettingsWindow(QDialog):
 
         self.cleanup_enabled.setChecked(conf["cleanup_enabled"])
         self.cleanup_model.setCurrentText(conf["cleanup_model"])
+        self.cleanup_llmapi_model.setCurrentText(conf["cleanup_llmapi_model"])
         self.cleanup_claude_model.setCurrentText(conf["cleanup_claude_model"])
         self.cleanup_codex_model.setCurrentText(
             conf["cleanup_codex_model"] or t("Codex's own default")
@@ -1473,6 +1522,7 @@ class SettingsWindow(QDialog):
         self.assistant_codex_model.setCurrentText(conf["assistant_codex_model"])
         self._select_data(self.assistant_codex_sandbox, conf["assistant_codex_sandbox"])
         self.assistant_openrouter_model.setCurrentText(conf["assistant_openrouter_model"])
+        self.assistant_llmapi_model.setCurrentText(conf["assistant_llmapi_model"])
         self._assistant_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.assistant_reasoning, conf["assistant_reasoning"])
         self.assistant_dir.setText(conf["assistant_dir"])
@@ -1489,7 +1539,10 @@ class SettingsWindow(QDialog):
         self.meeting_self_name.setText(conf["meeting_self_name"])
         self.meeting_other_name.setText(conf["meeting_other_name"])
         self.meeting_participants.setPlainText(conf["meeting_participants"])
+        self._select_data(self.meeting_provider, conf["meeting_provider"])
         self.meeting_model.setCurrentText(conf["meeting_model"])
+        self.meeting_llmapi_model.setCurrentText(conf["meeting_llmapi_model"])
+        self._meeting_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.meeting_reasoning, conf["meeting_reasoning"])
         self._select_data(self.meeting_language, conf["meeting_language"])
         self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
@@ -1537,6 +1590,7 @@ class SettingsWindow(QDialog):
         for name, who in cfg.TRANSCRIBERS.items():
             conf[who.key] = self._key_fields[name].text().strip()
             conf[who.model] = self._models[name].strip() or cfg.DEFAULTS[who.model]
+        conf["llmapi_api_key"] = self._key_fields["llmapi"].text().strip()
         conf["local_model"] = self.local_whisper.selected()
         conf["local_gpu"] = self.local_gpu.isChecked()
         conf["local_preload"] = self.local_preload.isChecked()
@@ -1545,6 +1599,8 @@ class SettingsWindow(QDialog):
         conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
         conf["cleanup_provider"] = self.cleanup_provider.currentData() or "openrouter"
         conf["cleanup_model"] = self.cleanup_model.currentText().strip()
+        conf["cleanup_llmapi_model"] = (self.cleanup_llmapi_model.currentText().strip()
+                                        or cfg.DEFAULTS["cleanup_llmapi_model"])
         conf["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip()
                                         or cfg.DEFAULTS["cleanup_claude_model"])
         codex_cleanup_model = self.cleanup_codex_model.currentText().strip()
@@ -1584,6 +1640,10 @@ class SettingsWindow(QDialog):
             self.assistant_openrouter_model.currentText().strip()
             or cfg.DEFAULTS["assistant_openrouter_model"]
         )
+        conf["assistant_llmapi_model"] = (
+            self.assistant_llmapi_model.currentText().strip()
+            or cfg.DEFAULTS["assistant_llmapi_model"]
+        )
         conf["assistant_reasoning"] = self.assistant_reasoning.currentData() or ""
         conf["assistant_dir"] = self.assistant_dir.text().strip()
         conf["assistant_timeout"] = self.assistant_timeout.value()
@@ -1599,8 +1659,11 @@ class SettingsWindow(QDialog):
         conf["meeting_self_name"] = self.meeting_self_name.text().strip()
         conf["meeting_other_name"] = self.meeting_other_name.text().strip()
         conf["meeting_participants"] = self.meeting_participants.toPlainText().strip()
+        conf["meeting_provider"] = self.meeting_provider.currentData() or "openrouter"
         conf["meeting_model"] = (self.meeting_model.currentText().strip()
                                  or cfg.DEFAULTS["meeting_model"])
+        conf["meeting_llmapi_model"] = (self.meeting_llmapi_model.currentText().strip()
+                                        or cfg.DEFAULTS["meeting_llmapi_model"])
         conf["meeting_reasoning"] = self.meeting_reasoning.currentData() or ""
         conf["meeting_language"] = self.meeting_language.currentData() or ""
         conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
@@ -1666,9 +1729,12 @@ class SettingsWindow(QDialog):
 
         def work():
             try:
-                models = (api.openrouter_models(key, transcription=True)
-                          if provider == "openrouter"
-                          else api.openai_models(key, base, service))
+                if provider == "openrouter":
+                    models = api.openrouter_models(key, transcription=True)
+                elif provider == "llmapi":
+                    models = api.llmapi_models(key, base, transcription=True)
+                else:
+                    models = api.openai_models(key, base, service)
                 self._transcribe_models_loaded.emit(models, "")
             except api.ApiError as exc:
                 self._transcribe_models_loaded.emit([], str(exc))
@@ -1688,12 +1754,23 @@ class SettingsWindow(QDialog):
 
     def _load_models(self):
         self.refresh_models.setEnabled(False)
+        self.refresh_llmapi_models.setEnabled(False)
         self.models_label.setText(t("Fetching model list…"))
-        key = self.openrouter_key.text().strip() or self.conf.openrouter_key()
+        provider = self.cleanup_provider.currentData() or "openrouter"
+        if provider == "llmapi":
+            key = self.llmapi_key.text().strip() or self.conf.llmapi_key()
+            base = self.conf["llmapi_base_url"]
+        else:
+            key = self.openrouter_key.text().strip() or self.conf.openrouter_key()
+            base = self.conf["openrouter_base_url"]
 
         def work():
             try:
-                self._models_loaded.emit(api.openrouter_models(key), "")
+                if provider == "llmapi":
+                    models = api.llmapi_models(key, base)
+                else:
+                    models = api.openrouter_models(key)
+                self._models_loaded.emit(models, "")
             except api.ApiError as exc:
                 self._models_loaded.emit([], str(exc))
 
@@ -1701,10 +1778,22 @@ class SettingsWindow(QDialog):
 
     def _on_models_loaded(self, models, error):
         self.refresh_models.setEnabled(True)
+        self.refresh_llmapi_models.setEnabled(True)
         if error:
             self.models_label.setText(t("Could not fetch the list: {error}", error=error))
             return
-        for combo in (self.cleanup_model, self.meeting_model):
+        provider = self.cleanup_provider.currentData() or "openrouter"
+        # The fetched list is one catalog's, so it fills only the rows that
+        # read from that catalog; a meeting on another provider keeps its own.
+        if provider == "llmapi":
+            combos = [self.cleanup_llmapi_model]
+            if self.meeting_provider.currentData() == "llmapi":
+                combos.append(self.meeting_llmapi_model)
+        else:
+            combos = [self.cleanup_model]
+            if self.meeting_provider.currentData() == provider:
+                combos.append(self.meeting_model)
+        for combo in combos:
             current = combo.currentText()
             combo.clear()
             combo.addItems(models)
@@ -1728,6 +1817,11 @@ class SettingsWindow(QDialog):
     def _test_openrouter(self):
         key, _ = self._typed_key("openrouter")
         self._test_key("openrouter", lambda: api.openrouter_key_status(key))
+
+    def _test_llmapi(self):
+        key = self._key_fields["llmapi"].text().strip() or self.conf.llmapi_key()
+        base = self.conf["llmapi_base_url"]
+        self._test_key("llmapi", lambda: api.llmapi_key_status(key, base))
 
     def _typed_key(self, provider):
         """(key, base URL) for a provider, preferring what is in the field now."""
@@ -1905,6 +1999,8 @@ class SettingsWindow(QDialog):
         provider = self.cleanup_provider.currentData() or "openrouter"
         self.cleanup_form.setRowVisible(self.cleanup_model_row,
                                         provider == "openrouter")
+        self.cleanup_form.setRowVisible(self.cleanup_llmapi_model_row,
+                                        provider == "llmapi")
         self.cleanup_form.setRowVisible(self.cleanup_claude_model,
                                         provider == "claude")
         self.cleanup_form.setRowVisible(self.cleanup_codex_model,
@@ -1913,10 +2009,13 @@ class SettingsWindow(QDialog):
                                         provider != "local")
         self.cleanup_form.setRowVisible(self.local_llm, provider == "local")
         self.cleanup_form.setRowVisible(self.local_llm_options, provider == "local")
+        self.refresh_models.setVisible(provider == "openrouter")
         binary = cleanup.executable(provider)
         found = shutil.which(binary) if binary else ""
         if provider == "local":
             self.models_label.setText(t("Runs on this machine, on llama.cpp."))
+        elif provider == "llmapi":
+            self.models_label.setText(t("Runs on LLM API."))
         elif not binary:
             self.models_label.setText(t("Runs on OpenRouter."))
         elif found:
@@ -1933,15 +2032,27 @@ class SettingsWindow(QDialog):
         self.claude_box.setVisible(provider == "claude")
         self.codex_box.setVisible(provider == "codex")
         self.openrouter_box.setVisible(provider == "openrouter")
+        self.llmapi_box.setVisible(provider == "llmapi")
         self._refresh_assistant_status()
+
+    def _meeting_provider_changed(self):
+        provider = self.meeting_provider.currentData() or "openrouter"
+        # One row per provider, as in the cleanup group above: the two models
+        # are ids from different catalogs.
+        self.meeting_form.setRowVisible(self.meeting_model,
+                                        provider == "openrouter")
+        self.meeting_form.setRowVisible(self.meeting_llmapi_model,
+                                        provider == "llmapi")
 
     def _refresh_assistant_status(self):
         provider = self.assistant_provider.currentData() or "claude"
         binary = assistant.executable(provider)
         found = shutil.which(binary) if binary else ""
         if not binary:
+            key_name = "LLM API" if provider == "llmapi" else "OpenRouter"
             self.assistant_found.setText(
-                t("Needs no program installed, only the OpenRouter key.")
+                t("Needs no program installed, only the {service} key.",
+                  service=key_name)
             )
         elif found:
             self.assistant_found.setText(t("Found: {path}", path=found))

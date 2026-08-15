@@ -67,11 +67,12 @@ diktelerine dokunmaz.
 
 Sesi yazıya çevirme ve temizleme, ayarlar penceresinde ayrı ayrı sağlayıcı
 seçer; ikisi de varsayılan olarak burada, kendi modellerinle çalışır. Bulutu
-seçersen sesi yazıya çevirme **OpenAI**, **Groq** ya da **OpenRouter**'da
-(varsayılan `gpt-4o-transcribe`), temizleme OpenRouter'da
-(`google/gemini-3.5-flash-lite`) ya da kuruluysa Claude Code veya Codex'te
-çalışır. Anahtarları boş bırakırsan `OPENAI_API_KEY`, `GROQ_API_KEY` ve
-`OPENROUTER_API_KEY` kullanılır; anahtarlar `~/.config/dikte/config.json`
+seçersen sesi yazıya çevirme **OpenAI**, **Groq**, **OpenRouter** ya da
+**LLM API**'de (varsayılan `gpt-4o-transcribe`), temizleme OpenRouter'da
+(`google/gemini-3.5-flash-lite`) ya da **LLM API**'de veya
+kuruluysa Claude Code veya Codex'te çalışır. Anahtarları boş bırakırsan
+`OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` ve `LLM_API_KEY`
+kullanılır; anahtarlar `~/.config/dikte/config.json`
 içinde, izinler 600, Mac'te ise `~/Library/Application Support/Dikte` altında.
 Temizlemeyi tamamen kapatabilirsin, o zaman ham transkript yapıştırılır; modelin
 yanındaki kutudan düşünme seviyesini de seçebilirsin.

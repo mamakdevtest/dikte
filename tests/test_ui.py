@@ -154,6 +154,7 @@ class Settings(DikteTest):
         """An OpenRouter id and a Claude alias are not the same field."""
         window = self.window(cfg.Config())
         boxes = {"openrouter": window.cleanup_model_row,
+                 "llmapi": window.cleanup_llmapi_model_row,
                  "claude": window.cleanup_claude_model,
                  "codex": window.cleanup_codex_model}
         for provider, box in boxes.items():
@@ -239,6 +240,35 @@ class Settings(DikteTest):
         offered = [window.cleanup_provider.itemData(i)
                    for i in range(window.cleanup_provider.count())]
         self.assertEqual(sorted(offered), sorted(cleanup.PROVIDERS))
+
+    def test_llmapi_settings_round_trip_through_the_window(self):
+        self.write_config({"cleanup_provider": "llmapi",
+                           "cleanup_llmapi_model": "some-cleaner",
+                           "assistant_provider": "llmapi",
+                           "assistant_llmapi_model": "some-asker",
+                           "meeting_provider": "llmapi",
+                           "meeting_llmapi_model": "some-minuteman",
+                           "llmapi_api_key": "sk-mine"})
+        conf = cfg.Config()
+        self.window(conf)._save()
+        self.assertEqual(conf["cleanup_provider"], "llmapi")
+        self.assertEqual(conf["cleanup_llmapi_model"], "some-cleaner")
+        self.assertEqual(conf["assistant_provider"], "llmapi")
+        self.assertEqual(conf["assistant_llmapi_model"], "some-asker")
+        self.assertEqual(conf["meeting_provider"], "llmapi")
+        self.assertEqual(conf["meeting_llmapi_model"], "some-minuteman")
+        self.assertEqual(conf["llmapi_api_key"], "sk-mine")
+
+    def test_the_minutes_model_box_on_screen_belongs_to_whoever_writes_them(self):
+        window = self.window(cfg.Config())
+        boxes = {"openrouter": window.meeting_model,
+                 "llmapi": window.meeting_llmapi_model}
+        for provider, box in boxes.items():
+            with self.subTest(provider=provider):
+                window._select_data(window.meeting_provider, provider)
+                shown = [name for name, other in boxes.items()
+                         if not other.isHidden()]
+                self.assertEqual(shown, [provider])
 
     def test_the_answer_to_a_test_lands_under_the_key_it_was_asked_about(self):
         """One signal serves all three buttons, so it carries which one asked."""

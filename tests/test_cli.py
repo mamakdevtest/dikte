@@ -359,11 +359,43 @@ class Providers(DikteTest):
         self.assertEqual(calls[0].full_url, "https://api.groq.com/openai/v1/models")
         self.assertEqual(out.strip(), "whisper-large-v3")
 
+    def test_llmapi_is_a_choice_and_is_read_from_its_own_catalog(self):
+        parser = cli.build_parser()
+        self.assertEqual(parser.parse_args(
+            ["models", "--provider", "llmapi"]).provider, "llmapi")
+        self.assertEqual(parser.parse_args(["test-key", "llmapi"]).which, "llmapi")
+        self.write_config({"llmapi_api_key": "sk-test"})
+        with fake_urlopen({"data": [{"id": "z/model"}, {"id": "a/model"}]}) as calls:
+            code, out, _ = self.run_cmd(cli.cmd_models, provider="llmapi",
+                                        transcription=False)
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0].full_url, cfg.DEFAULTS["llmapi_base_url"] + "/models")
+        self.assertEqual(out.strip(), "a/model\nz/model")
+
+    def test_llmapi_transcription_models_come_from_its_own_catalog(self):
+        self.write_config({"llmapi_api_key": "sk-test"})
+        with fake_urlopen({"data": [{"id": "gpt-4o"}, {"id": "whisper-1"}]}) as calls:
+            code, out, _ = self.run_cmd(cli.cmd_models, provider="llmapi",
+                                        transcription=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0].full_url, cfg.DEFAULTS["llmapi_base_url"] + "/models")
+        self.assertEqual(out.strip(), "whisper-1")
+
     def test_a_key_that_is_not_there_is_reported_under_its_own_name(self):
         code, out, _ = self.run_cmd(cli.cmd_test_key, which="groq")
         self.assertEqual(code, 1)
         self.assertIn("groq", out)
         self.assertIn("Groq", out)
+
+    def test_the_llmapi_key_is_checked_like_the_others(self):
+        """There is no /key endpoint, so the models list accepts or refuses
+        the key instead."""
+        self.write_config({"llmapi_api_key": "sk-test"})
+        with fake_urlopen({"data": [{"id": "a"}]}) as calls:
+            code, out, _ = self.run_cmd(cli.cmd_test_key, which="llmapi")
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0].full_url, cfg.DEFAULTS["llmapi_base_url"] + "/models")
+        self.assertIn("Key works.", out)
 
 
 class Doctor(DikteTest):

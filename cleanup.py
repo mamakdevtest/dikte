@@ -23,7 +23,7 @@ import assistant
 import ggml
 from i18n import t
 
-PROVIDERS = ("openrouter", "local", "claude", "codex")
+PROVIDERS = ("openrouter", "llmapi", "local", "claude", "codex")
 
 
 class CleanupError(api.ApiError):
@@ -50,6 +50,8 @@ def model(conf):
     name = provider(conf)
     if name == "local":
         return conf["local_llm_model"]
+    if name == "llmapi":
+        return conf["cleanup_llmapi_model"]
     if name == "claude":
         return conf["cleanup_claude_model"].strip() or "haiku"
     if name == "codex":
@@ -72,6 +74,15 @@ def run(text, conf, system_prompt, timeout=180, aborter=None):
             reasoning=conf["cleanup_reasoning"],
             base_url=conf["openrouter_base_url"], timeout=timeout,
             aborter=aborter,
+        )
+    if name == "llmapi":
+        # The same OpenAI-shaped request, one base URL over. LLM API's catalog
+        # reports its own effort levels, so the thinking setting rides along.
+        return api.cleanup(
+            text, conf.llmapi_key(), conf["cleanup_llmapi_model"], system_prompt,
+            reasoning=conf["cleanup_reasoning"],
+            base_url=conf["llmapi_base_url"], timeout=timeout,
+            provider="llmapi", service="LLM API", aborter=aborter,
         )
     if name == "local":
         return _local(text, conf, system_prompt, timeout, aborter)
