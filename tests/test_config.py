@@ -8,6 +8,7 @@ config and now shadows the default.
 
 import json
 import os
+import sys
 import unittest
 from unittest import mock
 
@@ -89,6 +90,8 @@ class Saving(DikteTest):
         cfg.Config().save()
         self.assertTrue(cfg.CONFIG_FILE.exists())
 
+    @unittest.skipIf(sys.platform == "win32",
+                        "POSIX permissions do not apply; ACLs govern access")
     def test_the_file_is_readable_by_nobody_else(self):
         """It holds two API keys."""
         cfg.Config().save()

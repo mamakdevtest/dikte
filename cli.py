@@ -775,9 +775,18 @@ def cmd_status(opts):
 def cmd_doctor(opts):
     """What the settings window checks behind its buttons, in one pass."""
     conf = cfg.Config()
-    wanted = ["pw-record", "wl-copy", "ydotool", "ffmpeg", "pactl", "kwriteconfig6",
-              assistant.executable(assistant.provider(conf)) or "claude",
-              cleanup.executable(cleanup.provider(conf))]
+    if sys.platform == "win32":
+        wanted = ["ffmpeg",
+                  assistant.executable(assistant.provider(conf)) or "claude",
+                  cleanup.executable(cleanup.provider(conf))]
+    elif sys.platform == "darwin":
+        wanted = ["ffmpeg",
+                  assistant.executable(assistant.provider(conf)) or "claude",
+                  cleanup.executable(cleanup.provider(conf))]
+    else:
+        wanted = ["pw-record", "wl-copy", "ydotool", "ffmpeg", "pactl", "kwriteconfig6",
+                  assistant.executable(assistant.provider(conf)) or "claude",
+                  cleanup.executable(cleanup.provider(conf))]
     programs = {name: shutil.which(name) or "" for name in wanted if name}
     target = conf.transcribe_target()
     cleaner = cleanup.provider(conf)

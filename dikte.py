@@ -16,9 +16,10 @@ import sys
 import threading
 
 # A Wayland client cannot place a window in a screen corner, so the indicator
-# is drawn through XWayland.
-if os.environ.get("XDG_SESSION_TYPE") == "wayland" and os.environ.get("DISPLAY"):
-    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+# is drawn through XWayland. Not applicable on Windows/macOS.
+if sys.platform not in ("win32", "darwin"):
+    if os.environ.get("XDG_SESSION_TYPE") == "wayland" and os.environ.get("DISPLAY"):
+        os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 # An application started from the Finder is given none of the shell's PATH, so
 # Homebrew's ffmpeg is invisible to it. Put the two places brew installs to in
@@ -220,7 +221,19 @@ class Dikte:
     def _set_icon(self, name):
         icon = QIcon.fromTheme(name)
         if icon.isNull():
+            # Windows has no freedesktop icon theme; fall back to shipped icons
+            # if present, otherwise to the default microphone icon (may still be
+            # null on Windows, where QIcon(null) is harmless and the tray shows
+            # text only — not worth a hard dependency on an icon package).
             icon = QIcon.fromTheme("audio-input-microphone")
+            if icon.isNull():
+                for cand in (
+                    os.path.join(os.path.dirname(__file__), "icons", f"{name}.png"),
+                    os.path.join(os.path.dirname(__file__), "icons", "audio-input-microphone.png"),
+                ):
+                    if os.path.isfile(cand):
+                        icon = QIcon(cand)
+                        break
         self.tray.setIcon(icon)
 
     # ---- state ----------------------------------------------------------
@@ -876,9 +889,36 @@ class Dikte:
             self.evdev.stop()
 
     def restart(self):
-        """Replace this process with a fresh one, picking up code and settings."""
+        """Replace this process with a fresh one, picking up code and settings.
+
+        Windows has no POSIX execv — close down, remove the pipe name, and spawn
+        the new process detached so it outlives this one. On POSIX, execv keeps
+        the PID and fd table, which is the behaviour callers expect when they
+        watch 'dikte restart' (e.g. an update script that waits for the new
+        process to answer on the IPC socket).
+        """
         if self.settings_window is not None:
             self.settings_window.close()
+        if sys.platform == "win32":
+            self.shutdown()
+            QLocalServer.removeServer(SERVER_NAME)
+            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP so the child is not
+            # tied to this console; CREATE_NO_WINDOW avoids flashing a console.
+            flags = 0
+            try:
+                import subprocess as _sp
+                flags = getattr(_sp, "DETACHED_PROCESS", 0) | getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0)
+                try:
+                    flags |= _sp.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+                except AttributeError:
+                    pass
+                _sp.Popen([sys.executable, ipc.script_path(), "--gui"],
+                          creationflags=flags, close_fds=True,
+                          stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL)
+            except OSError as exc:
+                print(f"dikte: restart failed: {exc}", file=sys.stderr)
+            self.app.quit()
+            return
         self.shutdown()
         QLocalServer.removeServer(SERVER_NAME)
         os.execv(sys.executable, [sys.executable, ipc.script_path(), "--gui"])
@@ -939,6 +979,13 @@ def install_signal_handlers(app):
 
     Returns the objects it made; they have to stay alive to keep working.
     """
+    if sys.platform == "win32":
+        # On Windows, SIGTERM/SIGHUP are not session logout signals, and
+        # socketpair + set_wakeup_fd are fragile. Rely on aboutToQuit.
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(sig, lambda *_: app.quit())
+        return None, None, None
     reader, writer = socket.socketpair()
     reader.setblocking(False)
     writer.setblocking(False)
@@ -978,9 +1025,12 @@ def run_app(args):
     dikte = Dikte(app)
 
     server = QLocalServer()
-    # Qt puts the socket in /tmp, so keep it to this user: commands like
-    # "quit" should not be reachable by anyone else on the machine.
-    server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
+    # Qt puts the socket in /tmp on Unix, and uses a named pipe on Windows.
+    # On Unix, keep it to this user: commands like "quit" should not be
+    # reachable by anyone else on the machine. On Windows, the pipe ACL already
+    # restricts access to the owning user, and UserAccessOption is not needed.
+    if sys.platform != "win32":
+        server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
     QLocalServer.removeServer(SERVER_NAME)
     if not server.listen(SERVER_NAME):
         print(f"dikte: could not open the IPC socket: {server.errorString()}")

@@ -51,8 +51,12 @@ HOST = "127.0.0.1"
 # The path api.py asks for, so its URL and the server's line up.
 INFERENCE_PATH = "/v1/audio/transcriptions"
 
-DATA_DIR = (pathlib.Path(os.environ.get("XDG_DATA_HOME")
-                         or os.path.expanduser("~/.local/share")) / "dikte")
+DATA_DIR = (
+    pathlib.Path(os.environ.get("LOCALAPPDATA")) / "Dikte"
+    if sys.platform == "win32" else
+    pathlib.Path(os.environ.get("XDG_DATA_HOME")
+                 or os.path.expanduser("~/.local/share")) / "dikte"
+)
 BIN_DIR = DATA_DIR / "bin"
 MODELS_DIR = DATA_DIR / "models"
 
@@ -66,8 +70,12 @@ DOWNLOAD_CHUNK = 1 << 20
 # loaded, so the port opening is the signal.
 Program = collections.namedtuple("Program", "name repo binary health")
 
-WHISPER = Program("whisper", "ggml-org/whisper.cpp", "whisper-server", "")
-LLAMA = Program("llama", "ggml-org/llama.cpp", "llama-server", "/health")
+def _binary(name):
+    return name + ".exe" if sys.platform == "win32" else name
+
+
+WHISPER = Program("whisper", "ggml-org/whisper.cpp", _binary("whisper-server"), "")
+LLAMA = Program("llama", "ggml-org/llama.cpp", _binary("llama-server"), "/health")
 
 # Where the models are listed. Neither list is written into Dikte: a catalogue
 # in the source means a release of Dikte for every model somebody else
@@ -154,7 +162,12 @@ def download(item, target, on_progress=None, should_stop=None, require_hash=True
             with open(part, "wb") as out:
                 while True:
                     if should_stop is not None and should_stop():
-                        part.unlink(missing_ok=True)
+                        try:
+                            out.close()
+                        except OSError:
+                            pass
+                        with __import__("contextlib").suppress(OSError):
+                            part.unlink(missing_ok=True)
                         return False
                     block = response.read(DOWNLOAD_CHUNK)
                     if not block:
@@ -230,6 +243,16 @@ def _wanted_assets(program):
     arch = _arch()
     if sys.platform == "darwin":
         return () if program is WHISPER else (f"bin-macos-{arch}.tar.gz",)
+    if sys.platform == "win32":
+        # Windows builds use the Vulkan or plain Windows archives; the Ubuntu
+        # archives are ELF and cannot run. Whisper has no native Windows server
+        # archive either, so treat it like macOS: no suitable asset.
+        if program is WHISPER:
+            return ()
+        if _has_vulkan():
+            return (f"bin-win-vulkan-{arch}.zip", f"bin-win-{arch}.zip",
+                    f"bin-ubuntu-vulkan-{arch}.tar.gz", f"bin-ubuntu-{arch}.tar.gz")
+        return (f"bin-win-{arch}.zip", f"bin-ubuntu-{arch}.tar.gz")
     if program is LLAMA and _has_vulkan():
         return (f"bin-ubuntu-vulkan-{arch}.tar.gz", f"bin-ubuntu-{arch}.tar.gz")
     return (f"bin-ubuntu-{arch}.tar.gz",)
@@ -279,6 +302,12 @@ def _find_binary(root, name):
     for path in sorted(pathlib.Path(root).rglob(name)):
         if path.is_file():
             return path
+    # On Windows the binary is named *.exe but archives published before the
+    # Windows port contain the bare name; be tolerant in either direction.
+    alt = name[:-4] if name.endswith(".exe") else (name + ".exe")
+    for path in sorted(pathlib.Path(root).rglob(alt)):
+        if path.is_file():
+            return path
     return None
 
 
@@ -319,7 +348,7 @@ def install_program(program, tag="", on_progress=None, should_stop=None,
         if item:
             break
     if item is None:
-        if sys.platform == "darwin" and program is WHISPER:
+        if sys.platform in ("darwin", "win32") and program is WHISPER:
             raise LocalError(t(
                 "whisper.cpp publishes no macOS build. Install it with: "
                 "brew install whisper-cpp"

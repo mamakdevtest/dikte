@@ -9,13 +9,47 @@ import os
 _lang = "en"
 
 
+def _windows_locale():
+    """Locale name from the OS on Windows (e.g. "tr-TR")."""
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        # Windows Vista+: GetUserDefaultLocaleName -> BCP-47 tag like "tr-TR"
+        try:
+            buf = ctypes.create_unicode_buffer(85)
+            if kernel32.GetUserDefaultLocaleName(buf, 85):
+                return buf.value
+        except (OSError, AttributeError):
+            pass
+        # Fallback: LCID -> locale.windows_locale (e.g. 0x041f -> tr_TR)
+        try:
+            lcid = kernel32.GetUserDefaultUILanguage()
+            import locale
+            name = locale.windows_locale.get(int(lcid))
+            if name:
+                return name
+        except (OSError, AttributeError, ValueError):
+            pass
+    except Exception:
+        pass
+    return ""
+
+
 def resolve(code):
     """'auto' -> language guessed from the locale environment."""
     if code in ("tr", "en"):
         return code
     env = (os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES")
            or os.environ.get("LANG") or "")
-    return "tr" if env.lower().startswith("tr") else "en"
+    if env:
+        return "tr" if env.lower().startswith("tr") else "en"
+    # Windows: env vars are rarely set; read the user's display language.
+    import sys
+    if sys.platform == "win32":
+        win = _windows_locale()
+        if win:
+            return "tr" if win.lower().startswith("tr") else "en"
+    return "en"
 
 
 def set_language(code):
