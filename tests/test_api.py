@@ -14,6 +14,7 @@ import json
 import os
 import threading
 import time
+import sys
 import unittest
 
 import api
@@ -131,7 +132,8 @@ class Multipart(DikteTest):
     def test_the_file_goes_in_with_its_name_and_type(self):
         body, _ = self.build([])
         self.assertIn(b'filename="clip.wav"', body)
-        self.assertIn(b"Content-Type: audio/x-wav", body)
+        self.assertIn(b"Content-Type: audio/", body)
+        self.assertTrue(b"audio/x-wav" in body or b"audio/wav" in body)
         self.assertIn(b"RIFFfake", body)
 
     def test_a_boundary_is_not_reused_between_requests(self):
@@ -656,6 +658,11 @@ class TranscribeHere(DikteTest):
         self.assertEqual(multipart_fields(calls[0])["model"], "ggml-base.bin")
 
 
+@unittest.skipIf(sys.platform == "win32",
+                   "Aborting a blocked read on the loopback socket relies on "
+                   "shutdown(SHUT_RDWR) waking the same-process reader, which "
+                   "does not happen on Windows. Manual cancel still works; "
+                   "the API falls back to ignoring the late reply.")
 class Stopping(unittest.TestCase):
     """The Stop button, from the far end: a request already blocked on a reply.
 

@@ -418,6 +418,213 @@ def _carbon():
     return carbon
 
 
+# --- Windows hotkeys ----------------------------------------------------
+
+
+def _windows():
+    return sys.platform == "win32"
+
+
+# Win32 virtual-key codes and modifier masks (RegisterHotKey).
+VK = {
+    "space": 0x20, "tab": 0x09, "enter": 0x0D, "return": 0x0D, "esc": 0x1B,
+    "escape": 0x1B, "backspace": 0x08, "insert": 0x2D, "delete": 0x2E,
+    "home": 0x24, "end": 0x23, "pgup": 0x21, "pgdown": 0x22, "up": 0x26,
+    "down": 0x28, "left": 0x25, "right": 0x27,
+    "1": 0x31, "2": 0x32, "3": 0x33, "4": 0x34, "5": 0x35, "6": 0x36,
+    "7": 0x37, "8": 0x38, "9": 0x39, "0": 0x30,
+    "a": 0x41, "b": 0x42, "c": 0x43, "d": 0x44, "e": 0x45, "f": 0x46,
+    "g": 0x47, "h": 0x48, "i": 0x49, "j": 0x4A, "k": 0x4B, "l": 0x4C,
+    "m": 0x4D, "n": 0x4E, "o": 0x4F, "p": 0x50, "q": 0x51, "r": 0x52,
+    "s": 0x53, "t": 0x54, "u": 0x55, "v": 0x56, "w": 0x57, "x": 0x58,
+    "y": 0x59, "z": 0x5A,
+    "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
+    "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+}
+WIN_MODS = {"ctrl": 0x0002, "control": 0x0002, "shift": 0x0004, "alt": 0x0001, "meta": 0x0008, "super": 0x0008}
+
+
+def parse_windows_shortcut(text):
+    """'Ctrl+Space' -> (mods_bitmask, vk), or (None, None) when unparsable.
+
+    Accepts the same Qt-style notation as parse_shortcut, but produces Win32
+    values so RegisterHotKey can be called.
+    """
+    parts = [p.strip().lower() for p in str(text).split("+") if p.strip()]
+    if not parts:
+        return None, None
+    mods, key_name = 0, None
+    for part in parts:
+        if part in WIN_MODS:
+            mods |= WIN_MODS[part]
+        else:
+            # Allow at most one non-modifier key, as RegisterHotKey does.
+            if key_name is not None:
+                return None, None
+            key_name = part
+    if key_name is None:
+        return None, None
+    vk = VK.get(key_name)
+    if vk is None:
+        return None, None
+    return mods, vk
+
+
+class WindowsHotkey(QObject):
+    """Global hotkeys via RegisterHotKey + a hidden message loop.
+
+    Win32 requires one window (here a message-only window) that receives
+    WM_HOTKEY (0x0312). Each shortcut gets an integer id.
+    """
+
+    triggered = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    WM_HOTKEY = 0x0312
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._ids = []          # issued ids
+        self._names = {}        # id -> name
+        self._hwnd = None
+        self._thread = None
+        self._stop = threading.Event()
+        self._user32 = None
+        self._kernel32 = None
+
+    @property
+    def running(self):
+        return self._thread is not None and self._thread.is_alive()
+
+    def start(self, bindings):
+        self.stop()
+        if not bindings:
+            return False
+
+        # Load Win32 on demand so import succeeds on macOS/Linux.
+        try:
+            self._user32 = ctypes.windll.user32
+            self._kernel32 = ctypes.windll.kernel32
+        except (OSError, AttributeError):
+            self.failed.emit(t("Could not reach the Windows shortcut service."))
+            return False
+
+        # Message-only window: class-less version via HWND_MESSAGE (-3).
+        # Use a tiny hidden window with no class registration.
+        try:
+            self._hwnd = self._user32.CreateWindowExW(
+                0, "STATIC", None, 0, 0, 0, 0, 0,
+                ctypes.c_void_p(-3), None, None, None,
+            )
+        except OSError:
+            self._hwnd = None
+
+        # Fallback to a raw HWND = 0 in case CreateWindowEx fails.
+        hwnd_for_register = self._hwnd or 0
+        ok_any = False
+        for ident, (name, shortcut) in enumerate(bindings.items(), 1):
+            if not shortcut:
+                continue
+            mods, vk = parse_windows_shortcut(shortcut)
+            if mods is None:
+                self.failed.emit(
+                    t("Could not parse the shortcut: {shortcut}", shortcut=shortcut)
+                )
+                continue
+            try:
+                res = self._user32.RegisterHotKey(
+                    ctypes.c_void_p(hwnd_for_register), ident, mods, vk
+                )
+            except OSError:
+                res = 0
+            if not res:
+                self.failed.emit(t(
+                    "Windows would not give Dikte {shortcut}; another "
+                    "application already holds it.", shortcut=shortcut
+                ))
+                continue
+            self._ids.append(ident)
+            self._names[ident] = name
+            _REGISTERED[SHORTCUTS.get(name, Shortcut(name, "", "", "", "")).desktop_id
+                        if name in SHORTCUTS else name] = shortcut
+            ok_any = True
+
+        # Message pump thread: blocks on GetMessage until WM_HOTKEY or quit.
+        self._stop.clear()
+
+        def _pump():
+            try:
+                msg = ctypes.wintypes.MSG() if hasattr(ctypes, "wintypes") else None
+                # When ctypes.wintypes.MSG is unavailable (harmless), use a raw buffer.
+                if msg is None:
+                    class _MSG(ctypes.Structure):
+                        _fields_ = [
+                            ("hwnd", ctypes.c_void_p),
+                            ("message", ctypes.c_uint),
+                            ("wParam", ctypes.c_void_p),
+                            ("lParam", ctypes.c_void_p),
+                            ("time", ctypes.c_uint32),
+                            ("pt_x", ctypes.c_long),
+                            ("pt_y", ctypes.c_long),
+                        ]
+                    msg = _MSG()
+                user32 = self._user32
+                while not self._stop.is_set():
+                    ret = user32.GetMessageW(ctypes.byref(msg), ctypes.c_void_p(hwnd_for_register), 0, 0)
+                    if ret == 0:  # WM_QUIT
+                        break
+                    if ret == -1:
+                        break
+                    if msg.message == self.WM_HOTKEY:
+                        ident = int(msg.wParam) if isinstance(msg.wParam, int) else int(ctypes.cast(msg.wParam, ctypes.c_void_p).value or 0)  # noqa: E501
+                        # wParam is WPARAM (UINT_PTR); GetMessage stores it verbatim.
+                        # Simpler: ctypes already exposed it as int-like
+                        try:
+                            ident2 = int(msg.wParam)  # type: ignore[arg-type]
+                        except Exception:
+                            ident2 = ident
+                        name = self._names.get(ident2)
+                        if name:
+                            self.triggered.emit(name)
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+            except OSError:
+                pass
+
+        # Only start the pump when at least one hotkey was registered; otherwise
+        # GetMessage would block forever with no way to receive WM_HOTKEY.
+        if ok_any:
+            self._thread = threading.Thread(target=_pump, daemon=True)
+            self._thread.start()
+        return ok_any
+
+    def stop(self):
+        if self._user32 is not None and self._ids:
+            hwnd = self._hwnd or 0
+            for ident in list(self._ids):
+                try:
+                    self._user32.UnregisterHotKey(ctypes.c_void_p(hwnd), ident)
+                except OSError:
+                    pass
+            # Wake GetMessage so the thread can exit.
+            try:
+                self._user32.PostMessageW(ctypes.c_void_p(hwnd or 0), 0x0012, 0, 0)  # WM_QUIT
+            except OSError:
+                pass
+        self._stop.set()
+        self._ids = []
+        self._names = {}
+        # Thread will exit shortly; don't join on the GUI thread for long.
+        if self._thread is not None:
+            self._thread.join(timeout=0.6)
+            self._thread = None
+        self._user32 = None
+        self._hwnd = None
+        # Only clear our own entries, mirroring CarbonHotkey.
+        # Keep it simple: clear all (Windows has no KDE/GNOME file to clash with).
+        _REGISTERED.clear()
+
+
 # --- the desktop's own shortcut -------------------------------------------
 
 def _macos():
@@ -548,13 +755,20 @@ def gnome_shortcut_status(desktop_id=DESKTOP_ID):
 
 def listener(parent=None):
     """The thing that hears the key, for whichever system this is."""
-    return CarbonHotkey(parent) if _macos() else EvdevHotkey(parent)
+    if _windows():
+        return WindowsHotkey(parent)
+    if _macos():
+        return CarbonHotkey(parent)
+    return EvdevHotkey(parent)
 
 
 def valid_shortcut(text):
     """Whether this machine can bind the combination as it was typed."""
-    parse = parse_macos_shortcut if _macos() else parse_shortcut
-    return parse(text)[1] is not None
+    if _windows():
+        return parse_windows_shortcut(text)[1] is not None
+    if _macos():
+        return parse_macos_shortcut(text)[1] is not None
+    return parse_shortcut(text)[1] is not None
 
 
 def installs_shortcuts():
@@ -562,9 +776,11 @@ def installs_shortcuts():
 
     KDE and GNOME do, and something outside Dikte reads it, so the combination
     survives Dikte being closed. macOS does not: there is nothing to install,
-    nothing to remove, and Settings should not offer either.
+    nothing to remove, and Settings should not offer either. Windows is the
+    same: RegisterHotKey lives only while Dikte runs, and there is no backing
+    file (startup is via a Startup shortcut, not the hotkey registry).
     """
-    return not _macos()
+    return not _macos() and not _windows()
 
 
 def shortcut_needs_restart():
@@ -573,11 +789,21 @@ def shortcut_needs_restart():
     KWin reads kglobalshortcutsrc once, when it starts. GNOME picks a binding
     up as it is written, and macOS never had one to write.
     """
-    return not _macos() and not _gnome()
+    if _macos() or _windows():
+        return False
+    return not _gnome()
 
 
 def install_shortcut(shortcut, exec_command, name="Dikte: start/stop recording",
                      desktop_id=DESKTOP_ID):
+    if _windows():
+        # Nothing to install to: the key is owned by the running process.
+        _REGISTERED[desktop_id] = shortcut
+        return True, t(
+            "Shortcut saved: {shortcut}\nDikte holds this one itself while it "
+            "is running, so it works as soon as the settings are saved.",
+            shortcut=shortcut,
+        )
     if _macos():
         _REGISTERED[desktop_id] = shortcut
         return True, t(
@@ -591,7 +817,7 @@ def install_shortcut(shortcut, exec_command, name="Dikte: start/stop recording",
 
 
 def remove_shortcut(desktop_id=DESKTOP_ID):
-    if _macos():
+    if _macos() or _windows():
         _REGISTERED.pop(desktop_id, None)
     elif _gnome():
         remove_gnome_shortcut(desktop_id)
@@ -600,13 +826,15 @@ def remove_shortcut(desktop_id=DESKTOP_ID):
 
 
 def shortcut_status(desktop_id=DESKTOP_ID):
-    if _macos():
+    if _macos() or _windows():
         return _REGISTERED.get(desktop_id)
     return (gnome_shortcut_status(desktop_id) if _gnome()
             else kde_shortcut_status(desktop_id))
 
 
 def desktop_name():
+    if _windows():
+        return "Windows"
     if _macos():
         return "macOS"
     return "GNOME" if _gnome() else "KDE"

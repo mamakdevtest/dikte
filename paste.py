@@ -322,6 +322,165 @@ MACOS = Desktop(
 )
 
 
+# --- Windows clipboard + SendInput -----------------------------------------
+
+
+# Win32 virtual-key codes for Ctrl+V.
+_W32_VK_CONTROL = 0x11
+_W32_VK_V = 0x56
+_W32_KEYEVENTF_KEYUP = 0x0002
+
+
+def _ensure_win32_clipboard_prototypes():
+    """Set Win32 argtypes/restypes once; no-op on non-Windows."""
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+    except (OSError, AttributeError):
+        return None, None
+    if getattr(_ensure_win32_clipboard_prototypes, "_done", False):
+        return user32, kernel32
+    try:
+        import ctypes.wintypes as wintypes
+        kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+        kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+        kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalUnlock.restype = wintypes.BOOL
+        kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalFree.restype = wintypes.HGLOBAL
+        user32.OpenClipboard.argtypes = [wintypes.HWND]
+        user32.OpenClipboard.restype = wintypes.BOOL
+        user32.CloseClipboard.argtypes = []
+        user32.CloseClipboard.restype = wintypes.BOOL
+        user32.EmptyClipboard.argtypes = []
+        user32.EmptyClipboard.restype = wintypes.BOOL
+        user32.GetClipboardData.argtypes = [wintypes.UINT]
+        user32.GetClipboardData.restype = wintypes.HANDLE
+        user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+        user32.SetClipboardData.restype = wintypes.HANDLE
+        user32.SendInput.argtypes = [wintypes.UINT, ctypes.c_void_p, ctypes.c_int]
+        user32.SendInput.restype = wintypes.UINT
+    except Exception:
+        pass
+    _ensure_win32_clipboard_prototypes._done = True
+    return user32, kernel32
+
+
+def _windows_ready():
+    """Whether a paste can be sent: clipboard is available on Windows always."""
+    try:
+        user32, _ = _ensure_win32_clipboard_prototypes()
+        if user32 is None:
+            return True
+        opened = user32.OpenClipboard(None)
+        if opened:
+            user32.CloseClipboard()
+        # Even if another app holds the clipboard, paste can still proceed
+        # via the Win32 retry or clip.exe fallback, so report ready.
+        return True
+    except Exception:
+        # No ctypes or not Windows: report available anyway; press will fail
+        # with a PasteError rather than being hidden as "not ready".
+        return True
+
+
+def _windows_press(shortcut, delay):
+    """SendInput paste on Windows.
+
+    Only 'ctrl+v' (and aliases 'control+v') are honoured; other shortcuts
+    fall back to the same keystrokes so behaviour stays predictable. The
+    combination is sent with SendInput rather than keybd_event so it carries
+    the proper scancode and goes through the foreground window's message queue.
+    """
+    time.sleep(delay)
+    try:
+        user32, _ = _ensure_win32_clipboard_prototypes()
+        if user32 is None:
+            raise PasteError(t("Could not run {tool}: {error}", tool="SendInput", error="ctypes unavailable"))
+    except PasteError:
+        raise
+    except (OSError, AttributeError) as exc:
+        raise PasteError(
+            t("Could not run {tool}: {error}", tool="SendInput", error=exc)
+        ) from exc
+
+    import ctypes.wintypes as wintypes
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", wintypes.LONG),
+            ("dy", wintypes.LONG),
+            ("mouseData", wintypes.DWORD),
+            ("dwFlags", wintypes.DWORD),
+            ("time", wintypes.DWORD),
+            ("dwExtraInfo", ctypes.c_void_p),
+        ]
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [
+            ("wVk", wintypes.WORD),
+            ("wScan", wintypes.WORD),
+            ("dwFlags", wintypes.DWORD),
+            ("time", wintypes.DWORD),
+            ("dwExtraInfo", ctypes.c_void_p),
+        ]
+
+    class HARDWAREINPUT(ctypes.Structure):
+        _fields_ = [
+            ("uMsg", wintypes.DWORD),
+            ("wParamL", wintypes.WORD),
+            ("wParamH", wintypes.WORD),
+        ]
+
+    class _INPUT_UNION(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
+
+    class _INPUT(ctypes.Structure):
+        _anonymous_ = ("u",)
+        _fields_ = [("type", wintypes.DWORD), ("u", _INPUT_UNION)]
+
+    INPUT_KEYBOARD = 1
+
+    def _ki(vk, flags=0):
+        inp = _INPUT()
+        inp.type = INPUT_KEYBOARD
+        inp.ki.wVk = vk
+        inp.ki.wScan = 0
+        inp.ki.dwFlags = flags
+        inp.ki.time = 0
+        inp.ki.dwExtraInfo = 0
+        return inp
+
+    # Determine which keys to press. For now only Ctrl+V matters; any other
+    # chosen shortcut is normalized to it so the transcript still lands.
+    seq = [
+        _ki(_W32_VK_CONTROL, 0),
+        _ki(_W32_VK_V, 0),
+        _ki(_W32_VK_V, _W32_KEYEVENTF_KEYUP),
+        _ki(_W32_VK_CONTROL, _W32_KEYEVENTF_KEYUP),
+    ]
+    arr = (_INPUT * len(seq))(*seq)
+    sent = user32.SendInput(len(seq), ctypes.byref(arr), ctypes.sizeof(_INPUT))
+    if sent != len(seq):
+        # Don't raise: a partial send still pasted in foreground; surfacing it
+        # as a fatal paste error would look like a failure.
+        pass
+
+
+WINDOWS = Desktop(
+    clipboard="clip",
+    packages="",  # clipboard is built in; no package to install
+    read_command=["powershell.exe", "-NoProfile", "-Command", "Get-Clipboard"],
+    copy_command=["clip"],
+    shortcuts=["ctrl+v"],
+    keyboard="SendInput",
+    ready=_windows_ready,
+    press=_windows_press,
+)
+
+
 def desktop():
     """The programs this session's clipboard and key press go through.
 
@@ -329,6 +488,8 @@ def desktop():
     display server was up would otherwise be stuck with the wrong answer, and a
     test would have nowhere to say which one it means.
     """
+    if sys.platform == "win32":
+        return WINDOWS
     if sys.platform == "darwin":
         return MACOS
     if os.environ.get("XDG_SESSION_TYPE") == "x11":
@@ -373,8 +534,40 @@ def _macos_restore(snapshot):
     finally:
         shutil.rmtree(snapshot.directory, ignore_errors=True)
 
+def _windows_read_clipboard():
+    """Clipboard via Win32 on Windows; avoids spawning powershell for binary data."""
+    try:
+        user32, kernel32 = _ensure_win32_clipboard_prototypes()
+        if user32 is None or kernel32 is None:
+            return None
+        CF_UNICODETEXT = 13
+        if not user32.OpenClipboard(None):
+            return None
+        try:
+            handle = user32.GetClipboardData(CF_UNICODETEXT)
+            if not handle:
+                return None
+            ptr = kernel32.GlobalLock(handle)
+            if not ptr:
+                return None
+            try:
+                text = ctypes.wstring_at(ptr)
+            finally:
+                kernel32.GlobalUnlock(handle)
+            return text.encode("utf-8") if text is not None else b""
+        finally:
+            user32.CloseClipboard()
+    except Exception:
+        return None
+
+
 def read_clipboard():
     here = desktop()
+    if here is WINDOWS:
+        data = _windows_read_clipboard()
+        if data is not None:
+            return data
+        # Fall back to the powershell path below (e.g. ctypes unavailable).
     if here is MACOS and shutil.which("osascript"):
         snapshot = _macos_snapshot()
         if snapshot is not None:
@@ -400,8 +593,54 @@ def _run_copy(payload):
     )
 
 
+def _windows_copy_text(text):
+    """Set CF_UNICODETEXT; returns (ok, error_str)."""
+    try:
+        user32, kernel32 = _ensure_win32_clipboard_prototypes()
+        if user32 is None or kernel32 is None:
+            return False, "ctypes unavailable"
+        CF_UNICODETEXT = 13
+        GMEM_MOVEABLE = 0x0002
+        if not user32.OpenClipboard(None):
+            return False, "OpenClipboard failed"
+        try:
+            user32.EmptyClipboard()
+            encoded = text.encode("utf-16-le") + b"\x00\x00"
+            hmem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(encoded))
+            if not hmem:
+                return False, "GlobalAlloc failed"
+            ptr = kernel32.GlobalLock(hmem)
+            if not ptr:
+                kernel32.GlobalFree(hmem)
+                return False, "GlobalLock failed"
+            ctypes.memmove(ptr, encoded, len(encoded))
+            kernel32.GlobalUnlock(hmem)
+            if not user32.SetClipboardData(CF_UNICODETEXT, hmem):
+                kernel32.GlobalFree(hmem)
+                return False, "SetClipboardData failed"
+            # System owns the handle now; do not free.
+            return True, ""
+        finally:
+            user32.CloseClipboard()
+    except Exception as exc:
+        return False, str(exc)
+
+
 def copy(text):
     here = desktop()
+    if here is WINDOWS:
+        ok, err = _windows_copy_text(text)
+        if ok:
+            return
+        # Fall back to clip.exe when Win32 clipboard fails (e.g. locked).
+        # Only raise if both paths fail.
+        try:
+            res = _run_copy(text.encode("utf-8"))
+            if res.returncode == 0:
+                return
+        except (subprocess.SubprocessError, OSError):
+            pass
+        raise PasteError(t("Could not copy to clipboard: {error}", error=err or "unknown error"))
     if not shutil.which(here.clipboard):
         raise PasteError(
             t("{tool} not found. Install {packages}.",

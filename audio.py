@@ -7,9 +7,9 @@ of a single stream, which is the only way the two stay aligned with each other
 over an hour.
 
 Which programs do the capturing is a property of the machine, not of the code
-above: PulseAudio or PipeWire on Linux, AVFoundation through ffmpeg on macOS.
-They are gathered into one group each near the bottom of this file, and a
-chooser picks between them.
+above: PulseAudio or PipeWire on Linux, AVFoundation through ffmpeg on macOS,
+DirectShow through ffmpeg on Windows. They are gathered into one group each
+near the bottom of this file, and a chooser picks between them.
 """
 
 import array
@@ -70,7 +70,8 @@ class Recorder(QObject):
 
         try:
             self._proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                **_popen_kwargs()
             )
         except OSError as exc:
             self.failed.emit(t("Could not start recording: {error}", error=exc))
@@ -124,14 +125,7 @@ class Recorder(QObject):
         self._stopping = True
         proc = self._proc
         if proc and proc.poll() is None:
-            try:
-                proc.send_signal(signal.SIGINT)
-                proc.wait(timeout=1.5)
-            except (subprocess.TimeoutExpired, OSError):
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
+            _terminate_process(proc, timeout=1.5)
 
     def cancel(self):
         self._cancelled = True
@@ -246,7 +240,8 @@ class MeetingRecorder(QObject):
             # nobody drains would eventually block it, so it writes to a file.
             self._log = tempfile.TemporaryFile()
             self._proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=self._log, bufsize=0
+                cmd, stdout=subprocess.PIPE, stderr=self._log, bufsize=0,
+                **_popen_kwargs()
             )
         except (OSError, wave.Error) as exc:
             self._close_file()
@@ -297,14 +292,7 @@ class MeetingRecorder(QObject):
         self._stopping = True
         proc = self._proc
         if proc and proc.poll() is None:
-            try:
-                proc.send_signal(signal.SIGINT)
-                proc.wait(timeout=2)
-            except (subprocess.TimeoutExpired, OSError):
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
+            _terminate_process(proc, timeout=2)
 
     def _close_file(self):
         with self._lock:
@@ -420,6 +408,43 @@ MERGE_FILTER = (
     f"[1:a]aresample={RATE}:async=1,aformat=sample_fmts=s16:channel_layouts=mono[s];"
     "[m][s]amerge=inputs=2[out]"
 )
+
+
+def _popen_kwargs():
+    """Hide the console window that Windows otherwise flashes for each ffmpeg."""
+    if sys.platform == "win32" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
+def _run_kwargs():
+    if sys.platform == "win32" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
+def _terminate_process(proc, timeout):
+    """SIGINT on POSIX (lets ffmpeg flush its header), TerminateProcess on Windows."""
+    if sys.platform == "win32":
+        try:
+            proc.terminate()
+            proc.wait(timeout=timeout)
+            return
+        except (subprocess.TimeoutExpired, OSError):
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            return
+    # POSIX path keeps the original behaviour: SIGINT so ffmpeg finalises cleanly
+    try:
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
 
 
 def _pulse_record(target):
@@ -633,9 +658,134 @@ COREAUDIO = Sound(
 )
 
 
+# --- Windows (DirectShow via ffmpeg) -----------------------------------
+
+
+def _dshow_audio_devices():
+    """[(name, description)] of every DirectShow audio capture device.
+
+    ffmpeg DirectShow enumeration goes to stderr and the command exits non-zero;
+    that's the documented way to list devices.
+    Typical lines look like:
+      [dshow @ 000...]  "Microphone (Realtek Audio)" (audio)
+      [dshow @ 000...]  "Stereo Mix (Realtek Audio)" (audio)
+    """
+    if sys.platform != "win32":
+        return []
+    if not shutil.which("ffmpeg"):
+        return []
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-list_devices", "true",
+             "-f", "dshow", "-i", "dummy"],
+            capture_output=True, text=True, timeout=8, check=False,
+            **_run_kwargs(),
+        )
+    except (subprocess.SubprocessError, OSError):
+        return []
+    devices = []
+    in_audio = False
+    for line in result.stderr.splitlines():
+        if "DirectShow audio devices" in line:
+            in_audio = True
+            continue
+        if "DirectShow video devices" in line:
+            in_audio = False
+            continue
+        if not in_audio:
+            continue
+        m = re.search(r'"([^"]+)"\s*\(audio\)', line)
+        if m:
+            name = m.group(1).strip()
+            devices.append((name, name))
+    return devices
+
+
+def _dshow_record(target):
+    if not shutil.which("ffmpeg"):
+        return []
+    devices = _dshow_audio_devices()
+    chosen = target or (devices[0][0] if devices else "")
+    if not chosen:
+        return []
+    # Named helper so hotkey/paste call-sites that log the backend name read
+    # "windows" rather than the resolved program.
+    return [
+        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        "-f", "dshow", "-i", f"audio={chosen}",
+        "-ac", str(CHANNELS), "-ar", str(RATE), "-f", "s16le", "-",
+    ]
+
+
+def _dshow_meeting(mic_target, system_target):
+    """Two DirectShow inputs merged into stereo.
+
+    On Windows there is no pulse monitor. Meeting capture needs a loopback
+    device (Stereo Mix or VB-CABLE) as the second input. When neither exists,
+    the pipeline will fail with ffmpeg's device-not-found error, which the
+    caller surfaces as a PasteError/meeting message.
+    """
+    if not system_target:
+        # Single-device fallback: record mic only; meeting.py will surface
+        # that this path is unavailable via its system-device chooser.
+        return _dshow_record(mic_target)
+    if not mic_target:
+        _devices = _dshow_audio_devices()
+        mic_target = _devices[0][0] if _devices else ""
+        if not mic_target:
+            return []
+    return [
+        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        "-thread_queue_size", "4096",
+        "-f", "dshow", "-i", f"audio={mic_target}",
+        "-thread_queue_size", "4096",
+        "-f", "dshow", "-i", f"audio={system_target}",
+        "-filter_complex", MERGE_FILTER, "-map", "[out]",
+        "-f", "s16le", "-ar", str(RATE), "-",
+    ]
+
+
+def _dshow_inputs():
+    return _dshow_audio_devices()
+
+
+def _dshow_outputs():
+    # Only expose obvious loopback / what-you-hear devices on Windows.
+    keywords = ("stereo mix", "what u hear", "loopback", "vb-cable",
+                "virtual", "cable output", "wave out mix")
+    out = []
+    for name, desc in _dshow_audio_devices():
+        low = name.lower()
+        if any(kw in low for kw in keywords):
+            out.append((name, desc))
+    return out
+
+
+def _dshow_default_output():
+    outputs = _dshow_outputs()
+    return outputs[0][0] if outputs else ""
+
+
+WINDOWS = Sound(
+    record=_dshow_record,
+    meeting=_dshow_meeting,
+    inputs=_dshow_inputs,
+    outputs=_dshow_outputs,
+    default_output=_dshow_default_output,
+    missing=(
+        "No microphone found. Install ffmpeg and add it to PATH "
+        "(winget install Gyan.FFmpeg)."
+    ),
+)
+
+
 def sound():
     """The programs this machine records through."""
-    return COREAUDIO if sys.platform == "darwin" else PULSE
+    if sys.platform == "darwin":
+        return COREAUDIO
+    if sys.platform == "win32":
+        return WINDOWS
+    return PULSE
 
 
 def list_sources():

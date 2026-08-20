@@ -121,6 +121,11 @@ SHORTCUTS = [
 ]
 # Cmd+Space is Spotlight and Ctrl+Space switches input sources, so a Mac gets
 # its own shortlist. Option is what Alt is called on that keyboard.
+WIN_SHORTCUTS = [
+    "Ctrl+Space", "Ctrl+Alt+Space", "Ctrl+Shift+Space",
+    "Alt+Space", "Ctrl+Alt+M", "F8", "F9",
+]
+
 MAC_SHORTCUTS = [
     "Ctrl+Option+Space", "Cmd+Shift+Space", "Ctrl+Shift+Space",
     "Ctrl+Option+A", "Ctrl+Option+D", "Ctrl+Option+M",
@@ -1394,8 +1399,13 @@ class SettingsWindow(QDialog):
         """The field a global shortcut is typed or picked in."""
         box = QComboBox()
         box.setEditable(True)
-        box.addItems(MAC_SHORTCUTS if hotkey.desktop_name() == "macOS"
-                     else SHORTCUTS)
+        name = hotkey.desktop_name()
+        if name == "macOS":
+            box.addItems(MAC_SHORTCUTS)
+        elif name == "Windows":
+            box.addItems(WIN_SHORTCUTS)
+        else:
+            box.addItems(SHORTCUTS)
         box.setCurrentText("")
         if placeholder:
             box.lineEdit().setPlaceholderText(placeholder)

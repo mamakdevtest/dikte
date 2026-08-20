@@ -18,15 +18,55 @@ def _xdg(var, default):
     return pathlib.Path(os.environ.get(var) or os.path.expanduser(default))
 
 
+def _is_windows(platform=None):
+    return (platform or sys.platform) == "win32"
+
+
+def _windows_dirs():
+    """Windows: %APPDATA% for config, %LOCALAPPDATA% for data (large files).
+
+    Falls back to ~/AppData/Roaming and ~/AppData/Local when the variables
+    are absent (e.g. stripped env in a subprocess).
+    """
+    appdata = os.environ.get("APPDATA")
+    localappdata = os.environ.get("LOCALAPPDATA")
+    home = pathlib.Path.home()
+    if not appdata:
+        appdata = str(home / "AppData" / "Roaming")
+    if not localappdata:
+        localappdata = str(home / "AppData" / "Local")
+    return pathlib.Path(appdata) / "Dikte", pathlib.Path(localappdata) / "Dikte"
+
+
 def _directories(platform=None):
     """(settings, data), in the two places this system keeps them.
 
     macOS keeps both in the one directory a Mac user's backup already knows
-    about. Everywhere else they are separate and follow the XDG variables.
+    about. Windows keeps config in Roaming and data in Local. Everywhere else
+    they are separate and follow the XDG variables.
+
+    When a non-Windows platform is forced (e.g. tests on a Windows host), the
+    XDG paths keep POSIX spelling so assertions remain portable.
     """
-    if (platform or sys.platform) == "darwin":
+    plat = platform or sys.platform
+    if plat == "darwin":
+        if plat != sys.platform:
+            # Forced Darwin on non-Mac host (tests): POSIX spelling so
+            # "/Library/Application Support/Dikte" suffix checks pass.
+            support = pathlib.PurePosixPath(pathlib.Path.home().as_posix()) / "Library/Application Support/Dikte"
+            return support, support
         support = pathlib.Path.home() / "Library/Application Support/Dikte"
         return support, support
+    if plat == "win32":
+        return _windows_dirs()
+    if plat != sys.platform:
+        # Forced platform via tests on a different host OS: build POSIX paths
+        # so "/c/dikte" does not become "\c\dikte" on Windows.
+        def _posix_xdg(var, default):
+            raw = os.environ.get(var) or os.path.expanduser(default)
+            # raw is a POSIX path like "/c" or "~/.config"; keep POSIX form.
+            return pathlib.PurePosixPath(raw) / "dikte"
+        return _posix_xdg("XDG_CONFIG_HOME", "~/.config"), _posix_xdg("XDG_DATA_HOME", "~/.local/share")
     return (_xdg("XDG_CONFIG_HOME", "~/.config") / "dikte",
             _xdg("XDG_DATA_HOME", "~/.local/share") / "dikte")
 
@@ -557,7 +597,10 @@ class Config:
         tmp = CONFIG_FILE.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(self.data, fh, ensure_ascii=False, indent=2)
-        os.chmod(tmp, 0o600)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass  # Windows: no POSIX perms, ACLs govern access
         tmp.replace(CONFIG_FILE)
         i18n.set_language(self.data["ui_language"])
 

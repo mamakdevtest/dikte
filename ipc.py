@@ -12,13 +12,47 @@ import json
 import os
 import sys
 
-from PyQt6.QtNetwork import QLocalSocket
+try:
+    from PyQt6.QtNetwork import QLocalSocket
+except ImportError:  # pragma: no cover - missing Qt in headless/tests
+    QLocalSocket = None  # type: ignore[assignment]
 
-SERVER_NAME = "dikte-" + str(os.getuid())
+CONNECT_MS = 800
+
+
+def _uid_suffix():
+    """Per-user suffix for the socket/pipe name; Windows has no getuid."""
+    if hasattr(os, "getuid"):
+        try:
+            return str(os.getuid())
+        except OSError:
+            pass
+    # Windows: USERNAME is the closest to a per-user id.
+    for var in ("USERNAME", "USER", "LOGNAME"):
+        val = os.environ.get(var)
+        if val:
+            # Sanitize: QLocalServer pipe names must be valid; strip odd chars.
+            safe = "".join(c if c.isalnum() or c in "-_." else "-" for c in val)
+            return safe[:64] or "user"
+    return "user"
+
+
+SERVER_NAME = "dikte-" + _uid_suffix()
 
 # Long enough for a process that is already running to answer, short enough that
 # "nothing is running" is not a noticeable pause in front of a key press.
-CONNECT_MS = 800
+
+
+def server_name(uid=None, username=None, platform=None):
+    """Testable server-name construction without touching the real env."""
+    plat = platform or sys.platform
+    if uid is not None and plat != "win32":
+        return f"dikte-{uid}"
+    if username is not None:
+        safe = "".join(c if c.isalnum() or c in "-_." else "-" for c in username)
+        return "dikte-" + (safe[:64] or "user")
+    # Fall back to the live value so callers can use this without args on Windows.
+    return SERVER_NAME
 
 
 def script_path():
@@ -56,7 +90,6 @@ def send(cmd, wait=False, timeout=0, **args):
     sock.write((line + "\n").encode("utf-8"))
     sock.flush()
     sock.waitForBytesWritten(CONNECT_MS)
-
     limit = (int(timeout * 1000) if timeout else -1) if wait else CONNECT_MS
     buffer = b""
     while b"\n" not in buffer:
