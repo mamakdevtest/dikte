@@ -64,13 +64,32 @@ playing.
 On Windows, recording uses the system microphone directly (WinMM, no extra
 driver) and paste runs through `SendInput`, so the only prerequisites are
 Python 3.11+ and ffmpeg (`winget install Gyan.FFmpeg`). The installer is
-PowerShell, a shortcut is created in the Start Menu rather than being bound to
-global hotkeys by the OS, and the built-in listener still catches the keys:
+PowerShell: it adds a `dikte` command, a Start Menu shortcut, a Startup entry
+that launches Dikte windowlessly (`pythonw`, no console), and registers Dikte
+in **Settings → Apps** with an uninstall entry. Global hotkeys are not bound by
+the OS — the built-in listener catches the keys:
 
 ```powershell
 winget install Gyan.FFmpeg
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+Re-running the installer is safe: it repairs or updates the existing install
+without duplicating anything. The GUI is launched windowlessly, so no console
+window appears when Dikte starts.
+
+Uninstall and its knobs:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File uninstall.ps1            # keep settings
+powershell -ExecutionPolicy Bypass -File uninstall.ps1 -Purge     # delete settings too
+```
+
+A plain uninstall stops the running instance, removes the shim, the shortcuts,
+the PATH entry and the Settings → Apps entry, and leaves your settings and
+dictations alone. `-Purge` deletes `%APPDATA%\Dikte` and `%LOCALAPPDATA%\Dikte`
+as well. The source directory is left untouched either way, and running
+uninstall twice is harmless.
 
 Just as on Linux, the installer is only a helper; `dikte.py` itself has no
 platform dependencies beyond the standard library and PyQt6.

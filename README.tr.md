@@ -61,14 +61,33 @@ için BlackHole ya da Loopback gerekiyor, hoparlörden çıkanı kimse vermiyor.
 
 Windows'ta kayıt doğrudan sistem mikrofonundan alınır (WinMM, ek sürücü
 gerekmez), yapıştırma ise `SendInput` ile çalışır; tek gereken Python 3.11+
-ve ffmpeg (`winget install Gyan.FFmpeg`). Kurucu PowerShell; kısayol, global
-kısayolları işletim sistemine bağlamak yerine Başlat menüsüne bir girdi
-kurar, tuşları yine gömülü dinleyici yakalar:
+ve ffmpeg (`winget install Gyan.FFmpeg`). Kurucu PowerShell: `dikte` komutunu,
+Başlat menüsü kısayolunu ve Dikte'yi pencere göstermeden (`pythonw`, konsol
+penceresi yok) başlatan bir otomatik başlatma girdisini kurar; ayrıca Dikte'yi
+**Ayarlar → Uygulamalar**'a kaldırma girdisiyle kaydeder. Global kısayollar
+işletim sistemine bağlanmaz — tuşları yine gömülü dinleyici yakalar:
 
 ```powershell
 winget install Gyan.FFmpeg
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+Kurucuyu yeniden çalıştırmak güvenlidir: mevcut kurulumu hiçbir şeyi
+çoğaltmadan onarır veya günceller. Arayüz penceresiz başlatıldığı için Dikte
+açılırken konsol penceresi görünmez.
+
+Kaldırma ve seçenekleri:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File uninstall.ps1            # ayarlar kalsın
+powershell -ExecutionPolicy Bypass -File uninstall.ps1 -Purge     # ayarları da sil
+```
+
+Sade kaldırma çalışan örneği durdurur, shim'i, kısayolları, PATH girdisini ve
+Ayarlar → Uygulamalar girdisini kaldırır; ayarlarına ve diktelerine dokunmaz.
+`-Purge` ayrıca `%APPDATA%\Dikte` ve `%LOCALAPPDATA%\Dikte` klasörlerini de
+siler. Kaynak dizine her iki durumda da dokunulmaz ve kaldırmayı iki kez
+çalıştırmak zararsızdır.
 
 `install.sh` `dikte` komutunu, menü girdisini, oturum açılışında otomatik
 başlatmayı ve iki global kısayolu kurar; tuşları da iki argümanı. `./update.sh`

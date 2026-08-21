@@ -300,6 +300,25 @@ class Settings(DikteTest):
         window._save()
         self.assertEqual(applied, [True])
 
+    def test_a_failed_write_warns_and_does_not_kill_the_app(self):
+        """Save must not let a locked/read-only settings file take the process
+        down. An OSError from the write is surfaced and the slots after it --
+        history reload, applied, the "saved" dialogue -- never run."""
+        warnings = []
+        self.enterContext(
+            mock.patch.object(QMessageBox, "warning",
+                              side_effect=lambda *_a, **_k: warnings.append(True)))
+        conf = cfg.Config()
+        window = self.window(conf)
+        applied = []
+        window.applied.connect(lambda: applied.append(True))
+        with mock.patch.object(conf, "save",
+                               side_effect=OSError("config locked")) as save:
+            window._save()
+        save.assert_called_once()
+        self.assertEqual(warnings, [True], "the failure must be shown")
+        self.assertEqual(applied, [], "applied must not fire on a failed save")
+
     def test_the_window_is_readable_in_turkish_too(self):
         self.write_config({"ui_language": "tr"})
         window = self.window(cfg.Config())

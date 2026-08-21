@@ -40,6 +40,7 @@ import subprocess
 import sys
 import tarfile
 import threading
+import zipfile
 import time
 import urllib.error
 import urllib.request
@@ -312,12 +313,46 @@ def _find_binary(root, name):
 
 
 def _extract(archive, into):
-    """Unpack a release tarball, refusing anything that reaches outside `into`.
+    """Unpack a release archive, refusing anything that reaches outside `into`.
 
     The archives lay their libraries next to their binaries and are linked with
     an $ORIGIN runpath, so a whole directory is what has to survive the trip and
-    the binary cannot be lifted out of it.
+    the binary cannot be lifted out of it. Windows builds arrive as .zip, Linux
+    and macOS as .tar.gz.
+
+    A zip member named ../ is the same escape a hostile tar member is, and the
+    read is answered from memory (never streaming) precisely so each name can be
+    checked before any byte is written.
     """
+    if zipfile.is_zipfile(archive):
+        into.mkdir(parents=True, exist_ok=True)
+        into_resolved = str(into.resolve())
+        try:
+            with zipfile.ZipFile(archive) as zip_:
+                for member in zip_.infolist():
+                    target = (into / member.filename).resolve()
+                    # The archive is as untrusted as a tar member: a name with
+                    # ../ is how one writes over a file it was never given. The
+                    # trailing separator is what keeps a same-prefix sibling
+                    # (v1.9.1-evil) from counting as inside (v1.9.1/).
+                    target_str = str(target)
+                    inside = target_str == into_resolved or \
+                        target_str.startswith(into_resolved + os.sep)
+                    if not inside:
+                        raise LocalError(t(
+                            "The download tried to write outside the "
+                            "directory it was unpacking into."))
+                    if member.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with zip_.open(member) as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise LocalError(t("Could not unpack {name}: {error}",
+                               name=os.path.basename(str(archive)),
+                               error=exc)) from exc
+        return
     try:
         with tarfile.open(archive, "r:gz") as tar:
             try:
@@ -720,12 +755,49 @@ class Server:
         could be somebody else's copy; the name together with Dikte's own data
         directory on the command line could not.
         """
+        if sys.platform == "win32":
+            return self._is_ours_windows(pid)
         try:
             blob = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
         except OSError:
             return False
         return (self.program.binary.encode() in blob
                 and str(DATA_DIR).encode() in blob)
+
+    def _is_ours_windows(self, pid):
+        """Windows has no /proc; ask the process for its own image path.
+
+        The server Dikte started lives under its own bin directory, so a pid
+        that still points at a binary there is ours, and a pid that has been
+        handed out to something else is not. The image path is read through the
+        Win32 API rather than a tasklist subprocess, so the sweep never flashes
+        a console of its own.
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+        except (ImportError, OSError):
+            return False
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                      False, pid)
+        if not handle:
+            return False
+        try:
+            size = wintypes.DWORD(32768)
+            buf = ctypes.create_unicode_buffer(size.value)
+            if not kernel32.QueryFullProcessImageNameW(handle, 0, buf,
+                                                       ctypes.byref(size)):
+                return False
+            image = pathlib.Path(buf.value).resolve()
+        finally:
+            kernel32.CloseHandle(handle)
+        try:
+            root = pathlib.Path(BIN_DIR).resolve()
+        except OSError:
+            return False
+        return str(image).lower().startswith(str(root).lower())
 
     def sweep(self):
         """Kill a server a previous Dikte left behind. True when one was found.
