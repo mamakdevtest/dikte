@@ -5,9 +5,9 @@ machine by default, a model cleans it up (dropping the *uh*s, the restarts, the
 missing punctuation), and the result lands in your clipboard and is pasted into
 whatever window you were typing in.
 
-Built for KDE Plasma 6 on Wayland, and runs on GNOME X11 and macOS too. No
-dependencies beyond system packages: just the Python standard library, 3.11 or
-newer, and PyQt6.
+Built for KDE Plasma 6 on Wayland, and runs on GNOME X11, macOS and Windows
+too. No dependencies beyond system packages: just the Python standard library,
+3.11 or newer, and PyQt6.
 
 *[Türkçe README](README.tr.md)*
 
@@ -60,6 +60,20 @@ that catches the keys is the mechanism there and there is nothing to run:
 `brew install ffmpeg`, `pip install PyQt6`, then `python dikte.py`. A meeting
 needs BlackHole or Loopback, because nothing else offers what the speakers are
 playing.
+
+On Windows, recording uses the system microphone directly (WinMM, no extra
+driver) and paste runs through `SendInput`, so the only prerequisites are
+Python 3.11+ and ffmpeg (`winget install Gyan.FFmpeg`). The installer is
+PowerShell, a shortcut is created in the Start Menu rather than being bound to
+global hotkeys by the OS, and the built-in listener still catches the keys:
+
+```powershell
+winget install Gyan.FFmpeg
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Just as on Linux, the installer is only a helper; `dikte.py` itself has no
+platform dependencies beyond the standard library and PyQt6.
 
 `install.sh` adds the `dikte` command, a menu entry, an autostart entry and the
 two global shortcuts, whose keys are its two arguments. `./update.sh` pulls and
