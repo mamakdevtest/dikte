@@ -7,6 +7,7 @@ next time anybody presses Save. That is the failure this catches.
 """
 
 import sys
+import time
 import unittest
 from typing import ClassVar
 from unittest import mock
@@ -25,6 +26,21 @@ from tests.support import DikteTest, only_these_tools
 
 # One application for the whole run; Qt allows no second one.
 _app = QApplication.instance() or QApplication([])
+
+
+def settle(predicate, timeout=5.0):
+    """Run the loop until predicate holds.
+
+    A fetch answers from a daemon thread through a queued signal, so the
+    answer needs the event loop run to land; waiting alone would never see it.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        _app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
 
 
 # A valid non-default value for every setting the window shows. Anything the
@@ -120,6 +136,12 @@ class Settings(DikteTest):
                                             "_load_models"))
         self.enterContext(mock.patch.object(settings_ui.SettingsWindow,
                                             "_load_transcribe_models"))
+        # No version subprocess for the CLI rows either; the one test that
+        # wants the real fetch re-patches executable_version itself.
+        self.enterContext(mock.patch.object(providers, "executable_version",
+                                            return_value=None))
+        self.enterContext(mock.patch.object(settings_ui.SettingsWindow,
+                                            "_fetch_cli_versions"))
         self.enterContext(mock.patch.object(settings_ui.hotkey, "APPLICATIONS_DIR",
                                             self.path("applications")))
         self.enterContext(mock.patch.object(settings_ui.hotkey, "SHORTCUTS_FILE",
@@ -159,8 +181,8 @@ class Settings(DikteTest):
         window = self.window(cfg.Config())
         boxes = {"openrouter": window.cleanup_model_row,
                  "llmapi": window.cleanup_llmapi_model_row,
-                 "claude": window.cleanup_claude_model,
-                 "codex": window.cleanup_codex_model,
+                 "claude": window.cleanup_claude_model_row,
+                 "codex": window.cleanup_codex_model_row,
                  "antigravity": window.cleanup_agy_model_row}
         for provider, box in boxes.items():
             with self.subTest(provider=provider):
@@ -190,12 +212,102 @@ class Settings(DikteTest):
         self.assertEqual(window.cleanup_agy_model.currentText(), "kept-slug")
         self.assertEqual(window.assistant_agy_model.count(), 2)
 
-    def test_the_provider_registry_lists_everyone(self):
+    def test_clicking_claude_fetch_fills_both_claude_boxes(self):
+        """One settings file, fetched once, for the cleanup row and the
+        agent's; the button stays dead until the answer lands."""
         window = self.window(cfg.Config())
-        listed = [window.provider_list.item(row).data(
-                      settings_ui.Qt.ItemDataRole.UserRole)
-                  for row in range(window.provider_list.count())]
-        self.assertEqual(listed, list(providers.definitions(window.conf)))
+        window.assistant_model.setCurrentText("opus")
+        with mock.patch.object(providers, "claude_models",
+                               return_value=["haiku", "opus",
+                                             "claude-6-sonnet"]) as fetch:
+            window.refresh_claude_models.click()
+            self.assertFalse(window.refresh_claude_models.isEnabled())
+            self.assertTrue(settle(lambda: (
+                window.refresh_claude_models.isEnabled()
+                and window.refresh_assistant_claude_models.isEnabled())))
+        fetch.assert_called_once_with()
+        self.assertEqual([window.cleanup_claude_model.itemText(i)
+                          for i in range(window.cleanup_claude_model.count())],
+                         ["haiku", "opus", "claude-6-sonnet"])
+        self.assertEqual(window.assistant_model.currentText(), "opus")
+        self.assertEqual(window.models_label.text(), "3 models loaded.")
+
+    def test_an_empty_claude_answer_leaves_the_aliases_standing(self):
+        """The settings naming nothing is not a reason to empty the boxes."""
+        window = self.window(cfg.Config())
+        window._on_claude_models_loaded([], "")
+        self.assertEqual([window.cleanup_claude_model.itemText(i)
+                          for i in range(window.cleanup_claude_model.count())],
+                         list(settings_ui.CLEANUP_CLAUDE_MODELS))
+        self.assertEqual(
+            window.models_label.text(),
+            settings_ui.t("No models named in your own settings; "
+                          "the standing list stays."))
+
+    def test_clicking_codex_fetch_fills_both_codex_boxes(self):
+        """What the user's own Codex is set to leads, ahead of the standing
+        suggestions, with the "own default" choice kept."""
+        window = self.window(cfg.Config())
+        window.assistant_codex_model.setCurrentText("gpt-5.6-sol")
+        with mock.patch.object(providers, "codex_models",
+                               return_value=["gpt-5.6-luna",
+                                             "gpt-5.6-sol"]) as fetch:
+            window.refresh_codex_models.click()
+            self.assertTrue(settle(lambda: (
+                window.refresh_codex_models.isEnabled()
+                and window.refresh_assistant_codex_models.isEnabled())))
+        fetch.assert_called_once_with()
+        self.assertEqual([window.cleanup_codex_model.itemText(i)
+                          for i in range(window.cleanup_codex_model.count())],
+                         ["Codex's own default", "gpt-5.6-luna", "gpt-5.6-sol"])
+        self.assertEqual(window.assistant_codex_model.currentText(),
+                         "gpt-5.6-sol")
+
+    def test_the_provider_registry_gives_everyone_a_row(self):
+        """One row per provider, the user's own gateways included: the row is
+        where a Test is asked from and its answer lands."""
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        window = self.window(conf)
+        self.assertEqual(set(window._testers), set(providers.definitions(conf)))
+
+    def test_the_keys_live_in_rows_of_the_providers_group(self):
+        """The Keys box is gone; each built-in's field moved into its own row
+        under Providers, still wired to the setting it always saved to."""
+        window = self.window(cfg.Config())
+        groups = window.findChildren(settings_ui.QGroupBox)
+        self.assertNotIn("Keys", [g.title() for g in groups])
+        registry = next(g for g in groups if g.title() == "Providers")
+
+        def inside(widget):
+            while widget is not None:
+                if widget is registry:
+                    return True
+                widget = widget.parentWidget()
+            return False
+
+        for pid, field in window._key_fields.items():
+            with self.subTest(provider=pid):
+                self.assertTrue(inside(field))
+        window._key_fields["deepgram"].setText("dgm-typed")
+        window._save()
+        self.assertEqual(window.conf["deepgram_api_key"], "dgm-typed")
+
+    def test_a_custom_row_shows_the_mask_of_whichever_key_is_active(self):
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        providers.add_credential(conf, pid, "home", "sk-very-secret-key-42")
+        window = self.window(conf)
+        self.assertEqual(window._provider_creds[pid].text(),
+                         providers.mask("sk-very-secret-key-42"))
+
+    def test_the_cli_row_shows_the_version_a_refresh_found(self):
+        window = self.window(cfg.Config())
+        window._on_provider_versions_done({"claude": "2.1.0"})
+        self.assertIn("2.1.0", window._testers["claude"][1].text())
+        window._on_provider_versions_done({"claude": None})
+        self.assertIn(settings_ui.t("Claude Code is not installed."),
+                      window._testers["claude"][1].text())
 
     def test_a_provider_added_from_the_dialog_is_offered_everywhere(self):
         window = self.window(cfg.Config())
@@ -213,8 +325,7 @@ class Settings(DikteTest):
         (entry,) = window.conf["providers"]
         pid = f"user/{entry['id']}"
         self.assertEqual(entry["name"], "My gateway")
-        self.assertEqual(window.provider_list.count(),
-                         len(providers.definitions(window.conf)))
+        self.assertIn(pid, window._testers)
         offered = [window.cleanup_provider.itemData(i)
                    for i in range(window.cleanup_provider.count())]
         self.assertIn(pid, offered)
@@ -223,18 +334,15 @@ class Settings(DikteTest):
         self.assertFalse(window.cleanup_model_row.isHidden())
         self.assertTrue(window.refresh_models.isVisibleTo(window))
 
-    def test_a_provider_removed_here_is_gone_from_the_boxes_too(self):
+    def test_a_provider_removed_from_its_row_is_gone_from_the_boxes_too(self):
         conf = cfg.Config()
         pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
         window = self.window(conf)
-        row = [r for r in range(window.provider_list.count())
-               if window.provider_list.item(r).data(
-                   settings_ui.Qt.ItemDataRole.UserRole) == pid][0]
-        window.provider_list.setCurrentRow(row)
         with mock.patch.object(QMessageBox, "question",
                                return_value=QMessageBox.StandardButton.Yes):
-            window._remove_provider()
+            window._remove_provider(pid)
         self.assertEqual(window.conf["providers"], [])
+        self.assertNotIn(pid, window._testers)
         offered = [window.cleanup_provider.itemData(i)
                    for i in range(window.cleanup_provider.count())]
         self.assertNotIn(pid, offered)
@@ -647,11 +755,37 @@ if __name__ == "__main__":
 class LocalModels(DikteTest):
     """The download boxes, without a network and without either program."""
 
+    def setUp(self):
+        super().setUp()
+        # No version subprocess at startup; the one test that wants the real
+        # fetch re-patches executable_version itself.
+        self.enterContext(mock.patch.object(providers, "executable_version",
+                                            return_value=None))
+
     def window(self, conf):
         window = settings_ui.SettingsWindow(conf)
         self.addCleanup(window.deleteLater)
         self.addCleanup(window.close)
         return window
+
+    def test_the_cli_versions_are_asked_off_the_thread_once(self):
+        """A `--version` run is a program launch: it happens off the
+        interface thread, one call per CLI per refresh, and the row only says
+        something once the answer is back."""
+        window = self.window(cfg.Config())
+        # Let the fetch the window started on its own land first, so the one
+        # under test is not waved off by the busy flag.
+        self.assertTrue(settle(lambda: not window._versions_busy))
+        with mock.patch.object(providers, "executable_version",
+                               return_value="7.7.7") as ask:
+            window._fetch_cli_versions(providers.definitions(window.conf))
+            window._versions_thread.join(timeout=10)
+        _app.processEvents()
+        self.assertEqual(
+            ask.call_args_list,
+            [mock.call(pid) for pid in ("claude", "codex", "antigravity")])
+        self.assertIn("7.7.7", window._testers["claude"][1].text())
+        self.assertIn("7.7.7", window._testers["codex"][1].text())
 
     def test_it_opens_where_the_missing_model_is_fixed(self):
         # Nothing can transcribe on a fresh install, which is why this window

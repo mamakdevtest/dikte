@@ -687,11 +687,15 @@ def openrouter_models(api_key="", transcription=False):
     return sorted(m["id"] for m in models if m.get("id"))
 
 
-def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI"):
-    """The audio models of anything that speaks OpenAI's /models, Groq included.
+def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI", audio=True):
+    """The models of anything that speaks OpenAI's /models, Groq included.
 
     `service` is only the name an error is written in, so a Groq key that is
-    refused says Groq rather than OpenAI.
+    refused says Groq rather than OpenAI. `audio=True` is what a transcription
+    box wants: the speech models /audio/transcriptions accepts, with the whole
+    catalog as the fallback when none match by name. `audio=False` answers a
+    cleanup box: every id the gateway offers, because which of them run text is
+    not something a name-based filter can guess.
     """
     if not api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
@@ -704,8 +708,10 @@ def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI"):
     except ApiError as exc:
         raise explain(exc, service) from None
     ids = [m["id"] for m in data.get("data", []) if m.get("id")]
-    audio = [i for i in ids if "transcribe" in i or "whisper" in i]
-    return sorted(audio or ids)
+    if audio:
+        named = [i for i in ids if "transcribe" in i or "whisper" in i]
+        ids = named or ids
+    return sorted(ids)
 
 
 def llmapi_models(api_key="", base_url=LLMAPI_URL, text_only=True,

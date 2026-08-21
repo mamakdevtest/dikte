@@ -537,8 +537,8 @@ class ProviderDialog(QDialog):
 class ProviderKeysDialog(QDialog):
     """The named keys of a custom provider: add, rename, replace, choose, drop.
 
-    A built-in's key stays where it always was, in its own field under Keys;
-    only a gateway created here holds named ones.
+    A built-in's key stays where it always was, in the field of its own row
+    under Providers; only a gateway created here holds named ones.
     """
 
     def __init__(self, conf, pid, parent=None):
@@ -794,9 +794,14 @@ class SettingsWindow(QDialog):
     _transcribe_models_loaded = pyqtSignal(list, str)
     # Antigravity's own catalog, asked of `agy models` off the interface thread.
     _agy_models_loaded = pyqtSignal(list, str)
+    # The user's own Claude and Codex settings, read the same way.
+    _claude_models_loaded = pyqtSignal(list, str)
+    _codex_models_loaded = pyqtSignal(list, str)
+    # What a refresh found out about the CLI providers: pid → version line.
+    _provider_versions_done = pyqtSignal(dict)
     # Which key was tested, whether it worked, and what to write under it.
     _test_done = pyqtSignal(str, bool, str)
-    # Same, for a provider tested from the registry list.
+    # Same, for a provider tested from its registry row.
     _provider_test_done = pyqtSignal(str, bool, str)
 
     def __init__(self, conf, meetings=None, parent=None):
@@ -814,8 +819,17 @@ class SettingsWindow(QDialog):
         self._key_fields = {}
         self._testers = {}
         self._shown_provider = ""
-        # What a provider's last Test said, by registry id, for the list row.
+        # What a provider's last Test said, by registry id, for its row.
         self._provider_tests = {}
+        # The version line of each CLI provider, by registry id; asked once
+        # per refresh off the interface thread, read while the rows update.
+        self._provider_versions = {}
+        # The masked credential each custom row shows, by registry id.
+        self._provider_creds = {}
+        # The widgets of the user's own rows, rebuilt on every refresh.
+        self._custom_row_widgets = []
+        self._versions_busy = False
+        self._versions_thread = None
         self.transcriber = FileTranscriber(conf, self)
         self.setWindowTitle(t("Dikte Settings"))
         self.setWindowIcon(_app_icon())
@@ -846,6 +860,9 @@ class SettingsWindow(QDialog):
         self._models_loaded.connect(self._on_models_loaded)
         self._transcribe_models_loaded.connect(self._on_transcribe_models_loaded)
         self._agy_models_loaded.connect(self._on_agy_models_loaded)
+        self._claude_models_loaded.connect(self._on_claude_models_loaded)
+        self._codex_models_loaded.connect(self._on_codex_models_loaded)
+        self._provider_versions_done.connect(self._on_provider_versions_done)
         self._test_done.connect(self._on_test_done)
         self._provider_test_done.connect(self._on_provider_test_done)
         self.transcriber.progress.connect(self._on_file_progress)
@@ -951,30 +968,10 @@ class SettingsWindow(QDialog):
         page = QWidget()
         outer = QVBoxLayout(page)
 
-        # The registry first: every provider in one place, the user's own
-        # gateways included, before the rows each job picks its provider in.
+        # The registry first: every provider and every key in one place, the
+        # user's own gateways included, before the rows each job picks its
+        # provider in.
         outer.addWidget(self._providers_group())
-
-        # Keys next, then the two jobs, because OpenRouter can now do both of
-        # them and a key no longer belongs to a single job.
-        keys = QGroupBox(t("Keys"))
-        keys_form = QFormLayout(keys)
-        self.openai_key = self._key_row(
-            keys_form, "openai", t("sk-… (falls back to OPENAI_API_KEY)"),
-            self._test_openai)
-        self.groq_key = self._key_row(
-            keys_form, "groq", t("gsk_… (falls back to GROQ_API_KEY)"),
-            self._test_groq)
-        self.openrouter_key = self._key_row(
-            keys_form, "openrouter", t("sk-or-… (falls back to OPENROUTER_API_KEY)"),
-            self._test_openrouter)
-        self.llmapi_key = self._key_row(
-            keys_form, "llmapi", t("falls back to LLM_API_KEY"),
-            self._test_llmapi)
-        self.deepgram_key = self._key_row(
-            keys_form, "deepgram", t("(falls back to DEEPGRAM_API_KEY)"),
-            self._test_deepgram)
-        outer.addWidget(keys)
 
         stt = QGroupBox(t("Speech to text"))
         stt_form = QFormLayout(stt)
@@ -1070,15 +1067,24 @@ class SettingsWindow(QDialog):
         self.cleanup_claude_model = QComboBox()
         self.cleanup_claude_model.setEditable(True)
         self.cleanup_claude_model.addItems(CLEANUP_CLAUDE_MODELS)
-        orr_form.addRow(t("Model"), self.cleanup_claude_model)
+        self.refresh_claude_models = QPushButton(t("Fetch model list"))
+        self.refresh_claude_models.clicked.connect(self._load_claude_models)
+        self.cleanup_claude_model_row = self._row(self.cleanup_claude_model,
+                                                  self.refresh_claude_models)
+        orr_form.addRow(t("Model"), self.cleanup_claude_model_row)
 
         self.cleanup_codex_model = QComboBox()
         self.cleanup_codex_model.setEditable(True)
         self.cleanup_codex_model.addItems([t("Codex's own default")] + CODEX_MODELS)
-        orr_form.addRow(t("Model"), self.cleanup_codex_model)
+        self.refresh_codex_models = QPushButton(t("Fetch model list"))
+        self.refresh_codex_models.clicked.connect(self._load_codex_models)
+        self.cleanup_codex_model_row = self._row(self.cleanup_codex_model,
+                                                 self.refresh_codex_models)
+        orr_form.addRow(t("Model"), self.cleanup_codex_model_row)
 
-        # Antigravity is the one CLI that lists its own catalog, so its row has
-        # a fetch button where the Claude row has aliases and Codex has nothing.
+        # Antigravity is the one CLI that lists its own whole catalog; Claude
+        # and Codex fetch the smaller answer, what the user's own settings
+        # name, over the aliases and standing suggestions above.
         self.cleanup_agy_model = QComboBox()
         self.cleanup_agy_model.setEditable(True)
         self.cleanup_agy_model.addItems(AGY_CLEANUP_MODELS)
@@ -1134,81 +1140,201 @@ class SettingsWindow(QDialog):
 
     # ---- the provider registry -------------------------------------------
 
+    # What each built-in's key field says while it is empty: where the key
+    # falls back to when nothing is typed.
+    KEY_PLACEHOLDERS = {
+        "openai": "sk-… (falls back to OPENAI_API_KEY)",
+        "groq": "gsk_… (falls back to GROQ_API_KEY)",
+        "openrouter": "sk-or-… (falls back to OPENROUTER_API_KEY)",
+        "llmapi": "falls back to LLM_API_KEY",
+        "deepgram": "(falls back to DEEPGRAM_API_KEY)",
+    }
+
     def _providers_group(self):
-        """Every provider in one place: what it is, where it is reached, and
-        the key it holds. The built-ins have their key fields under Keys; a
-        provider created here is a gateway of the user's own, offered wherever
-        an OpenAI-compatible one fits."""
+        """Every provider in one place, one row each: its name, the key or
+        credential it holds, what the last check said, and what can be done
+        with it. A built-in's one key lives in its own row; a provider
+        created here is a gateway of the user's own, offered wherever an
+        OpenAI-compatible one fits."""
         box = QGroupBox(t("Providers"))
         layout = QVBoxLayout(box)
-        self.provider_list = QListWidget()
-        self.provider_list.currentItemChanged.connect(self._provider_picked)
-        layout.addWidget(self.provider_list)
-        self.provider_status = QLabel("")
-        self.provider_status.setWordWrap(True)
-        layout.addWidget(self.provider_status)
+        # The built-ins always exist, so their rows — and the key fields and
+        # Test answers inside them — are made once here and only updated. The
+        # user's own gateways come and go, so theirs are rebuilt by every
+        # refresh, under the built-ins, in the registry's order.
+        self.provider_grid = QGridLayout()
+        self.provider_grid.setColumnStretch(1, 1)
+        self.provider_grid.setColumnStretch(2, 1)
+        layout.addLayout(self.provider_grid)
+        self._first_custom_row = self._built_in_rows()
         row = QHBoxLayout()
         add = QPushButton(t("Add provider"))
         add.clicked.connect(self._add_provider)
-        self.provider_remove = QPushButton(t("Remove"))
-        self.provider_remove.clicked.connect(self._remove_provider)
-        self.provider_rename = QPushButton(t("Rename…"))
-        self.provider_rename.clicked.connect(self._rename_provider)
-        self.provider_url = QPushButton(t("Base URL…"))
-        self.provider_url.clicked.connect(self._edit_provider_url)
-        self.provider_keys = QPushButton(t("Keys…"))
-        self.provider_keys.clicked.connect(self._edit_provider_keys)
-        self.provider_test = QPushButton(t("Test"))
-        self.provider_test.clicked.connect(self._test_provider)
-        for button in (add, self.provider_remove, self.provider_rename,
-                       self.provider_url, self.provider_keys, self.provider_test):
-            row.addWidget(button)
+        row.addWidget(add)
         row.addStretch(1)
         layout.addLayout(row)
         return box
 
-    def _selected_provider(self):
-        item = self.provider_list.currentItem()
-        return item.data(Qt.ItemDataRole.UserRole) if item is not None else ""
+    def _built_in_rows(self):
+        """A row per built-in, in the registry's order; how many were drawn."""
+        testers = {"openai": self._test_openai, "groq": self._test_groq,
+                   "openrouter": self._test_openrouter,
+                   "llmapi": self._test_llmapi,
+                   "deepgram": self._test_deepgram}
+        row = 0
+        for pid, who in providers.definitions(self.conf).items():
+            if who.custom:
+                continue
+            name = QLabel(who.name)
+            self.provider_grid.addWidget(name, row, 0)
+            if pid in self.KEY_PLACEHOLDERS:
+                # The field, the button and the answer line are the ones
+                # save, load and the test handler have always gone through;
+                # this row only moves them out of the box they used to sit in.
+                name.setToolTip(providers.base_url(self.conf, pid))
+                field = QLineEdit()
+                field.setEchoMode(QLineEdit.EchoMode.Password)
+                field.setPlaceholderText(t(self.KEY_PLACEHOLDERS[pid]))
+                button = QPushButton(t("Test"))
+                button.clicked.connect(testers[pid])
+                answer = QLabel("")
+                answer.setWordWrap(True)
+                self.provider_grid.addWidget(field, row, 1)
+                self.provider_grid.addWidget(answer, row, 2)
+                self.provider_grid.addWidget(button, row, 3)
+                self._key_fields[pid] = field
+                self._testers[pid] = (button, answer)
+            else:
+                # A local or CLI provider holds no key; its row's middle is
+                # the line that says what it is running, or not running.
+                answer = QLabel("")
+                answer.setWordWrap(True)
+                button = QPushButton(t("Test"))
+                button.clicked.connect(
+                    lambda *_, pid=pid: self._test_provider(pid))
+                self.provider_grid.addWidget(answer, row, 1, 1, 2)
+                self.provider_grid.addWidget(button, row, 3)
+                self._testers[pid] = (button, answer)
+            row += 1
+        # Under the names the rest of the window always used.
+        self.openai_key = self._key_fields["openai"]
+        self.groq_key = self._key_fields["groq"]
+        self.openrouter_key = self._key_fields["openrouter"]
+        self.llmapi_key = self._key_fields["llmapi"]
+        self.deepgram_key = self._key_fields["deepgram"]
+        return row
 
-    def _provider_picked(self, *_):
-        """Which of the management buttons the picked provider can be given."""
-        pid = self._selected_provider()
-        who = providers.provider(self.conf, pid)
-        for button in (self.provider_remove, self.provider_rename,
-                       self.provider_url, self.provider_keys):
-            button.setEnabled(bool(who and who.custom))
-        self.provider_test.setEnabled(bool(who))
-        self.provider_status.setText(self._provider_tests.get(pid, ""))
+    def _rebuild_custom_rows(self, defs):
+        """The user's own gateways, row by row, from whatever the registry
+        holds now: the mask of whichever key is active, and the buttons that
+        manage exactly that provider."""
+        for widget in self._custom_row_widgets:
+            self.provider_grid.removeWidget(widget)
+            widget.hide()
+            widget.deleteLater()
+        self._custom_row_widgets = []
+        for pid in [p for p in self._testers
+                    if p.startswith("user/") and p not in defs]:
+            del self._testers[pid]
+            self._provider_creds.pop(pid, None)
+        row = self._first_custom_row
+        for pid, who in defs.items():
+            if not who.custom:
+                continue
+            name = QLabel(who.name)
+            cred = QLabel(providers.mask(providers.credential(self.conf, pid))
+                          or t("no key"))
+            answer = QLabel(self._provider_tests.get(pid, "") or who.base_url)
+            answer.setWordWrap(True)
+            keys = QPushButton(t("Keys…"))
+            keys.clicked.connect(
+                lambda *_, pid=pid: self._edit_provider_keys(pid))
+            url = QPushButton(t("Base URL…"))
+            url.clicked.connect(
+                lambda *_, pid=pid: self._edit_provider_url(pid))
+            rename = QPushButton(t("Rename…"))
+            rename.clicked.connect(
+                lambda *_, pid=pid: self._rename_provider(pid))
+            remove = QPushButton(t("Remove"))
+            remove.clicked.connect(
+                lambda *_, pid=pid: self._remove_provider(pid))
+            test = QPushButton(t("Test"))
+            test.clicked.connect(
+                lambda *_, pid=pid: self._test_provider(pid))
+            self.provider_grid.addWidget(name, row, 0)
+            self.provider_grid.addWidget(cred, row, 1)
+            self.provider_grid.addWidget(answer, row, 2)
+            for column, button in enumerate((keys, url, rename, remove, test),
+                                            start=3):
+                self.provider_grid.addWidget(button, row, column)
+                self._custom_row_widgets.append(button)
+            self._custom_row_widgets += [name, cred, answer]
+            self._provider_creds[pid] = cred
+            self._testers[pid] = (test, answer)
+            row += 1
 
     def _refresh_providers(self):
-        """Redraw the registry list, and offer the user's own gateways in the
+        """Redraw the registry rows, and offer the user's own gateways in the
         two provider boxes wherever a compatible one fits."""
-        current = self._selected_provider()
-        self.provider_list.blockSignals(True)
-        self.provider_list.clear()
-        for pid, who in providers.definitions(self.conf).items():
-            bits = [who.name, who.kind]
-            if who.transport == "http":
-                bits.append(providers.base_url(self.conf, pid) or "—")
-                field = self._key_fields.get(pid)
-                key = ((field.text().strip() if field is not None else "")
-                       or providers.credential(self.conf, pid))
-                bits.append(providers.mask(key) or t("no key"))
-            if pid in self._provider_tests:
-                bits.append(self._provider_tests[pid])
-            item = QListWidgetItem("  ·  ".join(bits))
-            item.setData(Qt.ItemDataRole.UserRole, pid)
-            self.provider_list.addItem(item)
-        for row in range(self.provider_list.count()):
-            if self.provider_list.item(row).data(Qt.ItemDataRole.UserRole) == current:
-                self.provider_list.setCurrentRow(row)
-                break
-        self.provider_list.blockSignals(False)
+        defs = providers.definitions(self.conf)
+        self._rebuild_custom_rows(defs)
+        self._update_local_rows()
+        self._update_cli_rows(defs)
+        self._fetch_cli_versions(defs)
         self._fill_providers(self.transcribe_provider, TRANSCRIBE_PROVIDERS)
         self._fill_providers(self.cleanup_provider, CLEANUP_PROVIDERS)
-        self._provider_picked()
         self._cleanup_provider_changed()
+
+    def _update_local_rows(self):
+        """The two local rows: whichever model each one is set to run, or the
+        last Test verdict when there is one."""
+        conf = self.conf
+        for pid, setting in (("local", "local_model"),
+                             ("local-llm", "local_llm_model")):
+            model = conf[setting]
+            self._testers[pid][1].setText(
+                self._provider_tests.get(pid, "") or (
+                    t("Ready: {model}", model=model) if model
+                    else t("Not configured")))
+
+    def _update_cli_rows(self, defs):
+        """The CLI rows: the last Test verdict, else the version line a
+        refresh found, else nothing while the first one is still asking."""
+        for pid, who in defs.items():
+            if who.transport != "cli":
+                continue
+            if pid in self._provider_tests:
+                self._testers[pid][1].setText(self._provider_tests[pid])
+            elif pid in self._provider_versions:
+                version = self._provider_versions[pid]
+                self._testers[pid][1].setText(
+                    t("{service} found: {version}", service=who.name,
+                      version=version) if version
+                    else t("{service} is not installed.", service=who.name))
+
+    def _fetch_cli_versions(self, defs):
+        """Ask the CLI providers for their version lines, once per refresh.
+
+        `claude --version` is a program launch, so it belongs off the
+        interface thread like every other answer that can take seconds, and
+        it is asked here rather than while drawing so a repaint costs
+        nothing."""
+        if self._versions_busy:
+            return
+        pids = [pid for pid, who in defs.items() if who.transport == "cli"]
+        self._versions_busy = True
+
+        def work():
+            self._provider_versions_done.emit(
+                {pid: providers.executable_version(pid) for pid in pids})
+
+        self._versions_thread = threading.Thread(target=work, daemon=True)
+        self._versions_thread.start()
+
+    def _on_provider_versions_done(self, found):
+        self._versions_busy = False
+        self._provider_versions.update(found)
+        self._update_cli_rows(providers.definitions(self.conf))
 
     def _fill_providers(self, combo, base):
         """A provider box: the built-ins it started with stay put, the user's
@@ -1241,8 +1367,7 @@ class SettingsWindow(QDialog):
         providers.add_provider(self.conf, dialog.name.text(), dialog.url.text())
         self._persist_providers()
 
-    def _remove_provider(self):
-        pid = self._selected_provider()
+    def _remove_provider(self, pid):
         who = providers.provider(self.conf, pid)
         if who is None or not who.custom:
             return
@@ -1250,10 +1375,11 @@ class SettingsWindow(QDialog):
             return
         providers.remove_provider(self.conf, pid)
         self._provider_tests.pop(pid, None)
+        self._testers.pop(pid, None)
+        self._provider_creds.pop(pid, None)
         self._persist_providers()
 
-    def _rename_provider(self):
-        pid = self._selected_provider()
+    def _rename_provider(self, pid):
         who = providers.provider(self.conf, pid)
         if who is None or not who.custom:
             return
@@ -1263,8 +1389,7 @@ class SettingsWindow(QDialog):
             providers.rename_provider(self.conf, pid, name)
             self._persist_providers()
 
-    def _edit_provider_url(self):
-        pid = self._selected_provider()
+    def _edit_provider_url(self, pid):
         who = providers.provider(self.conf, pid)
         if who is None or not who.custom:
             return
@@ -1274,25 +1399,24 @@ class SettingsWindow(QDialog):
             providers.set_base_url(self.conf, pid, url)
             self._persist_providers()
 
-    def _edit_provider_keys(self):
+    def _edit_provider_keys(self, pid):
         """Named keys are a custom provider's; a built-in's one key lives in
-        the field it always had, under Keys."""
-        pid = self._selected_provider()
+        the field of its own row above."""
         who = providers.provider(self.conf, pid)
         if who is None or not who.custom:
             return
         ProviderKeysDialog(self.conf, pid, self).exec()
         self._persist_providers()
 
-    def _test_provider(self):
-        """The registry's own verdict, off the interface thread like the key
-        tests: a CLI's version line can take as long as a network request."""
-        pid = self._selected_provider()
+    def _test_provider(self, pid):
+        """A row's own verdict, off the interface thread like the key tests:
+        a CLI's version line can take as long as a network request."""
         if not providers.provider(self.conf, pid):
             return
         conf = self._conf_view(pid)
-        self.provider_test.setEnabled(False)
-        self.provider_status.setText(t("Trying…"))
+        button, answer = self._testers[pid]
+        button.setEnabled(False)
+        answer.setText(t("Trying…"))
 
         def work():
             try:
@@ -1306,9 +1430,13 @@ class SettingsWindow(QDialog):
     def _on_provider_test_done(self, pid, ok, message):
         line = ("✓ " if ok else "✗ ") + message
         self._provider_tests[pid] = line
-        self._refresh_providers()
-        if self._selected_provider() == pid:
-            self.provider_status.setText(line)
+        # The row can be gone by the time the answer lands: its provider was
+        # removed while the test was running.
+        entry = self._testers.get(pid)
+        if entry is not None:
+            button, answer = entry
+            button.setEnabled(True)
+            answer.setText(line)
 
     def _prompt_tab(self):
         page = QWidget()
@@ -1424,7 +1552,10 @@ class SettingsWindow(QDialog):
             "Opus thinks harder and answers slower, which is felt here more "
             "than anywhere else: you are standing in front of the screen."
         ))
-        claude_form.addRow(t("Model"), self.assistant_model)
+        self.refresh_assistant_claude_models = QPushButton(t("Fetch model list"))
+        self.refresh_assistant_claude_models.clicked.connect(self._load_claude_models)
+        claude_form.addRow(t("Model"), self._row(
+            self.assistant_model, self.refresh_assistant_claude_models))
         self.assistant_permission = QComboBox()
         for label, value in PERMISSION_MODES:
             self.assistant_permission.addItem(t(label), value)
@@ -1438,7 +1569,10 @@ class SettingsWindow(QDialog):
         self.assistant_codex_model.addItem(t("Codex's own default"), "")
         for name in CODEX_MODELS:
             self.assistant_codex_model.addItem(name, name)
-        codex_form.addRow(t("Model"), self.assistant_codex_model)
+        self.refresh_assistant_codex_models = QPushButton(t("Fetch model list"))
+        self.refresh_assistant_codex_models.clicked.connect(self._load_codex_models)
+        codex_form.addRow(t("Model"), self._row(
+            self.assistant_codex_model, self.refresh_assistant_codex_models))
         self.assistant_codex_sandbox = QComboBox()
         for label, value in CODEX_SANDBOXES:
             self.assistant_codex_sandbox.addItem(t(label), value)
@@ -1955,27 +2089,6 @@ class SettingsWindow(QDialog):
             box.lineEdit().setPlaceholderText(placeholder)
         return box
 
-    def _key_row(self, form, provider, placeholder, tester):
-        """A key field, its Test button and the line the answer lands on.
-
-        The field and the pair the answer needs are filed under the provider's
-        name, so saving, loading and the test handler find them by name rather
-        than through three attributes each.
-        """
-        field = QLineEdit()
-        field.setEchoMode(QLineEdit.EchoMode.Password)
-        field.setPlaceholderText(placeholder)
-        button = QPushButton(t("Test"))
-        button.clicked.connect(tester)
-        answer = QLabel("")
-        answer.setWordWrap(True)
-        form.addRow(cfg.TRANSCRIBERS[provider].service,
-                    self._row(field, button))
-        form.addRow("", answer)
-        self._key_fields[provider] = field
-        self._testers[provider] = (button, answer)
-        return field
-
     def _shortcut_row(self, form, which, label, missing, placeholder="",
                       tooltip=""):
         """One global shortcut: the combination, Install, Remove, and a line
@@ -2411,6 +2524,80 @@ class SettingsWindow(QDialog):
             combo.setCurrentText(current)
         self.models_label.setText(t("{count} models loaded.", count=len(models)))
 
+    def _load_claude_models(self):
+        """The models the user's own Claude Code settings name, for whichever
+        Claude row asked. The aliases always lead; this adds what this
+        machine actually runs."""
+        self.refresh_claude_models.setEnabled(False)
+        self.refresh_assistant_claude_models.setEnabled(False)
+        self.models_label.setText(t("Fetching model list…"))
+
+        def work():
+            try:
+                self._claude_models_loaded.emit(providers.claude_models(), "")
+            except Exception as exc:
+                # claude_models() is written not to raise; a broken promise
+                # must not leave the buttons dead for good.
+                self._claude_models_loaded.emit([], str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_claude_models_loaded(self, models, error):
+        self.refresh_claude_models.setEnabled(True)
+        self.refresh_assistant_claude_models.setEnabled(True)
+        if error:
+            self.models_label.setText(t("Could not fetch the list: {error}", error=error))
+            return
+        if models:
+            # One settings file, two boxes that read from it; both keep what
+            # is chosen.
+            for combo in (self.cleanup_claude_model, self.assistant_model):
+                current = combo.currentText()
+                combo.clear()
+                combo.addItems(models)
+                combo.setCurrentText(current)
+            self.models_label.setText(t("{count} models loaded.", count=len(models)))
+        else:
+            # Nothing is named in the settings; the aliases the CLI itself
+            # resolves stay as they are rather than emptying the boxes.
+            self.models_label.setText(
+                t("No models named in your own settings; the standing list stays."))
+
+    def _load_codex_models(self):
+        """The model the user's own Codex is set to, for whichever Codex row
+        asked, ahead of the standing suggestions."""
+        self.refresh_codex_models.setEnabled(False)
+        self.refresh_assistant_codex_models.setEnabled(False)
+        self.models_label.setText(t("Fetching model list…"))
+
+        def work():
+            try:
+                self._codex_models_loaded.emit(providers.codex_models(), "")
+            except Exception as exc:
+                self._codex_models_loaded.emit([], str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_codex_models_loaded(self, models, error):
+        self.refresh_codex_models.setEnabled(True)
+        self.refresh_assistant_codex_models.setEnabled(True)
+        if error:
+            self.models_label.setText(t("Could not fetch the list: {error}", error=error))
+            return
+        if models:
+            for combo in (self.cleanup_codex_model, self.assistant_codex_model):
+                current = combo.currentText()
+                combo.clear()
+                # The label for "no choice" leads here too: an empty model
+                # still means whatever Codex itself is set to.
+                combo.addItem(t("Codex's own default"))
+                combo.addItems(models)
+                combo.setCurrentText(current)
+            self.models_label.setText(t("{count} models loaded.", count=len(models)))
+        else:
+            self.models_label.setText(
+                t("No models named in your own settings; the standing list stays."))
+
     def _on_models_loaded(self, models, error):
         self.refresh_models.setEnabled(True)
         self.refresh_llmapi_models.setEnabled(True)
@@ -2645,9 +2832,9 @@ class SettingsWindow(QDialog):
                                         provider == "openrouter" or gateway)
         self.cleanup_form.setRowVisible(self.cleanup_llmapi_model_row,
                                         provider == "llmapi")
-        self.cleanup_form.setRowVisible(self.cleanup_claude_model,
+        self.cleanup_form.setRowVisible(self.cleanup_claude_model_row,
                                         provider == "claude")
-        self.cleanup_form.setRowVisible(self.cleanup_codex_model,
+        self.cleanup_form.setRowVisible(self.cleanup_codex_model_row,
                                         provider == "codex")
         self.cleanup_form.setRowVisible(self.cleanup_agy_model_row,
                                         provider == "antigravity")

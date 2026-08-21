@@ -6,6 +6,7 @@ branches through a patched ggml. What is checked is the shape of the registry
 and the dispatch of the calls, not what any service says today.
 """
 
+import json
 import unittest
 from unittest import mock
 
@@ -263,18 +264,52 @@ class FetchModels(DikteTest):
             with fake_urlopen({"data": [{"id": "whisper-1"},
                                         {"id": "gpt-x"}]}):
                 ids = providers.fetch_models(
-                    self.config(openai_api_key="sk-k"), "openai")
+                    self.config(openai_api_key="sk-k"), "openai",
+                    capability=providers.TRANSCRIPTION)
         self.assertEqual(ids, ["whisper-1"])
+
+    def test_a_custom_gateway_s_text_fetch_gets_the_whole_catalog(self):
+        """The bug this pins: a cleanup fetch on a user gateway used to hand
+        back the audio models, because the one /models reader always preferred
+        them. For text, the gateway's full catalog is the answer."""
+        entry = gateway(None, keys=[("k1", "One", "sk-gw")])
+        conf = self.config(providers=[entry])
+        with fake_urlopen({"data": [{"id": "whisper-1"},
+                                    {"id": "glm-5"},
+                                    {"id": "gpt-5.x"},
+                                    {"id": "gemini-3-flash"}]}) as calls:
+            ids = providers.fetch_models(conf, "user/abc123",
+                                         capability=providers.TEXT)
+        self.assertEqual(ids, ["gemini-3-flash", "glm-5", "gpt-5.x",
+                               "whisper-1"])
+        self.assertEqual(calls[0].full_url, "https://gw.example/v1/models")
+
+    def test_a_custom_gateway_s_transcription_fetch_keeps_the_audio_models(self):
+        entry = gateway(None, keys=[("k1", "One", "sk-gw")])
+        conf = self.config(providers=[entry])
+        with fake_urlopen({"data": [{"id": "whisper-1"},
+                                    {"id": "gpt-4o-transcribe"},
+                                    {"id": "gpt-5.x"}]}):
+            ids = providers.fetch_models(conf, "user/abc123",
+                                         capability=providers.TRANSCRIPTION)
+        self.assertEqual(ids, ["gpt-4o-transcribe", "whisper-1"])
 
     def test_deepgram_is_a_static_catalog(self):
         self.assertEqual(providers.fetch_models(self.config(), "deepgram"),
                          ["nova-3", "nova-2", "base", "enhanced"])
 
-    def test_claude_lists_aliases_and_codex_nothing(self):
-        conf = self.config()
-        self.assertEqual(providers.fetch_models(conf, "claude"),
-                         providers.CLAUDE_MODELS)
-        self.assertEqual(providers.fetch_models(conf, "codex"), [])
+    def test_claude_aliases_and_codex_suggestions_without_settings(self):
+        """No Claude or Codex settings to read: the aliases stand on their
+        own, and Codex offers its three suggestions. The home is patched to
+        an empty one, so the machine these run on changes nothing."""
+        home = self.path("empty-home")
+        home.mkdir()
+        with mock.patch.object(providers.os.path, "expanduser",
+                               lambda p, h=str(home): p.replace("~", h, 1)):
+            self.assertEqual(providers.fetch_models(self.config(), "claude"),
+                             providers.CLAUDE_MODELS)
+            self.assertEqual(providers.fetch_models(self.config(), "codex"),
+                             providers.CODEX_MODELS)
 
     def test_antigravity_parses_slugs(self):
         self.patch_attr(providers, "executable",
@@ -305,6 +340,137 @@ class FetchModels(DikteTest):
     def test_unknown_provider(self):
         with self.assertRaises(api.ApiError):
             providers.fetch_models(self.config(), "nope")
+
+
+class ThrowawayHome(DikteTest):
+    """A home the test owns, so the Claude and Codex readers are judged on
+    what was written here, never on what the machine happens to have."""
+
+    def home_only(self, *files):
+        """Point expanduser at an empty home, then write {relative: text}."""
+        home = self.path("home")
+        home.mkdir(exist_ok=True)
+        self.patch_attr(providers.os.path, "expanduser",
+                        lambda p, h=str(home): p.replace("~", h, 1))
+        for relative, text in files:
+            path = home.joinpath(*relative.split("/"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        return home
+
+
+class ClaudeModels(ThrowawayHome):
+    def settings(self, payload):
+        self.home_only((".claude/settings.json", json.dumps(payload)))
+
+    def test_the_referenced_alias_leads_the_resolved_ids(self):
+        self.settings({
+            "model": "fable",
+            "env": {"ANTHROPIC_DEFAULT_OPUS_MODEL": "llm-api/qwen3.8-max",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL": "llm-api/qwen3.8-max",
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "vendor/haiku-4.5",
+                    "ANTHROPIC_DEFAULT_FABLE_MODEL": "llm-api/qwen3.8-max",
+                    "ANTHROPIC_API_KEY": "sk-never-in-a-model-box"},
+            "apiKeyHelper": "/usr/bin/op-read",
+        })
+        self.assertEqual(providers.claude_models(),
+                         ["fable", "llm-api/qwen3.8-max", "vendor/haiku-4.5"])
+
+    def test_nothing_but_model_names_leaves_the_file(self):
+        """The one env key that is not a model name, and any other field,
+        stay unread: a model box has no business with tokens or helpers."""
+        self.settings({"model": "opus",
+                       "env": {"ANTHROPIC_DEFAULT_HAIKU_MODEL": "vendor/h",
+                               "ANTHROPIC_API_KEY": "sk-never-appears",
+                               "ANTHROPIC_BASE_URL": "https://no.pe"},
+                       "primaryApiKey": "sk-also-never",
+                       "apiKeyHelper": "/usr/bin/op-read"})
+        models = providers.claude_models()
+        for not_a_model in ("sk-never-appears", "sk-also-never",
+                            "https://no.pe", "/usr/bin/op-read"):
+            self.assertNotIn(not_a_model, models)
+        self.assertEqual(models, ["opus", "vendor/h"])
+
+    def test_no_alias_referenced_all_four_lead(self):
+        self.settings({"env": {"ANTHROPIC_DEFAULT_FABLE_MODEL":
+                               "vendor/fable-2"}})
+        self.assertEqual(providers.claude_models(),
+                         ["haiku", "sonnet", "opus", "fable",
+                          "vendor/fable-2"])
+
+    def test_overrides_and_available_models_in_either_shape(self):
+        """modelOverrides names full ids in its values, availableModels in
+        its keys — and a list shape is taken at face value either way."""
+        self.settings({"modelOverrides": {"opus": "vendor/opus-max"},
+                       "availableModels": {"vendor/one": {"label": "One"},
+                                           "vendor/two": 2}})
+        self.assertEqual(providers.claude_models(),
+                         ["haiku", "sonnet", "opus", "fable",
+                          "vendor/opus-max", "vendor/one", "vendor/two"])
+        self.settings({"availableModels": ["vendor/one", 7, "vendor/one"]})
+        self.assertEqual(providers.claude_models(),
+                         ["haiku", "sonnet", "opus", "fable", "vendor/one"])
+
+    def test_a_missing_or_silent_file_answers_nothing(self):
+        self.home_only()
+        self.assertEqual(providers.claude_models(), [])
+        self.home_only((".claude/settings.json", "{not json"))
+        self.assertEqual(providers.claude_models(), [])
+        # JSON that is not an object, and an object with nothing model-shaped.
+        self.home_only((".claude/settings.json", "[1, 2]"))
+        self.assertEqual(providers.claude_models(), [])
+        self.home_only((".claude/settings.json", "{}"))
+        self.assertEqual(providers.claude_models(), [])
+
+    def test_fetch_models_appends_the_discovered_ids_to_the_aliases(self):
+        self.settings({"model": "sonnet",
+                       "env": {"ANTHROPIC_DEFAULT_OPUS_MODEL":
+                               "llm-api/qwen3.8-max"}})
+        self.assertEqual(providers.fetch_models(self.config(), "claude"),
+                         ["haiku", "sonnet", "opus", "fable",
+                          "llm-api/qwen3.8-max"])
+
+
+class CodexModels(ThrowawayHome):
+    def config_toml(self, text):
+        self.home_only((".codex/config.toml", text))
+
+    def test_the_model_codex_runs_leads_the_suggestions(self):
+        self.config_toml('model = "gpt-5.5-codex"\nmodel_provider = "openai"\n')
+        self.assertEqual(providers.codex_models(),
+                         ["gpt-5.5-codex"] + providers.CODEX_MODELS)
+        self.assertEqual(providers.fetch_models(self.config(), "codex"),
+                         ["gpt-5.5-codex"] + providers.CODEX_MODELS)
+
+    def test_a_suggestion_set_as_current_leads_once(self):
+        self.config_toml('model = "gpt-5.6-sol"\n')
+        self.assertEqual(providers.codex_models(),
+                         ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra"])
+
+    def test_a_missing_file_leaves_the_suggestions(self):
+        self.home_only()
+        self.assertEqual(providers.codex_models(), providers.CODEX_MODELS)
+        self.assertEqual(providers.fetch_models(self.config(), "codex"),
+                         providers.CODEX_MODELS)
+
+    def test_secrets_stay_out_of_the_model_box(self):
+        """Only the top-level model line is read; keys and tokens elsewhere
+        in the file, whatever they are named, never reach the list."""
+        self.config_toml('model = "gpt-5.5-codex"\n'
+                         'api_key = "sk-live-secret-123"\n'
+                         '[env]\nOPENAI_API_KEY = "sk-env-also-secret"\n')
+        models = providers.codex_models()
+        self.assertEqual(models[0], "gpt-5.5-codex")
+        for secret in ("sk-live-secret-123", "sk-env-also-secret"):
+            self.assertNotIn(secret, models)
+
+    def test_a_file_the_parser_refuses_still_yields_the_model(self):
+        self.config_toml('model = "gpt-5.5-codex"\nnot <<< toml\n')
+        self.assertEqual(providers.codex_models()[0], "gpt-5.5-codex")
+
+    def test_an_empty_model_line_is_dropped(self):
+        self.config_toml('model = ""\n')
+        self.assertEqual(providers.codex_models(), providers.CODEX_MODELS)
 
 
 class TestProvider(DikteTest):
