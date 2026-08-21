@@ -33,6 +33,7 @@ OPENAI = api.Target("openai", "OpenAI", "sk-test", api.OPENAI_URL, "gpt-4o-trans
 GROQ = api.Target("groq", "Groq", "gsk-test", api.GROQ_URL, "whisper-large-v3-turbo")
 OPENROUTER = api.Target("openrouter", "OpenRouter", "sk-or-test",
                         api.OPENROUTER_URL, "openai/gpt-4o-transcribe")
+DEEPGRAM = api.Target("deepgram", "Deepgram", "dg-test", api.DEEPGRAM_URL, "nova-3")
 
 
 class TimestampModel(unittest.TestCase):
@@ -53,6 +54,13 @@ class TimestampModel(unittest.TestCase):
     def test_the_others_ignore_what_was_chosen(self):
         self.assertEqual(api.timestamp_model("openai", "gpt-4o-transcribe"),
                          "whisper-1")
+
+    def test_deepgram_keeps_the_model_that_was_chosen(self):
+        """Every Deepgram model keeps word and utterance times natively."""
+        self.assertEqual(api.timestamp_model("deepgram", "nova-2"), "nova-2")
+
+    def test_deepgram_with_nothing_chosen_falls_back(self):
+        self.assertEqual(api.timestamp_model("deepgram"), "nova-3")
 
 
 class Explain(DikteTest):
@@ -256,6 +264,77 @@ class Transcribe(DikteTest):
         self.assertIn("parse", str(caught.exception))
 
 
+class TranscribeDeepgram(DikteTest):
+    def setUp(self):
+        super().setUp()
+        self.wav = str(self.path("clip.wav"))
+        os.makedirs(self.root, exist_ok=True)
+        with open(self.wav, "wb") as fh:
+            fh.write(b"RIFFfake")
+
+    def reply(self, transcript="hello", utterances=None):
+        data = {
+            "results": {
+                "channels": [{"alternatives": [{"transcript": transcript,
+                                                "words": []}]}],
+            }
+        }
+        if utterances is not None:
+            data["results"]["utterances"] = utterances
+        return data
+
+    def test_the_transcript_comes_out_of_the_nested_shape(self):
+        with fake_urlopen(self.reply("  hello there  ")):
+            self.assertEqual(api.transcribe(DEEPGRAM, self.wav), "hello there")
+
+    def test_it_goes_to_listen_not_transcriptions(self):
+        with fake_urlopen(self.reply("hi")) as calls:
+            api.transcribe(DEEPGRAM, self.wav)
+        self.assertIn("/listen", calls[0].full_url)
+        self.assertNotIn("/transcriptions", calls[0].full_url)
+
+    def test_auth_is_token_not_bearer(self):
+        with fake_urlopen(self.reply("hi")) as calls:
+            api.transcribe(DEEPGRAM, self.wav)
+        self.assertEqual(calls[0].get_header("Authorization"), "Token dg-test")
+
+    def test_everything_is_in_the_query_string(self):
+        with fake_urlopen(self.reply("hi")) as calls:
+            api.transcribe(DEEPGRAM, self.wav)
+        full = calls[0].full_url
+        self.assertIn("model=nova-3", full)
+        self.assertIn("punctuate=true", full)
+        self.assertIn("smart_format=true", full)
+        self.assertIn("utterances=true", full)
+
+    def test_a_language_is_sent_but_auto_is_not(self):
+        with fake_urlopen(self.reply("hi")) as calls:
+            api.transcribe(DEEPGRAM, self.wav, language="tr")
+            api.transcribe(DEEPGRAM, self.wav, language="auto")
+        self.assertIn("language=tr", calls[0].full_url)
+        self.assertNotIn("language=", calls[1].full_url)
+
+    def test_the_body_is_raw_audio_not_multipart(self):
+        with fake_urlopen(self.reply("hi")) as calls:
+            api.transcribe(DEEPGRAM, self.wav)
+        self.assertEqual(calls[0].data, b"RIFFfake")
+        # No multipart boundary and no file field: the audio goes as raw bytes.
+        self.assertNotIn(b"filename=", calls[0].data)
+
+    def test_no_prompt_field_for_deepgram(self):
+        with fake_urlopen(self.reply("hi")) as calls:
+            api.transcribe(DEEPGRAM, self.wav, prompt="Paraşüt, OpenFrame")
+        self.assertIn("/listen", calls[0].full_url)
+        self.assertNotIn("prompt=", calls[0].full_url)
+
+    def test_a_refused_deepgram_key_is_explained_in_deepgram_s_name(self):
+        with fake_urlopen(http_error(401, '{"error": {"message": "bad key"}}')), \
+                self.assertRaises(api.ApiError) as caught:
+            api.transcribe(DEEPGRAM, self.wav)
+        self.assertIn("Deepgram", str(caught.exception))
+        self.assertEqual(caught.exception.status, 401)
+
+
 class TranscribeSegments(DikteTest):
     def setUp(self):
         super().setUp()
@@ -316,6 +395,61 @@ class TranscribeSegments(DikteTest):
         with fake_urlopen(self.reply([], text="")), \
                 self.assertRaises(api.ApiError):
             api.transcribe_segments(OPENAI, self.wav)
+
+
+class TranscribeDeepgramSegments(DikteTest):
+    def setUp(self):
+        super().setUp()
+        self.wav = str(self.path("clip.wav"))
+        os.makedirs(self.root, exist_ok=True)
+        with open(self.wav, "wb") as fh:
+            fh.write(b"RIFFfake")
+
+    def reply(self, utterances=None, words=None, transcript=""):
+        data = {
+            "results": {
+                "channels": [{"alternatives": [{"transcript": transcript,
+                                                "words": words or []}]}],
+            }
+        }
+        if utterances is not None:
+            data["results"]["utterances"] = utterances
+        return data
+
+    def test_the_model_keeps_deepgram_s_timestamps(self):
+        data = self.reply(utterances=[{"start": 0.5, "end": 2.25, "transcript": "hello"}])
+        with fake_urlopen(data) as calls:
+            api.transcribe_segments(DEEPGRAM, self.wav)
+        self.assertIn("model=nova-3", calls[0].full_url)
+
+    def test_utterances_become_segments(self):
+        data = self.reply(utterances=[
+            {"start": 0.5, "end": 2.25, "transcript": " hello "},
+            {"start": 2.25, "end": 4.0, "transcript": "there"},
+        ])
+        with fake_urlopen(data):
+            segments = api.transcribe_segments(DEEPGRAM, self.wav)
+        self.assertEqual(segments, [(0.5, 2.25, "hello"), (2.25, 4.0, "there")])
+
+    def test_no_utterances_falls_back_to_words(self):
+        data = self.reply(words=[
+            {"word": "Hello", "start": 0.0, "end": 0.5},
+            {"word": "world.", "start": 0.5, "end": 1.0},
+            {"word": "Next", "start": 1.0, "end": 1.5},
+            {"word": "line.", "start": 1.5, "end": 2.0},
+        ])
+        with fake_urlopen(data):
+            segments = api.transcribe_segments(DEEPGRAM, self.wav)
+        self.assertEqual(segments,
+                         [(0.0, 1.0, "Hello world."), (1.0, 2.0, "Next line.")])
+
+    def test_segment_text_is_stripped(self):
+        data = self.reply(utterances=[
+            {"start": 0, "end": 1, "transcript": "   Hello.   "},
+        ])
+        with fake_urlopen(data):
+            self.assertEqual(api.transcribe_segments(DEEPGRAM, self.wav),
+                             [(0.0, 1.0, "Hello.")])
 
 
 def chat_reply(content):
@@ -556,6 +690,29 @@ class ModelLists(DikteTest):
             api.llmapi_key_status("sk-bad")
         self.assertEqual(caught.exception.status, 401)
         self.assertIn("LLM API", str(caught.exception))
+
+
+class Deepgram(DikteTest):
+    def test_the_model_list_is_static(self):
+        self.assertEqual(api.deepgram_models(), ["nova-3", "nova-2", "base", "enhanced"])
+
+    def test_key_status_probes_listen_with_a_silent_wav(self):
+        with fake_urlopen({"results": {"channels": []}}) as calls:
+            message = api.deepgram_key_status("dg-test")
+        self.assertIn("/listen", calls[0].full_url)
+        self.assertEqual(calls[0].get_header("Authorization"), "Token dg-test")
+        self.assertEqual(message, "Key works.")
+
+    def test_key_status_needs_a_key(self):
+        with self.assertRaises(api.ApiError):
+            api.deepgram_key_status("")
+
+    def test_a_rejected_deepgram_key_says_deepgram(self):
+        with fake_urlopen(http_error(401)), \
+                self.assertRaises(api.ApiError) as caught:
+            api.deepgram_key_status("dg-bad")
+        self.assertEqual(caught.exception.status, 401)
+        self.assertIn("Deepgram", str(caught.exception))
 
 
 if __name__ == "__main__":

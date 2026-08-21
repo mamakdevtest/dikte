@@ -1,6 +1,6 @@
-"""OpenAI, Groq, OpenRouter, LLM API and this machine, stdlib only.
+"""OpenAI, Groq, OpenRouter, LLM API, Deepgram and this machine, stdlib only.
 
-Transcription runs on any of the four: Groq and OpenRouter both mirror OpenAI's
+Transcription runs on any of the five: Groq and OpenRouter both mirror OpenAI's
 /audio/transcriptions endpoint field for field, and ggml.py starts whisper.cpp
 on that same path, so one multipart request serves all of them and only the key,
 the base URL and the model id change. llama.cpp answers /chat/completions the way
@@ -9,6 +9,10 @@ OpenRouter does, so cleanup here is the same request too.
 LLM API (llmapi.ai) speaks the same OpenAI shapes: cleanup and the assistant
 reach its /chat/completions, model discovery its /models, and speech to text
 its /audio/transcriptions, each with nothing changed but the base URL.
+
+Deepgram speaks its own API: raw audio bytes to /v1/listen with `Token` auth,
+not `Bearer`, and a response nested under results.channels[].alternatives[],
+so that one has its own request path and its own parsing helpers.
 
 What is on this machine has no key, and its base URL is not known until a server
 is up, which is the one thing this module has to fill in for it.
@@ -24,6 +28,7 @@ import secrets
 import socket
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import ggml
@@ -35,6 +40,7 @@ OPENAI_URL = "https://api.openai.com/v1"
 GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 LLMAPI_URL = "https://api.llmapi.ai/v1"
+DEEPGRAM_URL = "https://api.deepgram.com/v1"
 
 # The floor for a local request. The timeouts elsewhere are sized for a hosted
 # API, where a slow answer is a bill running; here the only thing being spent is
@@ -59,6 +65,10 @@ def timestamp_model(provider, selected=""):
     """
     if provider in ("groq", "local"):
         return selected or "whisper-large-v3-turbo"
+    if provider == "deepgram":
+        # All of Deepgram's models keep word and utterance times natively, so
+        # the one the user picked already does the job.
+        return selected or "nova-3"
     return "openai/whisper-1" if provider == "openrouter" else "whisper-1"
 
 
@@ -279,8 +289,11 @@ def _multipart(fields, file_field, file_path):
 def _headers(provider, api_key, content_type=None):
     headers = {"User-Agent": USER_AGENT}
     # A server on this machine has nothing to authorise, and sending it a
-    # bearer token would only be a made-up one.
-    if api_key:
+    # bearer token would only be a made-up one. Deepgram asks for `Token`, not
+    # `Bearer`; the OpenAI-shaped providers all take the latter.
+    if provider == "deepgram":
+        headers["Authorization"] = f"Token {api_key}"
+    elif api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if content_type:
         headers["Content-Type"] = content_type
@@ -313,8 +326,39 @@ def local_failure(service, server, exc):
                     exc.status)
 
 
+def _deepgram_request(target, audio_path, language, timeout=300, aborter=None):
+    """Raw-audio POST to /listen, Deepgram's own shape, not multipart.
+
+    Every parameter lives in the query string, the body is the audio bytes with
+    a content type guessed from the file, and auth is `Token`, not `Bearer`.
+    The query asks for punctuation and smart formatting and, because segments
+    are wanted in the same call, for utterances.
+    """
+    if not target.api_key:
+        raise ApiError(t("{service} API key is empty. Add it in Settings.",
+                         service=target.service))
+    filename = os.path.basename(audio_path)
+    ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    params = [("model", target.model), ("punctuate", "true"),
+              ("smart_format", "true"), ("utterances", "true")]
+    if language and language != "auto":
+        params.append(("language", language))
+    query = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params)
+    url = f"{target.base_url.rstrip('/')}/listen?{query}"
+    with open(audio_path, "rb") as fh:
+        body = fh.read()
+    try:
+        return _request(url, body, _headers(target.provider, target.api_key, ctype),
+                        timeout=timeout, aborter=aborter)
+    except ApiError as exc:
+        raise explain(exc, target.service) from None
+
+
 def _transcribe_request(target, audio_path, language, prompt, response_format,
                         granularity=None, timeout=300, aborter=None):
+    if target.provider == "deepgram":
+        return _deepgram_request(target, audio_path, language, timeout=timeout,
+                                 aborter=aborter)
     if target.provider == "local":
         # The timeouts here are sized for a hosted API, where a slow answer is a
         # bill running. Locally the only thing being spent is time.
@@ -385,11 +429,59 @@ def _merge_word_splits(segments):
     return merged
 
 
+def _deepgram_text(data):
+    """Deepgram's transcript, normalised to the flat `text` everyone else uses."""
+    try:
+        return (data["results"]["channels"][0]["alternatives"][0]
+                .get("transcript")) or ""
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+def _deepgram_segments(data):
+    """Deepgram's utterances, normalised to whisper-like (start, end, text).
+
+    Utterances are sentence-ish groups with their own times, which is what word
+    merging exists to build elsewhere; when the API returns none, fall back to
+    the words themselves, closed off after each sentence-ending mark.
+    """
+    utterances = (data.get("results") or {}).get("utterances") or []
+    out = []
+    for utt in utterances:
+        text = (utt.get("transcript") or "").strip()
+        if text:
+            out.append((float(utt.get("start") or 0.0),
+                        float(utt.get("end") or 0.0), text))
+    if out:
+        return out
+
+    words = []
+    try:
+        words = (data["results"]["channels"][0]["alternatives"][0]
+                 .get("words")) or []
+    except (KeyError, IndexError, TypeError):
+        words = []
+    if words:
+        segment, start = [], None
+        for word in words:
+            if start is None:
+                start = float(word.get("start") or 0.0)
+            segment.append(word.get("word") or "")
+            if (word.get("word") or "").strip()[-1:] in ".?!…":
+                end = float(word.get("end") or 0.0)
+                out.append((start, max(end, start), " ".join(segment).strip()))
+                segment, start = [], None
+    return out
+
+
 def transcribe(target, audio_path, language="", prompt="", timeout=300, aborter=None):
     data = _transcribe_request(
         target, audio_path, language, prompt, "json", timeout=timeout, aborter=aborter
     )
-    text = data.get("text") or ""
+    if target.provider == "deepgram":
+        text = _deepgram_text(data)
+    else:
+        text = data.get("text") or ""
     if target.provider == "local":
         text = _local_text(text)
     text = text.strip()
@@ -406,6 +498,8 @@ def transcribe_segments(target, audio_path, language="", prompt="", timeout=300,
         audio_path, language, prompt, "verbose_json",
         granularity="segment", timeout=timeout, aborter=aborter,
     )
+    if target.provider == "deepgram":
+        return _deepgram_segments(data)
     segments = data.get("segments") or []
     if target.provider == "local":
         segments = _merge_word_splits(segments)
@@ -686,3 +780,39 @@ def llmapi_key_status(api_key, base_url=LLMAPI_URL):
         raise explain(exc, "LLM API") from None
     count = len([m for m in data.get("data", []) if m.get("id")])
     return t("Key works. {count} models visible.", count=count)
+
+
+# Deepgram has no /models endpoint and its catalog changes a few times a year,
+# so the list is a constant rather than a network call. The box a user picks
+# from is editable, so a model that leaves the list one day can still be typed
+# in.
+DEEPGRAM_MODELS = ["nova-3", "nova-2", "base", "enhanced"]
+
+
+def deepgram_models(key=None, base_url=DEEPGRAM_URL):
+    """The model ids Deepgram ships. Static: there is no /models to ask."""
+    return list(DEEPGRAM_MODELS)
+
+
+def deepgram_key_status(api_key, base_url=DEEPGRAM_URL):
+    """Whether Deepgram accepts the key, probed with a silent clip.
+
+    A real `/listen` call is the only reliable verdict: the management endpoints
+    can answer with a key scope the listen key does not have. A minimal 44-byte
+    WAV with zero samples exercises the same endpoint and auth path transcription
+    uses, and costs nothing.
+    """
+    if not api_key:
+        raise ApiError(t("{service} API key is empty. Add it in Settings.",
+                         service="Deepgram"))
+    # 8000 Hz, mono, 16-bit PCM, zero samples of data.
+    silent = (b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
+              b"\x80>\x00\x00\x00}\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+    url = (f"{base_url.rstrip('/')}/listen?model=nova-3&punctuate=true"
+           f"&smart_format=true&utterances=true")
+    try:
+        _request(url, silent,
+                 _headers("deepgram", api_key, "audio/wav"), timeout=30)
+    except ApiError as exc:
+        raise explain(exc, "Deepgram") from None
+    return t("Key works.")

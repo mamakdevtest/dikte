@@ -501,7 +501,8 @@ def cmd_history_clear(opts):
 
 # --- settings ---------------------------------------------------------------
 
-SECRET_KEYS = ("openai_api_key", "openrouter_api_key", "llmapi_api_key")
+SECRET_KEYS = ("openai_api_key", "openrouter_api_key", "llmapi_api_key",
+               "deepgram_api_key")
 
 
 def _mask(key, value):
@@ -663,6 +664,9 @@ def cmd_models(opts):
         elif opts.provider == "openrouter":
             models = api.openrouter_models(conf.openrouter_key(),
                                            transcription=opts.transcription)
+        elif opts.provider == "deepgram":
+            # No /models to ask; the catalog is a constant.
+            models = api.deepgram_models()
         else:
             who = cfg.TRANSCRIBERS[opts.provider]
             models = api.openai_models(conf.api_key(who.key), conf[who.url],
@@ -690,6 +694,11 @@ def cmd_test_key(opts):
                 # shows.
                 message = api.llmapi_key_status(conf.api_key(who.key),
                                                 conf[who.url])
+            elif name == "deepgram":
+                # A silent clip through the real /listen is the only verdict
+                # the key-scope game on the management endpoints allows.
+                message = api.deepgram_key_status(conf.api_key(who.key),
+                                                  conf[who.url])
             else:
                 count = len(api.openai_models(conf.api_key(who.key), conf[who.url],
                                               who.service))

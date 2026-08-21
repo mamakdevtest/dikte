@@ -1,0 +1,702 @@
+test_a_block_that_ended_is_not_cut_afterwards (test_api.Aborter.test_a_block_that_ended_is_not_cut_afterwards) ... ok
+test_a_stop_that_already_landed_stops_the_next_step_too (test_api.Aborter.test_a_stop_that_already_landed_stops_the_next_step_too) ... ok
+test_what_was_registered_is_run_once_the_stop_lands (test_api.Aborter.test_what_was_registered_is_run_once_the_stop_lands) ... ok
+test_an_empty_answer (test_api.Chat.test_an_empty_answer) ... ok
+test_no_key (test_api.Chat.test_no_key) ... ok
+test_no_temperature_is_forced_on_a_conversation (test_api.Chat.test_no_temperature_is_forced_on_a_conversation) ... ok
+test_the_history_is_sent_after_the_system_prompt (test_api.Chat.test_the_history_is_sent_after_the_system_prompt) ... ok
+test_a_local_base_url (test_api.Cleanup.test_a_local_base_url) ... ok
+test_a_rate_limit_is_explained (test_api.Cleanup.test_a_rate_limit_is_explained) ... ok
+test_a_reply_with_no_choices_says_why (test_api.Cleanup.test_a_reply_with_no_choices_says_why) ... ok
+test_an_effort_is_passed_on_and_the_thinking_left_out (test_api.Cleanup.test_an_effort_is_passed_on_and_the_thinking_left_out) ... ok
+test_an_empty_answer (test_api.Cleanup.test_an_empty_answer) ... ok
+test_it_goes_to_chat_completions (test_api.Cleanup.test_it_goes_to_chat_completions) ... ok
+test_no_effort_asked_for_means_no_reasoning_block (test_api.Cleanup.test_no_effort_asked_for_means_no_reasoning_block) ... ok
+test_no_key (test_api.Cleanup.test_no_key) ... ok
+test_the_cleaned_text_comes_back (test_api.Cleanup.test_the_cleaned_text_comes_back) ... ok
+test_the_prompt_and_the_transcript_are_kept_apart (test_api.Cleanup.test_the_prompt_and_the_transcript_are_kept_apart) ... ok
+test_the_temperature_is_pinned (test_api.Cleanup.test_the_temperature_is_pinned) ... ok
+test_a_rejected_key_points_at_the_settings (test_api.Explain.test_a_rejected_key_points_at_the_settings) ... ok
+test_anything_else_keeps_the_original_text (test_api.Explain.test_anything_else_keeps_the_original_text) ... ok
+test_no_credit (test_api.Explain.test_no_credit) ... ok
+test_rate_limited (test_api.Explain.test_rate_limited) ... ok
+test_the_status_is_carried_through (test_api.Explain.test_the_status_is_carried_through) ... ok
+test_a_body_that_is_not_json (test_api.ExtractError.test_a_body_that_is_not_json) ... ok
+test_a_wall_of_html_is_cut_short (test_api.ExtractError.test_a_wall_of_html_is_cut_short) ... ok
+test_an_error_object_with_no_message (test_api.ExtractError.test_an_error_object_with_no_message) ... ok
+test_an_error_that_is_a_plain_string (test_api.ExtractError.test_an_error_that_is_a_plain_string) ... ok
+test_the_usual_shape (test_api.ExtractError.test_the_usual_shape) ... ok
+test_a_content_type_is_added_when_there_is_a_body (test_api.Headers.test_a_content_type_is_added_when_there_is_a_body) ... ok
+test_openai_gets_no_extras (test_api.Headers.test_openai_gets_no_extras) ... ok
+test_openrouter_is_told_who_is_calling (test_api.Headers.test_openrouter_is_told_who_is_calling) ... ok
+test_the_key_is_a_bearer_token (test_api.Headers.test_the_key_is_a_bearer_token) ... ok
+test_a_key_the_service_rejects (test_api.KeyStatus.test_a_key_the_service_rejects) ... ok
+test_a_key_with_a_limit_reports_both_numbers (test_api.KeyStatus.test_a_key_with_a_limit_reports_both_numbers) ... ok
+test_a_key_with_no_limit (test_api.KeyStatus.test_a_key_with_no_limit) ... ok
+test_no_key (test_api.KeyStatus.test_no_key) ... ok
+test_a_key_is_sent_when_there_is_one (test_api.ModelLists.test_a_key_is_sent_when_there_is_one) ... ok
+test_a_list_with_no_audio_models_is_shown_whole (test_api.ModelLists.test_a_list_with_no_audio_models_is_shown_whole) ... ok
+test_a_rejected_llmapi_key_says_llm_api (test_api.ModelLists.test_a_rejected_llmapi_key_says_llm_api) ... ok
+test_llmapi_keeps_text_models_and_silent_ones (test_api.ModelLists.test_llmapi_keeps_text_models_and_silent_ones)
+The filter is told by the catalog's own modalities; a model the ... ok
+test_llmapi_key_status (test_api.ModelLists.test_llmapi_key_status)
+There is no /key endpoint; /models refuses a key it does not know ... ok
+test_llmapi_key_status_needs_a_key (test_api.ModelLists.test_llmapi_key_status_needs_a_key) ... ok
+test_llmapi_sends_a_key_when_there_is_one (test_api.ModelLists.test_llmapi_sends_a_key_when_there_is_one) ... ok
+test_llmapi_the_recommended_cleanup_models_lead_the_list (test_api.ModelLists.test_llmapi_the_recommended_cleanup_models_lead_the_list)
+Cleanup is a short, frequent job, so the small and fast ones come ... ok
+test_llmapi_transcription_keeps_only_what_audio_transcriptions_takes (test_api.ModelLists.test_llmapi_transcription_keeps_only_what_audio_transcriptions_takes)
+Filtered by name the way openai_models() does it: the catalog's ... ok
+test_llmapi_transcription_reads_the_same_catalog (test_api.ModelLists.test_llmapi_transcription_reads_the_same_catalog) ... ok
+test_llmapi_works_without_a_key (test_api.ModelLists.test_llmapi_works_without_a_key) ... ok
+test_openai_narrows_to_the_audio_models (test_api.ModelLists.test_openai_narrows_to_the_audio_models) ... ok
+test_openai_needs_a_key (test_api.ModelLists.test_openai_needs_a_key) ... ok
+test_openrouter_returns_sorted_ids (test_api.ModelLists.test_openrouter_returns_sorted_ids) ... ok
+test_speech_models_are_asked_for_and_filtered_again (test_api.ModelLists.test_speech_models_are_asked_for_and_filtered_again)
+A query parameter the API stops honouring must not leak the lot. ... ok
+test_the_model_list_needs_no_key (test_api.ModelLists.test_the_model_list_needs_no_key) ... ok
+test_the_same_list_read_from_groq (test_api.ModelLists.test_the_same_list_read_from_groq) ... ok
+test_a_boundary_is_not_reused_between_requests (test_api.Multipart.test_a_boundary_is_not_reused_between_requests) ... ok
+test_a_field_is_named_and_carries_its_value (test_api.Multipart.test_a_field_is_named_and_carries_its_value) ... ok
+test_empty_fields_are_left_out (test_api.Multipart.test_empty_fields_are_left_out) ... ok
+test_the_boundary_is_declared_and_used (test_api.Multipart.test_the_boundary_is_declared_and_used) ... ok
+test_the_file_goes_in_with_its_name_and_type (test_api.Multipart.test_the_file_goes_in_with_its_name_and_type) ... ok
+test_a_connection_opened_after_the_stop_is_refused (test_api.Sockets.test_a_connection_opened_after_the_stop_is_refused) ... ok
+test_one_that_is_already_open_is_closed_where_it_stands (test_api.Sockets.test_one_that_is_already_open_is_closed_where_it_stands) ... ok
+test_one_with_no_socket_yet_is_stopped_from_making_another (test_api.Sockets.test_one_with_no_socket_yet_is_stopped_from_making_another)
+close() leaves auto_open on, and the next line would reconnect. ... ok
+test_a_request_that_starts_after_the_stop_never_goes_out (test_api.Stopping.test_a_request_that_starts_after_the_stop_never_goes_out) ... skipped 'Aborting a blocked read on the loopback socket relies on shutdown(SHUT_RDWR) waking the same-process reader, which does not happen on Windows. Manual cancel still works; the API falls back to ignoring the late reply.'
+test_a_request_waiting_on_a_reply_is_cut_off (test_api.Stopping.test_a_request_waiting_on_a_reply_is_cut_off) ... skipped 'Aborting a blocked read on the loopback socket relies on shutdown(SHUT_RDWR) waking the same-process reader, which does not happen on Windows. Manual cancel still works; the API falls back to ignoring the late reply.'
+test_without_one_the_request_is_the_plain_urllib_one (test_api.Stopping.test_without_one_the_request_is_the_plain_urllib_one)
+Everything that is not stoppable keeps the opener it always had. ... skipped 'Aborting a blocked read on the loopback socket relies on shutdown(SHUT_RDWR) waking the same-process reader, which does not happen on Windows. Manual cancel still works; the API falls back to ignoring the late reply.'
+test_groq_keeps_the_model_that_was_chosen (test_api.TimestampModel.test_groq_keeps_the_model_that_was_chosen)
+Every model it transcribes with is a whisper, so all of them do times. ... ok
+test_groq_with_nothing_chosen_falls_back (test_api.TimestampModel.test_groq_with_nothing_chosen_falls_back) ... ok
+test_only_whisper_returns_segment_times (test_api.TimestampModel.test_only_whisper_returns_segment_times) ... ok
+test_openrouter_namespaces_the_id (test_api.TimestampModel.test_openrouter_namespaces_the_id) ... ok
+test_the_others_ignore_what_was_chosen (test_api.TimestampModel.test_the_others_ignore_what_was_chosen) ... ok
+test_a_custom_base_url_is_honoured (test_api.Transcribe.test_a_custom_base_url_is_honoured) ... ok
+test_a_language_is_sent_but_auto_is_not (test_api.Transcribe.test_a_language_is_sent_but_auto_is_not) ... ok
+test_a_refused_groq_key_is_explained_in_groq_s_name (test_api.Transcribe.test_a_refused_groq_key_is_explained_in_groq_s_name) ... ok
+test_a_rejected_key_is_explained_in_the_provider_s_name (test_api.Transcribe.test_a_rejected_key_is_explained_in_the_provider_s_name) ... ok
+test_a_reply_that_is_not_json (test_api.Transcribe.test_a_reply_that_is_not_json) ... ok
+test_an_empty_transcript_is_an_error (test_api.Transcribe.test_an_empty_transcript_is_an_error) ... ok
+test_groq_goes_to_groq (test_api.Transcribe.test_groq_goes_to_groq) ... ok
+test_it_goes_to_the_transcriptions_endpoint (test_api.Transcribe.test_it_goes_to_the_transcriptions_endpoint) ... ok
+test_no_key_at_all (test_api.Transcribe.test_no_key_at_all) ... ok
+test_no_network (test_api.Transcribe.test_no_network) ... ok
+test_openrouter_is_attributed (test_api.Transcribe.test_openrouter_is_attributed) ... ok
+test_the_glossary_goes_everywhere_but_openrouter (test_api.Transcribe.test_the_glossary_goes_everywhere_but_openrouter)
+OpenRouter takes the field and throws it away, so spare it the bytes. ... ok
+test_the_model_and_the_format_are_sent (test_api.Transcribe.test_the_model_and_the_format_are_sent) ... ok
+test_the_transcript_comes_back_stripped (test_api.Transcribe.test_the_transcript_comes_back_stripped) ... ok
+test_a_local_timeout_is_not_a_hosted_one (test_api.TranscribeHere.test_a_local_timeout_is_not_a_hosted_one) ... ok
+test_a_server_that_dies_mid_request_says_what_it_printed (test_api.TranscribeHere.test_a_server_that_dies_mid_request_says_what_it_printed) ... ok
+test_a_server_that_will_not_start_is_the_error_shown (test_api.TranscribeHere.test_a_server_that_will_not_start_is_the_error_shown) ... ok
+test_a_word_broken_over_two_lines_is_put_back_together (test_api.TranscribeHere.test_a_word_broken_over_two_lines_is_put_back_together) ... ok
+test_nothing_local_is_authorised (test_api.TranscribeHere.test_nothing_local_is_authorised) ... ok
+test_segments_that_continue_a_word_are_merged (test_api.TranscribeHere.test_segments_that_continue_a_word_are_merged) ... ok
+test_the_address_comes_from_the_server_it_starts (test_api.TranscribeHere.test_the_address_comes_from_the_server_it_starts) ... ok
+test_the_hint_reaches_whisper_as_its_initial_prompt (test_api.TranscribeHere.test_the_hint_reaches_whisper_as_its_initial_prompt) ... ok
+test_the_loaded_model_is_the_one_asked_for_again (test_api.TranscribeHere.test_the_loaded_model_is_the_one_asked_for_again) ... ok
+test_a_model_that_returned_no_segments_still_gives_its_text (test_api.TranscribeSegments.test_a_model_that_returned_no_segments_still_gives_its_text) ... ok
+test_an_end_before_its_start_is_pulled_forward (test_api.TranscribeSegments.test_an_end_before_its_start_is_pulled_forward) ... ok
+test_empty_segments_are_dropped (test_api.TranscribeSegments.test_empty_segments_are_dropped) ... ok
+test_groq_stays_on_the_model_it_was_given (test_api.TranscribeSegments.test_groq_stays_on_the_model_it_was_given) ... ok
+test_it_switches_to_the_model_that_has_timestamps (test_api.TranscribeSegments.test_it_switches_to_the_model_that_has_timestamps) ... ok
+test_nothing_at_all (test_api.TranscribeSegments.test_nothing_at_all) ... ok
+test_openrouter_uses_the_namespaced_id (test_api.TranscribeSegments.test_openrouter_uses_the_namespaced_id) ... ok
+test_the_segments_come_back_as_numbers (test_api.TranscribeSegments.test_the_segments_come_back_as_numbers) ... ok
+test_a_cli_that_is_not_installed_says_where_to_change_it (test_assistant.Ask.test_a_cli_that_is_not_installed_says_where_to_change_it) ... ok
+test_a_session_that_is_gone_is_started_over_without_a_word (test_assistant.Ask.test_a_session_that_is_gone_is_started_over_without_a_word) ... ok
+test_a_conversation_is_resumed (test_assistant.AskClaude.test_a_conversation_is_resumed) ... ok
+test_a_denied_tool_comes_back_as_a_warning_beside_the_answer (test_assistant.AskClaude.test_a_denied_tool_comes_back_as_a_warning_beside_the_answer) ... ok
+test_a_fresh_conversation_resumes_nothing (test_assistant.AskClaude.test_a_fresh_conversation_resumes_nothing) ... ok
+test_a_json_line_that_is_not_an_object (test_assistant.AskClaude.test_a_json_line_that_is_not_an_object) ... ok
+test_a_run_that_ended_in_an_error (test_assistant.AskClaude.test_a_run_that_ended_in_an_error) ... ok
+test_an_effort_is_translated_to_the_provider_s_vocabulary (test_assistant.AskClaude.test_an_effort_is_translated_to_the_provider_s_vocabulary) ... ok
+test_every_tool_it_picks_up_is_named_in_the_corner (test_assistant.AskClaude.test_every_tool_it_picks_up_is_named_in_the_corner) ... ok
+test_no_effort_asked_for_means_no_flag (test_assistant.AskClaude.test_no_effort_asked_for_means_no_flag) ... ok
+test_the_answer_comes_back_stripped (test_assistant.AskClaude.test_the_answer_comes_back_stripped) ... ok
+test_the_instruction_rides_along_as_a_system_prompt (test_assistant.AskClaude.test_the_instruction_rides_along_as_a_system_prompt) ... ok
+test_the_model_and_the_permission_mode_are_passed_on (test_assistant.AskClaude.test_the_model_and_the_permission_mode_are_passed_on) ... ok
+test_the_odd_unstructured_line_among_the_json (test_assistant.AskClaude.test_the_odd_unstructured_line_among_the_json) ... ok
+test_the_prompt_goes_in_as_one_argument (test_assistant.AskClaude.test_the_prompt_goes_in_as_one_argument) ... ok
+test_the_stream_is_asked_for_so_progress_can_be_shown (test_assistant.AskClaude.test_the_stream_is_asked_for_so_progress_can_be_shown) ... ok
+test_a_conversation_is_resumed (test_assistant.AskCodex.test_a_conversation_is_resumed) ... ok
+test_a_fresh_conversation (test_assistant.AskCodex.test_a_fresh_conversation) ... ok
+test_a_model_of_your_own (test_assistant.AskCodex.test_a_model_of_your_own) ... ok
+test_a_turn_that_failed (test_assistant.AskCodex.test_a_turn_that_failed) ... ok
+test_no_model_named_means_whatever_codex_is_set_to (test_assistant.AskCodex.test_no_model_named_means_whatever_codex_is_set_to) ... ok
+test_the_answer (test_assistant.AskCodex.test_the_answer) ... ok
+test_the_closing_message_is_the_answer (test_assistant.AskCodex.test_the_closing_message_is_the_answer) ... ok
+test_the_effort_lands_on_the_nearest_rung_codex_has (test_assistant.AskCodex.test_the_effort_lands_on_the_nearest_rung_codex_has) ... ok
+test_the_instruction_is_kept_apart_from_the_command (test_assistant.AskCodex.test_the_instruction_is_kept_apart_from_the_command)
+Codex takes no system prompt, so the two must not read as one. ... ok
+test_the_sandbox_setting_is_passed_on (test_assistant.AskCodex.test_the_sandbox_setting_is_passed_on) ... ok
+test_the_work_is_narrated_as_it_goes (test_assistant.AskCodex.test_the_work_is_narrated_as_it_goes) ... ok
+test_there_is_nobody_here_to_approve_anything (test_assistant.AskCodex.test_there_is_nobody_here_to_approve_anything) ... ok
+test_it_is_named_llm_api (test_assistant.AskLlmapi.test_it_is_named_llm_api) ... ok
+test_the_request_goes_to_llm_api_and_keeps_its_own_thread (test_assistant.AskLlmapi.test_the_request_goes_to_llm_api_and_keeps_its_own_thread) ... ok
+test_a_question_and_an_answer (test_assistant.AskOpenRouter.test_a_question_and_an_answer) ... ok
+test_an_api_failure_reads_as_an_assistant_failure (test_assistant.AskOpenRouter.test_an_api_failure_reads_as_an_assistant_failure) ... ok
+test_the_conversation_is_ours_to_keep (test_assistant.AskOpenRouter.test_the_conversation_is_ours_to_keep) ... ok
+test_the_next_command_knows_what_that_means (test_assistant.AskOpenRouter.test_the_next_command_knows_what_that_means) ... ok
+test_a_non_zero_exit_with_nothing_to_show_for_it (test_assistant.Conclude.test_a_non_zero_exit_with_nothing_to_show_for_it) ... ok
+test_a_reported_failure_with_no_answer (test_assistant.Conclude.test_a_reported_failure_with_no_answer) ... ok
+test_a_run_that_said_nothing_at_all (test_assistant.Conclude.test_a_run_that_said_nothing_at_all) ... ok
+test_a_session_that_is_gone_is_raised_apart (test_assistant.Conclude.test_a_session_that_is_gone_is_raised_apart) ... ok
+test_a_session_that_is_gone_only_matters_when_one_was_resumed (test_assistant.Conclude.test_a_session_that_is_gone_only_matters_when_one_was_resumed) ... ok
+test_an_answer_and_its_session (test_assistant.Conclude.test_an_answer_and_its_session) ... ok
+test_an_answer_survives_a_non_zero_exit (test_assistant.Conclude.test_an_answer_survives_a_non_zero_exit) ... ok
+test_codex_stores_under_its_own_name (test_assistant.Conclude.test_codex_stores_under_its_own_name) ... ok
+test_a_denied_tool_is_named (test_assistant.Denials.test_a_denied_tool_is_named) ... ok
+test_nothing_was_denied (test_assistant.Denials.test_nothing_was_denied) ... ok
+test_the_same_tool_denied_twice_is_named_once (test_assistant.Denials.test_the_same_tool_denied_twice_is_named_once) ... ok
+test_an_empty_setting_asks_for_nothing (test_assistant.Effort.test_an_empty_setting_asks_for_nothing) ... ok
+test_codex_has_no_rung_above_high (test_assistant.Effort.test_codex_has_no_rung_above_high) ... ok
+test_neither_one_asks_for_a_rung_below_low (test_assistant.Effort.test_neither_one_asks_for_a_rung_below_low) ... ok
+test_the_scales_cover_the_same_settings (test_assistant.Effort.test_the_scales_cover_the_same_settings) ... ok
+test_a_codex_item_nobody_listed (test_assistant.Labels.test_a_codex_item_nobody_listed) ... ok
+test_a_codex_mcp_call (test_assistant.Labels.test_a_codex_mcp_call) ... ok
+test_a_skill_is_named_by_the_skill (test_assistant.Labels.test_a_skill_is_named_by_the_skill) ... ok
+test_a_tool_arriving_from_an_mcp_server_is_named_by_its_server (test_assistant.Labels.test_a_tool_arriving_from_an_mcp_server_is_named_by_its_server) ... ok
+test_a_tool_nobody_wrote_a_line_for (test_assistant.Labels.test_a_tool_nobody_wrote_a_line_for) ... ok
+test_a_tool_the_table_knows (test_assistant.Labels.test_a_tool_the_table_knows) ... ok
+test_a_tool_with_no_name_at_all (test_assistant.Labels.test_a_tool_with_no_name_at_all) ... ok
+test_the_codex_table (test_assistant.Labels.test_the_codex_table) ... ok
+test_a_provider_this_version_does_not_have (test_assistant.Provider.test_a_provider_this_version_does_not_have) ... ok
+test_each_one_is_recognised (test_assistant.Provider.test_each_one_is_recognised) ... ok
+test_the_default (test_assistant.Provider.test_the_default) ... ok
+test_what_each_one_is_called (test_assistant.Provider.test_what_each_one_is_called) ... ok
+test_what_each_one_runs (test_assistant.Provider.test_what_each_one_runs) ... ok
+test_a_conversation_that_has_sat_unused_is_dropped (test_assistant.Session.test_a_conversation_that_has_sat_unused_is_dropped) ... ok
+test_a_row_with_neither_an_id_nor_messages_has_no_age (test_assistant.Session.test_a_row_with_neither_an_id_nor_messages_has_no_age) ... ok
+test_a_session_file_that_is_not_json (test_assistant.Session.test_a_session_file_that_is_not_json) ... ok
+test_a_session_that_never_expires (test_assistant.Session.test_a_session_that_never_expires) ... ok
+test_an_id_is_written_and_read_back (test_assistant.Session.test_an_id_is_written_and_read_back) ... ok
+test_clearing (test_assistant.Session.test_clearing) ... ok
+test_clearing_one_that_is_not_there (test_assistant.Session.test_clearing_one_that_is_not_there) ... ok
+test_nobody_picks_up_another_provider_s_thread (test_assistant.Session.test_nobody_picks_up_another_provider_s_thread) ... ok
+test_nothing_stored_yet (test_assistant.Session.test_nothing_stored_yet) ... ok
+test_the_age_of_the_conversation (test_assistant.Session.test_the_age_of_the_conversation) ... ok
+test_the_history_window_ends_somewhere (test_assistant.Session.test_the_history_window_ends_somewhere) ... ok
+test_the_messages_of_the_provider_that_keeps_none (test_assistant.Session.test_the_messages_of_the_provider_that_keeps_none) ... ok
+test_a_session_that_is_gone (test_assistant.SessionMissing.test_a_session_that_is_gone) ... ok
+test_an_unrelated_failure (test_assistant.SessionMissing.test_an_unrelated_failure) ... ok
+test_the_last_line_is_the_one_worth_showing (test_assistant.SessionMissing.test_the_last_line_is_the_one_worth_showing) ... ok
+test_a_directory_of_your_own (test_assistant.WorkingDir.test_a_directory_of_your_own) ... ok
+test_a_directory_that_is_not_there_falls_back (test_assistant.WorkingDir.test_a_directory_that_is_not_there_falls_back) ... ok
+test_a_tilde_is_expanded (test_assistant.WorkingDir.test_a_tilde_is_expanded) ... ok
+test_the_home_directory_by_default (test_assistant.WorkingDir.test_the_home_directory_by_default) ... ok
+test_audio (unittest.loader._FailedTest.test_audio) ... ERROR
+test_a_failure_is_the_same_kind_the_chain_already_catches (test_cleanup.ClaudeCode.test_a_failure_is_the_same_kind_the_chain_already_catches) ... ok
+test_a_model_of_your_own (test_cleanup.ClaudeCode.test_a_model_of_your_own) ... ok
+test_a_program_that_is_not_installed_says_so_before_running_anything (test_cleanup.ClaudeCode.test_a_program_that_is_not_installed_says_so_before_running_anything) ... ok
+test_a_run_that_never_ends (test_cleanup.ClaudeCode.test_a_run_that_never_ends) ... ok
+test_an_answer_of_nothing_is_a_failure_rather_than_an_empty_paste (test_cleanup.ClaudeCode.test_an_answer_of_nothing_is_a_failure_rather_than_an_empty_paste) ... ok
+test_it_is_given_nothing_to_run_and_nothing_to_remember (test_cleanup.ClaudeCode.test_it_is_given_nothing_to_run_and_nothing_to_remember) ... ok
+test_no_thinking_setting_means_no_flag (test_cleanup.ClaudeCode.test_no_thinking_setting_means_no_flag) ... ok
+test_the_last_line_of_the_complaint_is_what_gets_shown (test_cleanup.ClaudeCode.test_the_last_line_of_the_complaint_is_what_gets_shown) ... ok
+test_the_thinking_setting_is_carried_over_in_its_own_words (test_cleanup.ClaudeCode.test_the_thinking_setting_is_carried_over_in_its_own_words) ... ok
+test_the_transcript_goes_in_fenced_and_the_rules_go_in_as_the_prompt (test_cleanup.ClaudeCode.test_the_transcript_goes_in_fenced_and_the_rules_go_in_as_the_prompt) ... ok
+test_an_answer_of_nothing (test_cleanup.Codex.test_an_answer_of_nothing) ... ok
+test_it_may_read_but_not_write_and_has_nobody_to_ask (test_cleanup.Codex.test_it_may_read_but_not_write_and_has_nobody_to_ask) ... ok
+test_that_file_does_not_stay_behind (test_cleanup.Codex.test_that_file_does_not_stay_behind) ... ok
+test_the_answer_is_read_from_the_file_rather_than_the_noise_on_stdout (test_cleanup.Codex.test_the_answer_is_read_from_the_file_rather_than_the_noise_on_stdout) ... ok
+test_the_model_is_left_alone_until_one_is_typed_in (test_cleanup.Codex.test_the_model_is_left_alone_until_one_is_typed_in) ... ok
+test_the_rules_ride_in_front_of_the_transcript (test_cleanup.Codex.test_the_rules_ride_in_front_of_the_transcript) ... ok
+test_the_thinking_setting_lands_on_the_nearest_rung_codex_has (test_cleanup.Codex.test_the_thinking_setting_lands_on_the_nearest_rung_codex_has) ... ok
+test_a_reply_longer_than_the_transcript_is_cut_off (test_cleanup.Here.test_a_reply_longer_than_the_transcript_is_cut_off) ... ok
+test_a_reply_that_was_all_thinking_names_the_setting_that_fixes_it (test_cleanup.Here.test_a_reply_that_was_all_thinking_names_the_setting_that_fixes_it) ... ok
+test_a_server_that_dies_mid_request_says_what_it_printed (test_cleanup.Here.test_a_server_that_dies_mid_request_says_what_it_printed) ... ok
+test_a_server_that_will_not_start_is_the_error_shown (test_cleanup.Here.test_a_server_that_will_not_start_is_the_error_shown) ... ok
+test_a_short_dictation_still_gets_room_to_answer (test_cleanup.Here.test_a_short_dictation_still_gets_room_to_answer) ... ok
+test_no_cli_is_started_for_it (test_cleanup.Here.test_no_cli_is_started_for_it) ... ok
+test_no_key_is_wanted_and_none_is_sent (test_cleanup.Here.test_no_key_is_wanted_and_none_is_sent) ... ok
+test_the_address_comes_from_the_server_it_starts (test_cleanup.Here.test_the_address_comes_from_the_server_it_starts) ... ok
+test_the_models_own_default_asks_for_nothing (test_cleanup.Here.test_the_models_own_default_asks_for_nothing) ... ok
+test_thinking_is_turned_off_in_the_words_llama_cpp_uses (test_cleanup.Here.test_thinking_is_turned_off_in_the_words_llama_cpp_uses) ... ok
+test_the_model_reported_in_the_history_is_its_own (test_cleanup.Llmapi.test_the_model_reported_in_the_history_is_its_own) ... ok
+test_the_request_is_sent_with_llm_api_in_charge_of_the_words (test_cleanup.Llmapi.test_the_request_is_sent_with_llm_api_in_charge_of_the_words) ... ok
+test_it_is_still_one_request_with_the_settings_as_they_were (test_cleanup.OpenRouter.test_it_is_still_one_request_with_the_settings_as_they_were) ... ok
+test_no_cli_is_started_for_it (test_cleanup.OpenRouter.test_no_cli_is_started_for_it) ... ok
+test_a_provider_this_version_does_not_have (test_cleanup.Provider.test_a_provider_this_version_does_not_have) ... ok
+test_each_one_is_recognised (test_cleanup.Provider.test_each_one_is_recognised) ... ok
+test_the_default_is_still_openrouter (test_cleanup.Provider.test_the_default_is_still_openrouter) ... ok
+test_the_model_named_in_the_history_is_the_one_that_did_it (test_cleanup.Provider.test_the_model_named_in_the_history_is_the_one_that_did_it) ... ok
+test_what_each_one_runs (test_cleanup.Provider.test_what_each_one_runs) ... ok
+test_cli (unittest.loader._FailedTest.test_cli) ... ERROR
+test_a_prompt_of_your_own (test_config.CleanupPrompt.test_a_prompt_of_your_own) ... ok
+test_a_subtitle_prompt_of_your_own (test_config.CleanupPrompt.test_a_subtitle_prompt_of_your_own) ... ok
+test_no_glossary_means_no_rule_about_one (test_config.CleanupPrompt.test_no_glossary_means_no_rule_about_one) ... ok
+test_speakers_bring_the_names_in_with_them (test_config.CleanupPrompt.test_speakers_bring_the_names_in_with_them) ... ok
+test_subtitles_use_their_own_prompt (test_config.CleanupPrompt.test_subtitles_use_their_own_prompt) ... ok
+test_the_default_follows_the_interface_language (test_config.CleanupPrompt.test_the_default_follows_the_interface_language) ... ok
+test_the_glossary_is_appended (test_config.CleanupPrompt.test_the_glossary_is_appended) ... ok
+test_timestamps_add_a_rule_about_them (test_config.CleanupPrompt.test_timestamps_add_a_rule_about_them) ... ok
+test_every_language_specific_prompt_has_both_languages (test_config.Defaults.test_every_language_specific_prompt_has_both_languages) ... ok
+test_no_setting_defaults_to_none (test_config.Defaults.test_no_setting_defaults_to_none)
+cli._coerce switches on the type of the default, so there has to be one. ... ok
+test_the_keys_ship_empty (test_config.Defaults.test_the_keys_ship_empty) ... ok
+test_the_paste_key_is_the_one_this_desktop_pastes_with (test_config.Defaults.test_the_paste_key_is_the_one_this_desktop_pastes_with)
+cmd+v on a Mac, and it must be one paste.py can actually press. ... ok
+test_the_prompts_ship_empty_so_the_default_can_improve (test_config.Defaults.test_the_prompts_ship_empty_so_the_default_can_improve) ... ok
+test_a_mac_does_not_read_the_xdg_variables (test_config.Directories.test_a_mac_does_not_read_the_xdg_variables)
+A Mac with them set from some other tool still stores in one place. ... ok
+test_a_mac_keeps_both_in_application_support (test_config.Directories.test_a_mac_keeps_both_in_application_support) ... ok
+test_linux_keeps_them_apart_and_follows_xdg (test_config.Directories.test_linux_keeps_them_apart_and_follows_xdg) ... ok
+test_linux_without_the_variables_set (test_config.Directories.test_linux_without_the_variables_set) ... ok
+test_a_limit_of_zero_keeps_everything (test_config.History.test_a_limit_of_zero_keeps_everything) ... ok
+test_a_limit_of_zero_reads_everything (test_config.History.test_a_limit_of_zero_reads_everything) ... ok
+test_a_limit_reads_the_tail (test_config.History.test_a_limit_reads_the_tail) ... ok
+test_a_line_that_is_not_json_is_skipped_rather_than_fatal (test_config.History.test_a_line_that_is_not_json_is_skipped_rather_than_fatal) ... ok
+test_clearing (test_config.History.test_clearing) ... ok
+test_clearing_a_history_that_is_not_there (test_config.History.test_clearing_a_history_that_is_not_there) ... ok
+test_deleting_is_insensitive_to_key_order (test_config.History.test_deleting_is_insensitive_to_key_order) ... ok
+test_deleting_matches_on_content_not_on_position (test_config.History.test_deleting_matches_on_content_not_on_position)
+The worker may have appended a row since the list was read. ... ok
+test_deleting_nothing_touches_nothing (test_config.History.test_deleting_nothing_touches_nothing) ... ok
+test_nothing_written_yet (test_config.History.test_nothing_written_yet) ... ok
+test_trimming_a_file_that_is_already_short_enough (test_config.History.test_trimming_a_file_that_is_already_short_enough) ... ok
+test_trimming_before_anything_was_written (test_config.History.test_trimming_before_anything_was_written) ... ok
+test_trimming_keeps_the_newest (test_config.History.test_trimming_keeps_the_newest) ... ok
+test_turkish_survives_the_round_trip (test_config.History.test_turkish_survives_the_round_trip) ... ok
+test_what_goes_in_comes_out_newest_last (test_config.History.test_what_goes_in_comes_out_newest_last) ... ok
+test_a_stored_key_beats_the_environment (test_config.Keys.test_a_stored_key_beats_the_environment) ... ok
+test_a_stored_key_is_used (test_config.Keys.test_a_stored_key_is_used) ... ok
+test_every_provider_falls_back_to_the_variable_of_its_own_name (test_config.Keys.test_every_provider_falls_back_to_the_variable_of_its_own_name) ... ok
+test_no_key_anywhere (test_config.Keys.test_no_key_anywhere) ... ok
+test_the_environment_is_the_fallback (test_config.Keys.test_the_environment_is_the_fallback) ... ok
+test_a_config_that_is_json_but_not_an_object (test_config.Loading.test_a_config_that_is_json_but_not_an_object) ... ok
+test_a_config_that_is_not_json_falls_back_to_the_defaults (test_config.Loading.test_a_config_that_is_not_json_falls_back_to_the_defaults) ... ok
+test_a_corner_stored_under_its_old_turkish_name (test_config.Loading.test_a_corner_stored_under_its_old_turkish_name) ... ok
+test_a_corner_that_needs_no_migrating (test_config.Loading.test_a_corner_that_needs_no_migrating) ... ok
+test_a_default_prompt_an_old_version_copied_in_is_dropped (test_config.Loading.test_a_default_prompt_an_old_version_copied_in_is_dropped)
+Otherwise it shadows every later improvement to that default. ... ok
+test_a_key_this_version_does_not_have_is_dropped (test_config.Loading.test_a_key_this_version_does_not_have_is_dropped)
+A setting from a fork, or from a version that removed it. ... ok
+test_a_prompt_the_user_wrote_is_left_alone (test_config.Loading.test_a_prompt_the_user_wrote_is_left_alone) ... ok
+test_a_stored_value_wins (test_config.Loading.test_a_stored_value_wins) ... ok
+test_an_unknown_key_reads_as_its_default (test_config.Loading.test_an_unknown_key_reads_as_its_default) ... ok
+test_loading_sets_the_interface_language (test_config.Loading.test_loading_sets_the_interface_language) ... ok
+test_nothing_stored_yet (test_config.Loading.test_nothing_stored_yet) ... ok
+test_it_needs_no_program_on_the_path (test_config.LocalCleanup.test_it_needs_no_program_on_the_path) ... ok
+test_only_the_cleanup_setting_asks_for_the_local_model (test_config.LocalCleanup.test_only_the_cleanup_setting_asks_for_the_local_model) ... ok
+test_the_local_model_is_what_the_history_records (test_config.LocalCleanup.test_the_local_model_is_what_the_history_records) ... ok
+test_the_minutes_do_not_follow_the_cleanup_provider (test_config.LocalCleanup.test_the_minutes_do_not_follow_the_cleanup_provider) ... ok
+test_named_speakers_are_used_as_given (test_config.MeetingSettings.test_named_speakers_are_used_as_given) ... ok
+test_the_hint_carries_the_glossary_and_the_names (test_config.MeetingSettings.test_the_hint_carries_the_glossary_and_the_names) ... ok
+test_the_hint_with_neither (test_config.MeetingSettings.test_the_hint_with_neither) ... ok
+test_the_meeting_prompt_lists_who_was_there (test_config.MeetingSettings.test_the_meeting_prompt_lists_who_was_there) ... ok
+test_the_meeting_prompt_with_nobody_named (test_config.MeetingSettings.test_the_meeting_prompt_with_nobody_named) ... ok
+test_the_speaker_labels_fall_back_to_the_language (test_config.MeetingSettings.test_the_speaker_labels_fall_back_to_the_language) ... ok
+test_a_broken_line_is_skipped (test_config.Meetings.test_a_broken_line_is_skipped) ... ok
+test_a_row_with_no_base_is_ignored (test_config.Meetings.test_a_row_with_no_base_is_ignored) ... ok
+test_deleting_a_row_whose_files_are_already_gone (test_config.Meetings.test_deleting_a_row_whose_files_are_already_gone) ... ok
+test_deleting_nothing (test_config.Meetings.test_deleting_nothing) ... ok
+test_deleting_takes_the_files_with_it (test_config.Meetings.test_deleting_takes_the_files_with_it) ... ok
+test_nothing_recorded_yet (test_config.Meetings.test_nothing_recorded_yet) ... ok
+test_saving_and_reading_back (test_config.Meetings.test_saving_and_reading_back) ... ok
+test_saving_the_same_base_replaces_rather_than_appends (test_config.Meetings.test_saving_the_same_base_replaces_rather_than_appends) ... ok
+test_the_document_and_the_recording_share_a_stem (test_config.Meetings.test_the_document_and_the_recording_share_a_stem) ... ok
+test_updating_one_that_is_gone (test_config.Meetings.test_updating_one_that_is_gone) ... ok
+test_updating_patches_and_hands_the_row_back (test_config.Meetings.test_updating_patches_and_hands_the_row_back) ... ok
+test_a_name_listed_twice_appears_once (test_config.Participants.test_a_name_listed_twice_appears_once) ... ok
+test_blank_entries_are_dropped (test_config.Participants.test_blank_entries_are_dropped) ... ok
+test_commas_and_newlines_both_separate (test_config.Participants.test_commas_and_newlines_both_separate) ... ok
+test_nobody_named (test_config.Participants.test_nobody_named) ... ok
+test_the_two_sides_come_first (test_config.Participants.test_the_two_sides_come_first) ... ok
+test_a_hosted_provider_is_ready_when_it_has_a_key (test_config.ReadyToRun.test_a_hosted_provider_is_ready_when_it_has_a_key) ... ok
+test_a_missing_model_is_not_ready_either (test_config.ReadyToRun.test_a_missing_model_is_not_ready_either) ... ok
+test_a_missing_program_is_not_ready (test_config.ReadyToRun.test_a_missing_program_is_not_ready) ... ok
+test_both_halves_in_place (test_config.ReadyToRun.test_both_halves_in_place) ... ok
+test_the_settings_reach_the_servers (test_config.ReadyToRun.test_the_settings_reach_the_servers) ... ok
+test_a_saved_setting_comes_back (test_config.Saving.test_a_saved_setting_comes_back) ... ok
+test_nothing_is_left_behind_half_written (test_config.Saving.test_nothing_is_left_behind_half_written) ... ok
+test_saving_applies_the_interface_language (test_config.Saving.test_saving_applies_the_interface_language) ... ok
+test_the_directory_is_created (test_config.Saving.test_the_directory_is_created) ... ok
+test_the_file_is_readable_by_nobody_else (test_config.Saving.test_the_file_is_readable_by_nobody_else)
+It holds two API keys. ... skipped 'POSIX permissions do not apply; ACLs govern access'
+test_turkish_is_stored_as_turkish (test_config.Saving.test_turkish_is_stored_as_turkish) ... ok
+test_a_provider_this_version_has_never_heard_of (test_config.TranscribeTarget.test_a_provider_this_version_has_never_heard_of)
+A config written by a fork, or by a version that dropped one. ... ok
+test_a_self_hosted_endpoint (test_config.TranscribeTarget.test_a_self_hosted_endpoint) ... ok
+test_groq_when_it_is_picked (test_config.TranscribeTarget.test_groq_when_it_is_picked) ... ok
+test_openai_when_it_is_picked (test_config.TranscribeTarget.test_openai_when_it_is_picked) ... ok
+test_openrouter_when_it_is_picked (test_config.TranscribeTarget.test_openrouter_when_it_is_picked) ... ok
+test_this_machine_by_default (test_config.TranscribeTarget.test_this_machine_by_default) ... ok
+test_filetranscribe (unittest.loader._FailedTest.test_filetranscribe) ... ERROR
+test_a_missing_model_is_a_message_about_settings (test_ggml.Arguments.test_a_missing_model_is_a_message_about_settings) ... ok
+test_a_missing_program_says_so_before_a_missing_model (test_ggml.Arguments.test_a_missing_program_says_so_before_a_missing_model) ... ok
+test_detection_rather_than_english_when_nothing_is_asked_for (test_ggml.Arguments.test_detection_rather_than_english_when_nothing_is_asked_for) ... ok
+test_no_card_means_no_layers_offloaded (test_ggml.Arguments.test_no_card_means_no_layers_offloaded) ... ok
+test_the_graphics_card_is_turned_off_rather_than_asked_for (test_ggml.Arguments.test_the_graphics_card_is_turned_off_rather_than_asked_for) ... ok
+test_the_inference_path_is_the_one_api_py_builds (test_ggml.Arguments.test_the_inference_path_is_the_one_api_py_builds) ... ok
+test_the_layers_go_to_the_card_when_there_is_one (test_ggml.Arguments.test_the_layers_go_to_the_card_when_there_is_one) ... ok
+test_a_model_is_named_by_its_file_not_its_repository (test_ggml.Catalogue.test_a_model_is_named_by_its_file_not_its_repository) ... ok
+test_a_model_split_across_files_is_left_out (test_ggml.Catalogue.test_a_model_split_across_files_is_left_out) ... ok
+test_an_empty_file_is_not_a_model (test_ggml.Catalogue.test_an_empty_file_is_not_a_model) ... ok
+test_an_unreachable_list_still_offers_the_suggestions (test_ggml.Catalogue.test_an_unreachable_list_still_offers_the_suggestions) ... ok
+test_an_unreachable_whisper_list_is_an_error_worth_showing (test_ggml.Catalogue.test_an_unreachable_whisper_list_is_an_error_worth_showing) ... ok
+test_only_models_are_offered_and_the_small_ones_first (test_ggml.Catalogue.test_only_models_are_offered_and_the_small_ones_first) ... ok
+test_the_core_ml_encoders_are_not_models (test_ggml.Catalogue.test_the_core_ml_encoders_are_not_models) ... ok
+test_the_projector_and_the_draft_head_are_not_models (test_ggml.Catalogue.test_the_projector_and_the_draft_head_are_not_models) ... ok
+test_the_suggestions_come_first_and_the_rest_follow (test_ggml.Catalogue.test_the_suggestions_come_first_and_the_rest_follow) ... ok
+test_what_is_on_disk_is_read_from_disk (test_ggml.Catalogue.test_what_is_on_disk_is_read_from_disk) ... ok
+test_a_body_shorter_than_its_header_installs_nothing (test_ggml.Download.test_a_body_shorter_than_its_header_installs_nothing) ... ok
+test_a_file_with_no_published_checksum_is_refused (test_ggml.Download.test_a_file_with_no_published_checksum_is_refused) ... ok
+test_a_refused_connection_says_which_file (test_ggml.Download.test_a_refused_connection_says_which_file) ... ok
+test_a_wrong_checksum_installs_nothing (test_ggml.Download.test_a_wrong_checksum_installs_nothing) ... ok
+test_an_http_error_is_not_written_to_disk (test_ggml.Download.test_an_http_error_is_not_written_to_disk) ... ok
+test_it_lands_and_the_part_file_is_gone (test_ggml.Download.test_it_lands_and_the_part_file_is_gone) ... ok
+test_nothing_is_asked_for_before_it_is_refused (test_ggml.Download.test_nothing_is_asked_for_before_it_is_refused) ... ok
+test_progress_is_reported_against_the_total (test_ggml.Download.test_progress_is_reported_against_the_total) ... ok
+test_stopping_leaves_nothing_behind (test_ggml.Download.test_stopping_leaves_nothing_behind) ... ok
+test_a_mac_does_not_install_an_ubuntu_archive_for_the_same_architecture (test_ggml.InstallProgram.test_a_mac_does_not_install_an_ubuntu_archive_for_the_same_architecture) ... ok
+test_a_mac_uses_the_native_llama_archive_instead_of_ubuntu (test_ggml.InstallProgram.test_a_mac_uses_the_native_llama_archive_instead_of_ubuntu) ... ok
+test_a_record_pointing_at_a_deleted_binary_counts_for_nothing (test_ggml.InstallProgram.test_a_record_pointing_at_a_deleted_binary_counts_for_nothing) ... ok
+test_a_release_with_nothing_for_this_machine_says_so (test_ggml.InstallProgram.test_a_release_with_nothing_for_this_machine_says_so) ... ok
+test_a_release_without_a_published_checksum_is_refused (test_ggml.InstallProgram.test_a_release_without_a_published_checksum_is_refused) ... ok
+test_a_symlink_out_of_the_directory_does_not_survive_either (test_ggml.InstallProgram.test_a_symlink_out_of_the_directory_does_not_survive_either) ... ok
+test_an_archive_cannot_write_outside_the_directory_it_is_opened_in (test_ggml.InstallProgram.test_an_archive_cannot_write_outside_the_directory_it_is_opened_in) ... ok
+test_an_archive_that_is_not_what_was_promised_installs_nothing (test_ggml.InstallProgram.test_an_archive_that_is_not_what_was_promised_installs_nothing) ... ok
+test_an_archive_without_the_binary_is_refused (test_ggml.InstallProgram.test_an_archive_without_the_binary_is_refused) ... ok
+test_everything_is_asked_for_over_tls (test_ggml.InstallProgram.test_everything_is_asked_for_over_tls) ... ok
+test_llama_falls_back_to_the_plain_build_without_one (test_ggml.InstallProgram.test_llama_falls_back_to_the_plain_build_without_one) ... ok
+test_llama_takes_the_vulkan_build_when_there_is_a_loader (test_ggml.InstallProgram.test_llama_takes_the_vulkan_build_when_there_is_a_loader) ... ok
+test_the_archive_is_not_kept (test_ggml.InstallProgram.test_the_archive_is_not_kept) ... ok
+test_the_binary_and_its_libraries_land_together (test_ggml.InstallProgram.test_the_binary_and_its_libraries_land_together) ... ok
+test_the_build_for_this_machine_is_the_one_fetched (test_ggml.InstallProgram.test_the_build_for_this_machine_is_the_one_fetched) ... ok
+test_the_previous_version_is_swept_up (test_ggml.InstallProgram.test_the_previous_version_is_swept_up) ... ok
+test_what_was_installed_is_remembered (test_ggml.InstallProgram.test_what_was_installed_is_remembered) ... ok
+test_a_model_that_is_still_loading_is_not_ready_yet (test_ggml.Servers.test_a_model_that_is_still_loading_is_not_ready_yet) ... ok
+test_a_pid_that_belongs_to_something_else_is_left_alone (test_ggml.Servers.test_a_pid_that_belongs_to_something_else_is_left_alone) ... skipped 'covers the Linux desktop stack (PipeWire, wl-clipboard, ydotool, KDE)'
+test_a_program_that_dies_reports_what_it_printed (test_ggml.Servers.test_a_program_that_dies_reports_what_it_printed) ... ok
+test_a_server_a_killed_dikte_left_behind_is_swept_up (test_ggml.Servers.test_a_server_a_killed_dikte_left_behind_is_swept_up) ... skipped 'covers the Linux desktop stack (PipeWire, wl-clipboard, ydotool, KDE)'
+test_a_settings_change_stops_what_was_running (test_ggml.Servers.test_a_settings_change_stops_what_was_running) ... ok
+test_a_start_that_goes_wrong_takes_its_process_with_it (test_ggml.Servers.test_a_start_that_goes_wrong_takes_its_process_with_it) ... ok
+test_a_start_that_never_becomes_ready_gives_up (test_ggml.Servers.test_a_start_that_never_becomes_ready_gives_up) ... ok
+test_a_started_server_hands_back_its_address (test_ggml.Servers.test_a_started_server_hands_back_its_address) ... ok
+test_asking_what_is_running_does_not_wait_for_a_start (test_ggml.Servers.test_asking_what_is_running_does_not_wait_for_a_start)
+A model being loaded must not freeze the settings window. ... ok
+test_no_pid_file_is_nothing_to_sweep (test_ggml.Servers.test_no_pid_file_is_nothing_to_sweep) ... ok
+test_stopping_leaves_nothing_running (test_ggml.Servers.test_stopping_leaves_nothing_running) ... ok
+test_the_last_thing_it_printed_is_available (test_ggml.Servers.test_the_last_thing_it_printed_is_available) ... ok
+test_the_new_settings_are_what_the_next_start_uses (test_ggml.Servers.test_the_new_settings_are_what_the_next_start_uses) ... ok
+test_the_second_call_does_not_start_a_second_one (test_ggml.Servers.test_the_second_call_does_not_start_a_second_one) ... ok
+test_bytes_are_written_the_way_a_download_is_talked_about (test_ggml.Sizes.test_bytes_are_written_the_way_a_download_is_talked_about) ... ok
+test_a_setting_pointing_at_a_program_wins (test_ggml.WhichCopyRuns.test_a_setting_pointing_at_a_program_wins) ... ok
+test_a_setting_pointing_at_nothing_is_no_program (test_ggml.WhichCopyRuns.test_a_setting_pointing_at_nothing_is_no_program) ... ok
+test_a_system_build_wins_over_a_downloaded_one (test_ggml.WhichCopyRuns.test_a_system_build_wins_over_a_downloaded_one) ... ok
+test_the_downloaded_one_is_used_when_there_is_no_system_build (test_ggml.WhichCopyRuns.test_the_downloaded_one_is_used_when_there_is_no_system_build) ... ok
+test_hotkey (unittest.loader._FailedTest.test_hotkey) ... ERROR
+test_a_cache_that_cannot_be_written_is_not_a_failure (test_hub.CacheOnDisk.test_a_cache_that_cannot_be_written_is_not_a_failure) ... ok
+test_what_is_stored_is_what_came_back (test_hub.CacheOnDisk.test_what_is_stored_is_what_came_back) ... ok
+test_a_file_outside_lfs_has_no_checksum (test_hub.Files.test_a_file_outside_lfs_has_no_checksum) ... ok
+test_an_answer_that_is_not_a_list_is_an_error (test_hub.Files.test_an_answer_that_is_not_a_list_is_an_error) ... ok
+test_directories_are_left_out (test_hub.Files.test_directories_are_left_out) ... ok
+test_the_lfs_object_id_is_the_checksum (test_hub.Files.test_the_lfs_object_id_is_the_checksum) ... ok
+test_the_url_is_the_one_that_serves_the_bytes (test_hub.Files.test_the_url_is_the_one_that_serves_the_bytes) ... ok
+test_a_refresh_asks_again (test_hub.Releases.test_a_refresh_asks_again) ... ok
+test_a_release_with_no_assets_is_an_error (test_hub.Releases.test_a_release_with_no_assets_is_an_error) ... ok
+test_a_tag_asks_for_that_tag (test_hub.Releases.test_a_tag_asks_for_that_tag) ... ok
+test_an_http_error_names_the_host_and_the_code (test_hub.Releases.test_an_http_error_names_the_host_and_the_code) ... ok
+test_an_old_cache_beats_no_answer (test_hub.Releases.test_an_old_cache_beats_no_answer) ... ok
+test_no_cache_and_no_network_says_so (test_hub.Releases.test_no_cache_and_no_network_says_so) ... ok
+test_the_second_call_asks_nobody (test_hub.Releases.test_the_second_call_asks_nobody) ... ok
+test_the_sha256_prefix_is_dropped (test_hub.Releases.test_the_sha256_prefix_is_dropped) ... ok
+test_the_tag_and_the_assets_come_back (test_hub.Releases.test_the_tag_and_the_assets_come_back) ... ok
+test_a_missing_download_count_is_zero (test_hub.Repos.test_a_missing_download_count_is_zero) ... ok
+test_it_asks_for_one_author_and_for_gguf (test_hub.Repos.test_it_asks_for_one_author_and_for_gguf) ... ok
+test_an_unlisted_name_or_case_comes_back_unchanged (test_i18n.Names.test_an_unlisted_name_or_case_comes_back_unchanged) ... ok
+test_english_leaves_the_name_alone (test_i18n.Names.test_english_leaves_the_name_alone) ... ok
+test_no_case_asked_for (test_i18n.Names.test_no_case_asked_for) ... ok
+test_turkish_inflects_by_the_vowels_of_the_name (test_i18n.Names.test_turkish_inflects_by_the_vowels_of_the_name) ... ok
+test_an_explicit_language_wins (test_i18n.Resolve.test_an_explicit_language_wins) ... ok
+test_an_unknown_code_is_not_taken_at_its_word (test_i18n.Resolve.test_an_unknown_code_is_not_taken_at_its_word) ... ok
+test_auto_reads_the_locale (test_i18n.Resolve.test_auto_reads_the_locale) ... ok
+test_lc_all_outranks_lang (test_i18n.Resolve.test_lc_all_outranks_lang) ... ok
+test_no_locale_at_all_falls_back_to_english (test_i18n.Resolve.test_no_locale_at_all_falls_back_to_english) ... ok
+test_every_translation_is_formattable (test_i18n.Table.test_every_translation_is_formattable)
+Whatever the table holds, .format() must not blow up on it. ... ok
+test_every_translation_keeps_the_placeholders_of_its_source (test_i18n.Table.test_every_translation_keeps_the_placeholders_of_its_source) ... ok
+test_nothing_is_translated_to_an_empty_string (test_i18n.Table.test_nothing_is_translated_to_an_empty_string) ... ok
+test_a_placeholder_may_be_called_anything (test_i18n.Translate.test_a_placeholder_may_be_called_anything)
+Including the names of t()'s own parameters, which is why they are ... ok
+test_a_string_with_no_arguments_is_not_formatted (test_i18n.Translate.test_a_string_with_no_arguments_is_not_formatted) ... ok
+test_an_untranslated_string_falls_through (test_i18n.Translate.test_an_untranslated_string_falls_through) ... ok
+test_english_returns_the_source_string (test_i18n.Translate.test_english_returns_the_source_string) ... ok
+test_placeholders_are_filled_in_both_languages (test_i18n.Translate.test_placeholders_are_filled_in_both_languages) ... ok
+test_turkish_looks_the_string_up (test_i18n.Translate.test_turkish_looks_the_string_up) ... ok
+test_script_path_points_at_dikte (test_ipc.Paths.test_script_path_points_at_dikte) ... ok
+test_the_shortcut_command_runs_it_with_this_interpreter (test_ipc.Paths.test_the_shortcut_command_runs_it_with_this_interpreter) ... ok
+test_the_socket_is_per_user (test_ipc.Paths.test_the_socket_is_per_user) ... skipped 'the socket is named after a user id, which Windows has no equivalent of'
+test_a_fire_and_forget_verb_does_not_wait_around (test_ipc.Send.test_a_fire_and_forget_verb_does_not_wait_around) ... ok
+test_a_reply_that_is_json_but_not_an_object (test_ipc.Send.test_a_reply_that_is_json_but_not_an_object) ... ok
+test_a_reply_that_is_not_json (test_ipc.Send.test_a_reply_that_is_not_json) ... ok
+test_a_timeout_is_passed_on_in_milliseconds (test_ipc.Send.test_a_timeout_is_passed_on_in_milliseconds) ... ok
+test_a_verb_on_its_own_goes_as_the_bare_word (test_ipc.Send.test_a_verb_on_its_own_goes_as_the_bare_word)
+An older instance only understands this, and it is how updates land. ... ok
+test_a_verb_with_arguments_goes_as_json (test_ipc.Send.test_a_verb_with_arguments_goes_as_json) ... ok
+test_a_wait_with_no_timeout_reads_without_a_deadline (test_ipc.Send.test_a_wait_with_no_timeout_reads_without_a_deadline) ... ok
+test_arguments_that_are_none_are_left_out (test_ipc.Send.test_arguments_that_are_none_are_left_out) ... ok
+test_asking_to_be_waited_for_says_so (test_ipc.Send.test_asking_to_be_waited_for_says_so) ... ok
+test_nothing_running (test_ipc.Send.test_nothing_running) ... ok
+test_silence_during_a_wait_is_a_failure_with_a_way_out (test_ipc.Send.test_silence_during_a_wait_is_a_failure_with_a_way_out) ... ok
+test_silence_from_an_old_instance_means_the_verb_went_through (test_ipc.Send.test_silence_from_an_old_instance_means_the_verb_went_through) ... ok
+test_the_reply_comes_back_as_it_was_sent (test_ipc.Send.test_the_reply_comes_back_as_it_was_sent) ... ok
+test_the_socket_is_always_let_go_of (test_ipc.Send.test_the_socket_is_always_let_go_of) ... ok
+test_meeting (unittest.loader._FailedTest.test_meeting) ... ERROR
+test_a_display_with_no_wayland_beside_it (test_paste.Chooser.test_a_display_with_no_wayland_beside_it) ... ok
+test_a_mac (test_paste.Chooser.test_a_mac) ... ok
+test_a_mac_running_an_x_server_is_still_a_mac (test_paste.Chooser.test_a_mac_running_an_x_server_is_still_a_mac)
+XQuartz sets DISPLAY, and none of X's programs are what pastes here. ... ok
+test_a_wayland_session (test_paste.Chooser.test_a_wayland_session) ... ok
+test_an_x11_display_under_wayland_is_still_wayland (test_paste.Chooser.test_an_x11_display_under_wayland_is_still_wayland)
+XWayland sets DISPLAY too; the session type is the one to believe. ... ok
+test_an_x11_session (test_paste.Chooser.test_an_x11_session) ... ok
+test_nothing_set_at_all (test_paste.Chooser.test_nothing_set_at_all) ... ok
+test_a_failed_snapshot_leaves_no_temporary_directory (test_paste.MacClipboardSnapshot.test_a_failed_snapshot_leaves_no_temporary_directory) ... ok
+test_every_native_type_is_restored_and_the_files_are_removed (test_paste.MacClipboardSnapshot.test_every_native_type_is_restored_and_the_files_are_removed) ... ok
+test_a_clipboard_tool_that_will_not_run (test_paste.MacOS.test_a_clipboard_tool_that_will_not_run) ... ok
+test_a_key_nobody_mapped_is_refused_before_anything_is_posted (test_paste.MacOS.test_a_key_nobody_mapped_is_refused_before_anything_is_posted) ... ok
+test_a_modifier_nobody_mapped (test_paste.MacOS.test_a_modifier_nobody_mapped) ... ok
+test_a_non_zero_exit_is_reported (test_paste.MacOS.test_a_non_zero_exit_is_reported) ... ok
+test_a_reader_that_will_not_run (test_paste.MacOS.test_a_reader_that_will_not_run) ... ok
+test_a_system_that_will_not_open_the_pane_still_says_what_is_wrong (test_paste.MacOS.test_a_system_that_will_not_open_the_pane_still_says_what_is_wrong) ... ok
+test_an_empty_clipboard_is_not_an_error (test_paste.MacOS.test_an_empty_clipboard_is_not_an_error) ... ok
+test_an_event_that_could_not_be_made_takes_its_pair_with_it (test_paste.MacOS.test_an_event_that_could_not_be_made_takes_its_pair_with_it) ... ok
+test_both_events_are_handed_back (test_paste.MacOS.test_both_events_are_handed_back)
+CoreGraphics gives out memory that nothing else will free. ... ok
+test_case_and_spacing_do_not_matter (test_paste.MacOS.test_case_and_spacing_do_not_matter) ... ok
+test_no_clipboard_tool_installed_names_it (test_paste.MacOS.test_no_clipboard_tool_installed_names_it) ... ok
+test_no_reader_installed (test_paste.MacOS.test_no_reader_installed) ... ok
+test_nothing_at_all (test_paste.MacOS.test_nothing_at_all) ... ok
+test_nothing_is_typed_until_macos_says_so (test_paste.MacOS.test_nothing_is_typed_until_macos_says_so) ... ok
+test_readiness_is_the_permission_rather_than_a_program (test_paste.MacOS.test_readiness_is_the_permission_rather_than_a_program) ... ok
+test_restoring_never_raises (test_paste.MacOS.test_restoring_never_raises)
+It runs after the paste went in; failing here must not undo that. ... ok
+test_several_modifiers_are_one_number (test_paste.MacOS.test_several_modifiers_are_one_number) ... ok
+test_the_bytes_go_back_untouched (test_paste.MacOS.test_the_bytes_go_back_untouched) ... ok
+test_the_down_is_posted_before_the_up (test_paste.MacOS.test_the_down_is_posted_before_the_up) ... ok
+test_the_frameworks_not_being_there_is_not_a_crash (test_paste.MacOS.test_the_frameworks_not_being_there_is_not_a_crash)
+Every other system imports this module too, and must survive it. ... ok
+test_the_key_goes_in_by_position_with_the_modifiers_on_it (test_paste.MacOS.test_the_key_goes_in_by_position_with_the_modifiers_on_it) ... ok
+test_the_names_a_mac_keyboard_uses (test_paste.MacOS.test_the_names_a_mac_keyboard_uses) ... ok
+test_the_paste_key_it_offers_is_one_it_can_press (test_paste.MacOS.test_the_paste_key_it_offers_is_one_it_can_press)
+Whatever Settings lists, pressing it must not come back unknown. ... ok
+test_the_permission_pane_is_opened_once_and_not_again (test_paste.MacOS.test_the_permission_pane_is_opened_once_and_not_again)
+It is a window in the user's face, and one paste is every dictation. ... ok
+test_the_pipes_are_closed_so_the_call_can_return (test_paste.MacOS.test_the_pipes_are_closed_so_the_call_can_return)
+The clipboard owner forks; a pipe nobody drains hangs the caller. ... ok
+test_the_text_goes_in_as_utf8 (test_paste.MacOS.test_the_text_goes_in_as_utf8) ... ok
+test_there_is_nothing_to_restore (test_paste.MacOS.test_there_is_nothing_to_restore) ... ok
+test_what_is_on_the_clipboard_comes_back_as_bytes (test_paste.MacOS.test_what_is_on_the_clipboard_comes_back_as_bytes) ... ok
+test_a_clipboard_tool_that_will_not_run (test_paste.Wayland.test_a_clipboard_tool_that_will_not_run) ... ok
+test_a_failed_key_press_names_the_tool_and_what_it_said (test_paste.Wayland.test_a_failed_key_press_names_the_tool_and_what_it_said) ... ok
+test_a_failure_asks_after_the_daemon (test_paste.Wayland.test_a_failure_asks_after_the_daemon)
+ydotool needs ydotoold, and says nothing useful when it is not up. ... ok
+test_a_key_nobody_mapped_is_refused_before_the_tool_runs (test_paste.Wayland.test_a_key_nobody_mapped_is_refused_before_the_tool_runs)
+Whichever desktop it is, the shortcut is held to one table. ... ok
+test_a_non_zero_exit_is_reported (test_paste.Wayland.test_a_non_zero_exit_is_reported) ... ok
+test_a_reader_that_will_not_run (test_paste.Wayland.test_a_reader_that_will_not_run) ... ok
+test_a_tool_that_will_not_run (test_paste.Wayland.test_a_tool_that_will_not_run) ... ok
+test_an_empty_clipboard_is_not_an_error (test_paste.Wayland.test_an_empty_clipboard_is_not_an_error) ... ok
+test_case_and_spacing_do_not_matter (test_paste.Wayland.test_case_and_spacing_do_not_matter) ... ok
+test_no_clipboard_tool_installed_names_it (test_paste.Wayland.test_no_clipboard_tool_installed_names_it) ... ok
+test_no_keyboard_tool_installed (test_paste.Wayland.test_no_keyboard_tool_installed) ... ok
+test_no_reader_installed (test_paste.Wayland.test_no_reader_installed) ... ok
+test_nothing_named_presses_the_one_this_desktop_pastes_with (test_paste.Wayland.test_nothing_named_presses_the_one_this_desktop_pastes_with) ... ok
+test_restoring_never_raises (test_paste.Wayland.test_restoring_never_raises)
+It runs after the paste went in; failing here must not undo that. ... ok
+test_the_bytes_go_back_untouched (test_paste.Wayland.test_the_bytes_go_back_untouched) ... ok
+test_the_paste_key_it_offers_is_one_it_can_press (test_paste.Wayland.test_the_paste_key_it_offers_is_one_it_can_press)
+Whatever Settings lists, pressing it must not come back unknown. ... ok
+test_the_pipes_are_closed_so_the_call_can_return (test_paste.Wayland.test_the_pipes_are_closed_so_the_call_can_return)
+The clipboard owner forks; a pipe nobody drains hangs the caller. ... ok
+test_the_synonyms_land_on_the_same_codes (test_paste.Wayland.test_the_synonyms_land_on_the_same_codes) ... ok
+test_the_text_goes_in_as_utf8 (test_paste.Wayland.test_the_text_goes_in_as_utf8) ... ok
+test_there_is_nothing_to_restore (test_paste.Wayland.test_there_is_nothing_to_restore) ... ok
+test_three_keys (test_paste.Wayland.test_three_keys) ... ok
+test_what_is_on_the_clipboard_comes_back_as_bytes (test_paste.Wayland.test_what_is_on_the_clipboard_comes_back_as_bytes) ... ok
+test_ydotool_presses_down_then_lets_go_in_reverse (test_paste.Wayland.test_ydotool_presses_down_then_lets_go_in_reverse) ... ok
+test_a_clipboard_tool_that_will_not_run (test_paste.X11.test_a_clipboard_tool_that_will_not_run) ... ok
+test_a_failed_key_press_names_the_tool_and_what_it_said (test_paste.X11.test_a_failed_key_press_names_the_tool_and_what_it_said) ... ok
+test_a_key_nobody_mapped_is_refused_before_the_tool_runs (test_paste.X11.test_a_key_nobody_mapped_is_refused_before_the_tool_runs)
+Whichever desktop it is, the shortcut is held to one table. ... ok
+test_a_non_zero_exit_is_reported (test_paste.X11.test_a_non_zero_exit_is_reported) ... ok
+test_a_reader_that_will_not_run (test_paste.X11.test_a_reader_that_will_not_run) ... ok
+test_a_tool_that_will_not_run (test_paste.X11.test_a_tool_that_will_not_run) ... ok
+test_an_empty_clipboard_is_not_an_error (test_paste.X11.test_an_empty_clipboard_is_not_an_error) ... ok
+test_case_and_spacing_do_not_matter (test_paste.X11.test_case_and_spacing_do_not_matter) ... ok
+test_no_clipboard_tool_installed_names_it (test_paste.X11.test_no_clipboard_tool_installed_names_it) ... ok
+test_no_daemon_to_ask_after (test_paste.X11.test_no_daemon_to_ask_after) ... ok
+test_no_keyboard_tool_installed (test_paste.X11.test_no_keyboard_tool_installed) ... ok
+test_no_reader_installed (test_paste.X11.test_no_reader_installed) ... ok
+test_nothing_named_presses_the_one_this_desktop_pastes_with (test_paste.X11.test_nothing_named_presses_the_one_this_desktop_pastes_with) ... ok
+test_restoring_never_raises (test_paste.X11.test_restoring_never_raises)
+It runs after the paste went in; failing here must not undo that. ... ok
+test_the_bytes_go_back_untouched (test_paste.X11.test_the_bytes_go_back_untouched) ... ok
+test_the_keys_x_spells_differently (test_paste.X11.test_the_keys_x_spells_differently)
+xdotool wants keysyms, not the names the code table is keyed by. ... ok
+test_the_paste_key_it_offers_is_one_it_can_press (test_paste.X11.test_the_paste_key_it_offers_is_one_it_can_press)
+Whatever Settings lists, pressing it must not come back unknown. ... ok
+test_the_pipes_are_closed_so_the_call_can_return (test_paste.X11.test_the_pipes_are_closed_so_the_call_can_return)
+The clipboard owner forks; a pipe nobody drains hangs the caller. ... ok
+test_the_text_goes_in_as_utf8 (test_paste.X11.test_the_text_goes_in_as_utf8) ... ok
+test_there_is_nothing_to_restore (test_paste.X11.test_there_is_nothing_to_restore) ... ok
+test_three_keys (test_paste.X11.test_three_keys) ... ok
+test_what_is_on_the_clipboard_comes_back_as_bytes (test_paste.X11.test_what_is_on_the_clipboard_comes_back_as_bytes) ... ok
+test_xdotool_takes_the_combination_as_one_argument (test_paste.X11.test_xdotool_takes_the_combination_as_one_argument) ... ok
+test_ui (unittest.loader._FailedTest.test_ui) ... ERROR
+test_a_flat_recording_has_no_dynamics_and_no_voice (test_vad.Analyse.test_a_flat_recording_has_no_dynamics_and_no_voice) ... ok
+test_a_wider_margin_counts_fewer_chunks_as_voice (test_vad.Analyse.test_a_wider_margin_counts_fewer_chunks_as_voice) ... ok
+test_no_chunks_at_all (test_vad.Analyse.test_no_chunks_at_all) ... ok
+test_speech_rises_above_the_floor (test_vad.Analyse.test_speech_rises_above_the_floor) ... ok
+test_voiced_seconds_follow_the_chunk_length (test_vad.Analyse.test_voiced_seconds_follow_the_chunk_length) ... ok
+test_a_long_clip_is_believed (test_vad.Hallucinations.test_a_long_clip_is_believed) ... ok
+test_a_stock_phrase_from_a_short_clip (test_vad.Hallucinations.test_a_stock_phrase_from_a_short_clip) ... ok
+test_an_empty_transcript_counts_as_invented (test_vad.Hallucinations.test_an_empty_transcript_counts_as_invented) ... ok
+test_matching_ignores_case_punctuation_and_turkish_letters (test_vad.Hallucinations.test_matching_ignores_case_punctuation_and_turkish_letters) ... ok
+test_real_speech_is_kept (test_vad.Hallucinations.test_real_speech_is_kept) ... ok
+test_the_boundary_is_the_max_duration (test_vad.Hallucinations.test_the_boundary_is_the_max_duration) ... ok
+test_the_same_phrase_repeated (test_vad.Hallucinations.test_the_same_phrase_repeated) ... ok
+test_a_level_that_never_moves_is_never_speech_however_loud (test_vad.IsSilent.test_a_level_that_never_moves_is_never_speech_however_loud)
+The floor is the whole recording, so nothing can rise above it. ... ok
+test_a_single_loud_chunk_is_not_long_enough_to_be_a_word (test_vad.IsSilent.test_a_single_loud_chunk_is_not_long_enough_to_be_a_word) ... ok
+test_everything_below_the_absolute_floor (test_vad.IsSilent.test_everything_below_the_absolute_floor) ... ok
+test_flat_dynamics_alone_do_not_reject_a_loud_recording (test_vad.IsSilent.test_flat_dynamics_alone_do_not_reject_a_loud_recording) ... ok
+test_flat_dynamics_do_reject_one_sitting_near_the_floor (test_vad.IsSilent.test_flat_dynamics_do_reject_one_sitting_near_the_floor) ... ok
+test_speech_passes (test_vad.IsSilent.test_speech_passes) ... ok
+test_steady_hiss_near_the_floor (test_vad.IsSilent.test_steady_hiss_near_the_floor) ... ok
+test_the_thresholds_are_honoured (test_vad.IsSilent.test_the_thresholds_are_honoured) ... ok
+test_does_not_run_off_the_end (test_vad.Percentile.test_does_not_run_off_the_end) ... ok
+test_empty (test_vad.Percentile.test_empty) ... ok
+test_picks_by_position (test_vad.Percentile.test_picks_by_position) ... ok
+test_full_scale_is_zero_db (test_vad.ToDb.test_full_scale_is_zero_db) ... ok
+test_half_scale_is_about_minus_six (test_vad.ToDb.test_half_scale_is_about_minus_six) ... ok
+test_silence_does_not_take_the_logarithm_of_zero (test_vad.ToDb.test_silence_does_not_take_the_logarithm_of_zero) ... ok
+test_worker (unittest.loader._FailedTest.test_worker) ... ERROR
+
+======================================================================
+ERROR: test_audio (unittest.loader._FailedTest.test_audio)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_audio
+Traceback (most recent call last):
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\tests\test_audio.py", line 23, in <module>
+    import audio
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\audio.py", line 29, in <module>
+    from PyQt6.QtCore import QObject, pyqtSignal
+ModuleNotFoundError: No module named 'PyQt6'
+
+
+======================================================================
+ERROR: test_cli (unittest.loader._FailedTest.test_cli)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_cli
+Traceback (most recent call last):
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\tests\test_cli.py", line 15, in <module>
+    import cli
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\cli.py", line 23, in <module>
+    from PyQt6.QtCore import QCoreApplication, QTimer
+ModuleNotFoundError: No module named 'PyQt6'
+
+
+======================================================================
+ERROR: test_filetranscribe (unittest.loader._FailedTest.test_filetranscribe)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_filetranscribe
+Traceback (most recent call last):
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\tests\test_filetranscribe.py", line 17, in <module>
+    import filetranscribe as ft
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\filetranscribe.py", line 24, in <module>
+    from PyQt6.QtCore import QObject, pyqtSignal
+ModuleNotFoundError: No module named 'PyQt6'
+
+
+======================================================================
+ERROR: test_hotkey (unittest.loader._FailedTest.test_hotkey)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_hotkey
+Traceback (most recent call last):
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\tests\test_hotkey.py", line 10, in <module>
+    import hotkey
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\hotkey.py", line 26, in <module>
+    from PyQt6.QtCore import QObject, pyqtSignal
+ModuleNotFoundError: No module named 'PyQt6'
+
+
+======================================================================
+ERROR: test_meeting (unittest.loader._FailedTest.test_meeting)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_meeting
+Traceback (most recent call last):
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\tests\test_meeting.py", line 16, in <module>
+    import meeting
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\meeting.py", line 25, in <module>
+    from PyQt6.QtCore import QObject, pyqtSignal
+ModuleNotFoundError: No module named 'PyQt6'
+
+
+======================================================================
+ERROR: test_ui (unittest.loader._FailedTest.test_ui)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_ui
+Traceback (most recent call last):
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\tests\test_ui.py", line 14, in <module>
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+ModuleNotFoundError: No module named 'PyQt6'
+
+
+======================================================================
+ERROR: test_worker (unittest.loader._FailedTest.test_worker)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_worker
+Traceback (most recent call last):
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAMAK\AppData\Local\Programs\Python\Python312\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\tests\test_worker.py", line 18, in <module>
+    import worker
+  File "F:\_Work\_MamakGames\MamakHub\projects\Desktop\dikte\worker.py", line 16, in <module>
+    from PyQt6.QtCore import QObject, pyqtSignal
+ModuleNotFoundError: No module named 'PyQt6'
+
+
+----------------------------------------------------------------------
+Ran 539 tests in 8.811s
+
+FAILED (errors=7, skipped=7)

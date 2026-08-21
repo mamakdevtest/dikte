@@ -49,6 +49,7 @@ TRANSCRIBE_MODELS = {
         "deepgram/nova-3", "google/chirp-3",
     ],
     "llmapi": ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"],
+    "deepgram": ["nova-3", "nova-2", "base", "enhanced"],
 }
 CLEANUP_MODELS = [
     "google/gemini-3.5-flash-lite", "google/gemini-3.1-flash-lite",
@@ -638,6 +639,9 @@ class SettingsWindow(QDialog):
         self.llmapi_key = self._key_row(
             keys_form, "llmapi", t("falls back to LLM_API_KEY"),
             self._test_llmapi)
+        self.deepgram_key = self._key_row(
+            keys_form, "deepgram", t("(falls back to DEEPGRAM_API_KEY)"),
+            self._test_deepgram)
         outer.addWidget(keys)
 
         stt = QGroupBox(t("Speech to text"))
@@ -1737,6 +1741,9 @@ class SettingsWindow(QDialog):
         key, base = self._typed_key(provider)
         service = cfg.TRANSCRIBERS[provider].service
 
+        if provider == "deepgram":
+            self._transcribe_models_loaded.emit(api.deepgram_models(), "")
+            return
         def work():
             try:
                 if provider == "openrouter":
@@ -1832,6 +1839,11 @@ class SettingsWindow(QDialog):
         key = self._key_fields["llmapi"].text().strip() or self.conf.llmapi_key()
         base = self.conf["llmapi_base_url"]
         self._test_key("llmapi", lambda: api.llmapi_key_status(key, base))
+
+    def _test_deepgram(self):
+        key = self._key_fields["deepgram"].text().strip() or self.conf.deepgram_key()
+        base = self.conf["deepgram_base_url"]
+        self._test_key("deepgram", lambda: api.deepgram_key_status(key, base))
 
     def _typed_key(self, provider):
         """(key, base URL) for a provider, preferring what is in the field now."""

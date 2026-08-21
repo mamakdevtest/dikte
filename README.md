@@ -82,11 +82,11 @@ again and leaves your settings and dictations alone unless you pass `--purge`.
 
 Speech to text and cleanup each pick a provider in the settings window, and both
 run here by default, on models of your own. The cloud is the other option:
-speech to text on **OpenAI**, **Groq**, **OpenRouter** or **LLM API**
-(`gpt-4o-transcribe`), cleanup on OpenRouter
+speech to text on **OpenAI**, **Groq**, **OpenRouter**, **LLM API**
+(`gpt-4o-transcribe`) or **Deepgram** (`nova-3`), cleanup on OpenRouter
 (`google/gemini-3.5-flash-lite`) or LLM API or, when either is
 installed, on Claude Code or Codex. The keys fall back to `OPENAI_API_KEY`, `GROQ_API_KEY`,
-`OPENROUTER_API_KEY` and `LLM_API_KEY`, and are stored in
+`OPENROUTER_API_KEY`, `LLM_API_KEY` and `DEEPGRAM_API_KEY`, and are stored in
 `~/.config/dikte/config.json`, mode 600, or in
 `~/Library/Application Support/Dikte` on a Mac. Cleanup can be switched off, in
 which case the raw transcript is pasted, and a thinking model's effort can be
