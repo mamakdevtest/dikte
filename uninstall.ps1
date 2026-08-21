@@ -29,20 +29,41 @@ $autostart = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Start
 $configDir = Join-Path $env:APPDATA "Dikte"
 $dataDir   = Join-Path $env:LOCALAPPDATA "Dikte"
 
+# The source checkout, for talking to a running Dikte. install.ps1 records it
+# as InstallLocation; read it now because step 5 removes the registry key, and
+# do not rely on $DIR, which is the install dir when this runs as the copy
+# Windows' uninstall UI invokes.
+$srcDir = ""
+$unregKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$APP_GUID"
+try { $srcDir = (Get-ItemProperty $unregKey).InstallLocation } catch {}
+
 # 1. The running instance --------------------------------------------------
 # It holds tray icon, hotkeys and a socket; ask it to quit rather than pull the
 # launchers out from under it. Non-fatal if it is not running.
-$python = $null
-foreach ($cand in @("python","python3","py")) {
-    $probe = $cand
-    if ($cand -eq "py") { $probe = "py -3" }
-    try { $null = & $probe -c "pass" 2>$null; if ($LASTEXITCODE -eq 0) { $python = $probe; break } } catch {}
+function Probe-Python([string]$cand, [string[]]$sel) {
+    try {
+        $null = & $cand @sel -c "pass" 2>$null
+        return ($LASTEXITCODE -eq 0)
+    } catch { return $false }
 }
+
+$python = $null
+$pyArgs = @()
+foreach ($cand in @("python","python3")) {
+    if (Probe-Python $cand @()) { $python = $cand; break }
+}
+# The py launcher wants an explicit version selector, which must reach it as a
+# separate argument: "& 'py -3'" looks for one program literally named "py -3".
+if (-not $python -and (Probe-Python "py" @("-3"))) { $python = "py"; $pyArgs = @("-3") }
 
 if ($python) {
     if (Get-Process | Where-Object { $_.ProcessName -match "^python(w)?$" } | Select-Object -First 1) {
-        $null = & $python "$DIR\dikte.py" quit 2>$null
-        Ok "Asked the running instance to quit."
+        if ($srcDir -and (Test-Path (Join-Path $srcDir "dikte.py"))) {
+            $null = & $python @pyArgs (Join-Path $srcDir "dikte.py") quit 2>$null
+            Ok "Asked the running instance to quit."
+        } else {
+            Warn "Install location unknown, so the running instance (if any) was left alone."
+        }
     } else {
         Gone "Dikte is not running."
     }
@@ -59,16 +80,17 @@ if (Test-Path $shimFile) {
     Gone "Command shim was not there: $shimFile"
 }
 
-# Reverse the PATH addition; leave the rest of the user PATH untouched.
+# Reverse the PATH addition; leave the rest of the user PATH untouched,
+# empty segments included.
 $userPath = [Environment]::GetEnvironmentVariable("Path","User")
 if ($userPath) {
-    $parts = @($userPath -split ';' | Where-Object { $_ -and $_ -ne $BIN_DIR })
-    $newPath = $parts -join ';'
-    if ($newPath -eq $userPath) {
-        Gone "$BIN_DIR was not on your PATH."
-    } else {
+    $parts = $userPath -split ';'
+    if ($parts -contains $BIN_DIR) {
+        $newPath = (($parts | Where-Object { $_ -ne $BIN_DIR }) -join ';')
         [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
         Ok "Restored your user PATH (removed $BIN_DIR)."
+    } else {
+        Gone "$BIN_DIR was not on your PATH."
     }
 }
 
@@ -84,9 +106,22 @@ foreach ($lnk in @($startMenu, $autostart)) {
 
 # 4. App directory (only if we emptied it) ---------------------------------
 # Keep it if the user put other things in there, and never follow a junction.
+# The uninstaller's own copy goes first: pwsh keeps the script in memory, so
+# deleting the file we are running usually works; if not, say so and keep it.
+$selfCopy = Join-Path $BIN_DIR "uninstall.ps1"
+$selfGone = $true
+if (Test-Path $selfCopy) {
+    try {
+        Remove-Item -Force $selfCopy
+        Ok "Removed uninstaller copy: $selfCopy"
+    } catch {
+        $selfGone = $false
+        Warn "Could not remove the running uninstaller copy: $selfCopy"
+    }
+}
 if (Test-Path $BIN_DIR) {
-    $left = @(Get-ChildItem -Force $BIN_DIR -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "dikte.cmd" })
-    if ($left.Count -eq 0) {
+    $left = @(Get-ChildItem -Force $BIN_DIR -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "dikte.cmd" -and $_.Name -ne "uninstall.ps1" })
+    if ($left.Count -eq 0 -and $selfGone) {
         Remove-Item -Force -Recurse $BIN_DIR
         Ok "Removed empty install dir: $BIN_DIR"
     } else {
@@ -97,9 +132,8 @@ if (Test-Path $BIN_DIR) {
 }
 
 # 5. Apps & Features registration -------------------------------------------
-$unreg = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$APP_GUID"
-if (Test-Path $unreg) {
-    Remove-Item -Force -Recurse $unreg
+if (Test-Path $unregKey) {
+    Remove-Item -Force -Recurse $unregKey
     Ok "Removed the Settings > Apps entry."
 } else {
     Gone "No Settings > Apps entry to remove."
@@ -117,4 +151,5 @@ if ($Purge) {
     Say "Delete them too with:  powershell -ExecutionPolicy Bypass -File uninstall.ps1 -Purge"
 }
 
-Ok "Done. Source files were left untouched: $DIR"
+$sourceLeft = if ($srcDir) { $srcDir } else { $DIR }
+Ok "Done. Source files were left untouched: $sourceLeft"

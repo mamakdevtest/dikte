@@ -2,8 +2,9 @@
 #
 # What it does:
 #   1. Registers Dikte in Windows Apps & Features (Programs and Features),
-#      with an UninstallString that runs uninstall.ps1, and a Start Menu
-#      shortcut plus a Startup (autostart) shortcut.
+#      with an UninstallString that runs a copy of uninstall.ps1 kept in the
+#      install dir (so uninstall keeps working if this checkout moves), and a
+#      Start Menu shortcut plus a Startup (autostart) shortcut.
 #   2. Adds the project dir to the user's PATH so `python dikte.py --help` works
 #      as `dikte` via a generated dikte.cmd shim in %LOCALAPPDATA%\Programs\Dikte.
 #   3. Registers the global shortcuts via `python dikte.py shortcut install`.
@@ -101,7 +102,7 @@ if (-not $PY) { Warn "Python not found on PATH. Install Python 3.11+ and re-run.
 $GUI_PY = $null
 if ($PY_BIN) {
     $w = Join-Path (Split-Path -Parent $PY_BIN) "pythonw.exe"
-    if (Test-Path $w) { $GUI_PY = "pythonw"; $GUI_VER = @() }
+    if (Test-Path $w) { $GUI_PY = $w; $GUI_VER = @() }
 }
 # Fall back to `pyw -3` (the windowless half of the launcher).
 if (-not $GUI_PY) {
@@ -119,6 +120,12 @@ $shim = Join-Path $BIN_DIR "dikte.cmd"
 $shimContent = "@echo off`r`n$PY $(($PY_VER -join ' ')) `"$DIR\dikte.py`" %*`r`n"
 Set-Content -Path $shim -Value $shimContent -Encoding Ascii
 Ok "Command installed: $shim"
+
+# Keep a copy of the uninstaller next to the install: the Apps & Features
+# entry points at the copy, so uninstall keeps working if this checkout moves
+# or disappears.
+Copy-Item -Path (Join-Path $DIR "uninstall.ps1") -Destination $BIN_DIR -Force
+Ok "Uninstaller copied to: $(Join-Path $BIN_DIR 'uninstall.ps1')"
 
 # Add to user PATH if missing (install/uninstall stay symmetric).
 $userPath = [Environment]::GetEnvironmentVariable("Path","User")
@@ -190,7 +197,7 @@ if ($hasQt) {
 
 # 6. Apps & Features / uninstall registration -----------------------------
 $unreg = Join-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" $APP_GUID
-$uninst = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$DIR\uninstall.ps1`""
+$uninst = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$BIN_DIR\uninstall.ps1`""
 New-Item -Path $unreg -Force | Out-Null
 Set-ItemProperty $unreg "DisplayName"    $DISPLAY_NAME
 Set-ItemProperty $unreg "DisplayVersion" $VERSION
