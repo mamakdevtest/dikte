@@ -74,8 +74,10 @@ def t(text, /, **kwargs):
 # by the sentence, so it arrives already inflected. English takes the name as it
 # is and puts the preposition in the sentence, where it belongs.
 _TR_CASES = {
-    "dative": {"Claude": "Claude'a", "Codex": "Codex'e", "OpenRouter": "OpenRouter'a"},
-    "accusative": {"Claude": "Claude'u", "Codex": "Codex'i", "OpenRouter": "OpenRouter'ı"},
+    "dative": {"Claude": "Claude'a", "Codex": "Codex'e", "OpenRouter": "OpenRouter'a",
+               "Deepgram": "Deepgram'a"},
+    "accusative": {"Claude": "Claude'u", "Codex": "Codex'i", "OpenRouter": "OpenRouter'ı",
+                   "Deepgram": "Deepgram'ı"},
 }
 
 
@@ -223,6 +225,7 @@ TR = {
     "gsk_… (falls back to GROQ_API_KEY)": "gsk_… (boşsa GROQ_API_KEY kullanılır)",
     "sk-or-… (falls back to OPENROUTER_API_KEY)": "sk-or-… (boşsa OPENROUTER_API_KEY kullanılır)",
     "falls back to LLM_API_KEY": "boşsa LLM_API_KEY kullanılır",
+    "(falls back to DEEPGRAM_API_KEY)": "(boşsa DEEPGRAM_API_KEY kullanılır)",
     "Test": "Test et",
     "Trying…": "Deneniyor…",
     "Runs on OpenRouter.": "OpenRouter üzerinde çalışır.",
@@ -231,6 +234,7 @@ TR = {
         "Bağlantı tamam. {count} ses modeli görünüyor.",
     "Key works. {count} models visible.":
         "Anahtar çalışıyor. {count} model görünüyor.",
+    "Key works.": "Anahtar çalışıyor.",
     "Clean the transcript with a model": "Transkripti bir modelle temizle",
     "OpenRouter and LLM API are the quickest and need nothing installed. "
     "llama.cpp runs here, on a model downloaded below. Claude Code and "

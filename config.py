@@ -426,11 +426,14 @@ DEFAULTS = {
     "openrouter_base_url": "https://openrouter.ai/api/v1",
     "llmapi_api_key": "",
     "llmapi_base_url": "https://api.llmapi.ai/v1",
+    "deepgram_api_key": "",
+    "deepgram_base_url": "https://api.deepgram.com/v1",
     "transcribe_provider": "local",  # "local", or a key of TRANSCRIBERS
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
     "groq_transcribe_model": "whisper-large-v3-turbo",
     "openrouter_transcribe_model": "openai/gpt-4o-transcribe",
     "llmapi_transcribe_model": "gpt-4o-transcribe",
+    "deepgram_transcribe_model": "nova-3",
     "language": "tr",
     "transcribe_prompt": "",
 
@@ -560,6 +563,8 @@ TRANSCRIBERS = {
                               "openrouter_base_url", "openrouter_transcribe_model"),
     "llmapi": Transcriber("LLM API", "llmapi_api_key", "llmapi_base_url",
                           "llmapi_transcribe_model"),
+    "deepgram": Transcriber("Deepgram", "deepgram_api_key", "deepgram_base_url",
+                            "deepgram_transcribe_model"),
 }
 
 # Corners used to be stored with Turkish names.
@@ -628,6 +633,9 @@ class Config:
 
     def llmapi_key(self):
         return self.api_key("llmapi_api_key")
+
+    def deepgram_key(self):
+        return self.api_key("deepgram_api_key")
 
     def transcribe_target(self):
         """Key, endpoint and model for whichever provider does speech to text.

@@ -220,21 +220,23 @@ class Dikte:
 
     def _set_icon(self, name):
         icon = QIcon.fromTheme(name)
-        if icon.isNull():
-            # Windows has no freedesktop icon theme; fall back to shipped icons
-            # if present, otherwise to the default microphone icon (may still be
-            # null on Windows, where QIcon(null) is harmless and the tray shows
-            # text only — not worth a hard dependency on an icon package).
-            icon = QIcon.fromTheme("audio-input-microphone")
-            if icon.isNull():
-                for cand in (
-                    os.path.join(os.path.dirname(__file__), "icons", f"{name}.png"),
-                    os.path.join(os.path.dirname(__file__), "icons", "audio-input-microphone.png"),
-                ):
-                    if os.path.isfile(cand):
-                        icon = QIcon(cand)
-                        break
-        self.tray.setIcon(icon)
+        if not icon.isNull():
+            self.tray.setIcon(icon)
+            return
+        # Windows and macOS have no freedesktop icon theme, so fall back to the
+        # shipped set. The .ico is the multi-size source (looks right at any tray
+        # size); the .png is the fallback where Qt cannot read an .ico.
+        for cand in (
+            os.path.join(os.path.dirname(__file__), "icons", "dikte.ico"),
+            os.path.join(os.path.dirname(__file__), "icons", "dikte.png"),
+            os.path.join(os.path.dirname(__file__), "icons", f"{name}.png"),
+        ):
+            if os.path.isfile(cand):
+                icon = QIcon(cand)
+                if not icon.isNull():
+                    self.tray.setIcon(icon)
+                    return
+        self.tray.setIcon(QIcon())
 
     # ---- state ----------------------------------------------------------
 
@@ -1007,6 +1009,14 @@ def install_signal_handlers(app):
 
 def run_app(args):
     command = args[0] if args else ""
+
+    # A crash in a Qt slot would otherwise take the process down with no trace
+    # visible from a systray app. Print the trace and keep it from dying, so the
+    # cause is never just "the app closed".
+    def _excepthook(etype, value, tb):
+        import traceback
+        traceback.print_exception(etype, value, tb)
+    sys.excepthook = _excepthook
 
     app = QApplication(sys.argv)
     app.setApplicationName("Dikte")

@@ -684,16 +684,10 @@ def _dshow_audio_devices():
     except (subprocess.SubprocessError, OSError):
         return []
     devices = []
-    in_audio = False
     for line in result.stderr.splitlines():
-        if "DirectShow audio devices" in line:
-            in_audio = True
-            continue
-        if "DirectShow video devices" in line:
-            in_audio = False
-            continue
-        if not in_audio:
-            continue
+        # The "(audio)"/"(video)" suffix distinguishes capture devices; the
+        # "DirectShow audio/video devices" headings older ffmpeg printed are
+        # gone in 9.0, so we can't gate on them.
         m = re.search(r'"([^"]+)"\s*\(audio\)', line)
         if m:
             name = m.group(1).strip()

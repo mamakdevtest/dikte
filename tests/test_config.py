@@ -135,6 +135,10 @@ class Keys(DikteTest):
         with mock.patch.dict(os.environ, {"GROQ_API_KEY": "gsk-env"}):
             self.assertEqual(cfg.Config().groq_key(), "gsk-env")
 
+    def test_deepgram_falls_back_to_its_variable(self):
+        with mock.patch.dict(os.environ, {"DEEPGRAM_API_KEY": "dg-env"}):
+            self.assertEqual(cfg.Config().deepgram_key(), "dg-env")
+
 
 class TranscribeTarget(DikteTest):
     def test_this_machine_by_default(self):
@@ -174,9 +178,30 @@ class TranscribeTarget(DikteTest):
         self.assertEqual(target.base_url, api.GROQ_URL)
         self.assertEqual(target.model, "whisper-large-v3")
 
+    def test_deepgram_when_it_is_picked(self):
+        conf = self.config(transcribe_provider="deepgram",
+                           deepgram_api_key="dg-test",
+                           deepgram_transcribe_model="nova-2")
+        target = conf.transcribe_target()
+        self.assertEqual(target.provider, "deepgram")
+        self.assertEqual(target.service, "Deepgram")
+        self.assertEqual(target.api_key, "dg-test")
+        self.assertEqual(target.base_url, api.DEEPGRAM_URL)
+        self.assertEqual(target.model, "nova-2")
+
+    def test_deepgram_defaults_to_nova_3(self):
+        target = self.config(transcribe_provider="deepgram",
+                             deepgram_api_key="dg-test").transcribe_target()
+        self.assertEqual(target.model, "nova-3")
+
+    def test_deepgram_key_from_the_environment(self):
+        with mock.patch.dict(os.environ, {"DEEPGRAM_API_KEY": "dg-env"}):
+            target = self.config(transcribe_provider="deepgram").transcribe_target()
+            self.assertEqual(target.api_key, "dg-env")
+
     def test_a_provider_this_version_has_never_heard_of(self):
         """A config written by a fork, or by a version that dropped one."""
-        target = self.config(transcribe_provider="deepgram").transcribe_target()
+        target = self.config(transcribe_provider="deepgramy").transcribe_target()
         self.assertEqual(target.provider, "openai")
 
     def test_a_self_hosted_endpoint(self):
@@ -547,6 +572,10 @@ class ReadyToRun(DikteTest):
 
     def test_a_hosted_provider_is_ready_when_it_has_a_key(self):
         conf = self.config(transcribe_provider="openai", openai_api_key="sk-test")
+        self.assertTrue(conf.transcribe_ready())
+
+    def test_deepgram_is_ready_when_it_has_a_key(self):
+        conf = self.config(transcribe_provider="deepgram", deepgram_api_key="dg-test")
         self.assertTrue(conf.transcribe_ready())
 
     def test_the_settings_reach_the_servers(self):
