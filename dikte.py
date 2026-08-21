@@ -73,6 +73,23 @@ ECHO_MS = 2000
 PEEK_MS = 12000
 
 
+def app_icon():
+    """Application and window icon from shipped assets or system theme."""
+    icon = QIcon.fromTheme("dikte")
+    if not icon.isNull():
+        return icon
+    base = os.path.dirname(__file__)
+    for cand in (
+        os.path.join(base, "icons", "dikte.ico"),
+        os.path.join(base, "icons", "dikte.png"),
+    ):
+        if os.path.isfile(cand):
+            icon = QIcon(cand)
+            if not icon.isNull():
+                return icon
+    return QIcon()
+
+
 class Dikte:
     def __init__(self, app):
         self.app = app
@@ -143,6 +160,7 @@ class Dikte:
         self.meeting_ticker.timeout.connect(self._meeting_tick)
 
         self.tray = QSystemTrayIcon()
+        self.tray.activated.connect(self._tray_clicked)
         self._apply_settings()
         self.tray.show()
 
@@ -203,7 +221,6 @@ class Dikte:
 
         self.tray.setContextMenu(self.menu)
         self.tray.setToolTip(t("Dikte: ready"))
-        self.tray.activated.connect(self._tray_clicked)
         self._set_icon("audio-input-microphone")
 
     def _tray_clicked(self, reason):
@@ -226,10 +243,11 @@ class Dikte:
         # Windows and macOS have no freedesktop icon theme, so fall back to the
         # shipped set. The .ico is the multi-size source (looks right at any tray
         # size); the .png is the fallback where Qt cannot read an .ico.
+        base = os.path.dirname(__file__)
         for cand in (
-            os.path.join(os.path.dirname(__file__), "icons", "dikte.ico"),
-            os.path.join(os.path.dirname(__file__), "icons", "dikte.png"),
-            os.path.join(os.path.dirname(__file__), "icons", f"{name}.png"),
+            os.path.join(base, "icons", "dikte.ico"),
+            os.path.join(base, "icons", "dikte.png"),
+            os.path.join(base, "icons", f"{name}.png"),
         ):
             if os.path.isfile(cand):
                 icon = QIcon(cand)
@@ -876,19 +894,22 @@ class Dikte:
             threading.Thread(target=warm, daemon=True).start()
 
     def _apply_settings(self):
-        self.overlay.corner = self.conf["overlay_corner"]
-        self.ask_overlay.corner = self.conf["overlay_corner"]
-        self._apply_local()
-        self._build_tray()
-        self._refresh_tray()
-        # Where the desktop has no shortcut registry of its own, the listener is
-        # not the fallback the setting offers to turn on: it is the only way the
-        # keys arrive at all, so it runs whatever the setting says.
-        if self.conf["evdev_hotkey"] or not hotkey.installs_shortcuts():
-            self.evdev.start({name: self.conf[spec.setting]
-                              for name, spec in hotkey.SHORTCUTS.items()})
-        else:
-            self.evdev.stop()
+        try:
+            self.overlay.corner = self.conf["overlay_corner"]
+            self.ask_overlay.corner = self.conf["overlay_corner"]
+            self._apply_local()
+            self._build_tray()
+            self._refresh_tray()
+            # Where the desktop has no shortcut registry of its own, the listener is
+            # not the fallback the setting offers to turn on: it is the only way the
+            # keys arrive at all, so it runs whatever the setting says.
+            if self.conf["evdev_hotkey"] or not hotkey.installs_shortcuts():
+                self.evdev.start({name: self.conf[spec.setting]
+                                  for name, spec in hotkey.SHORTCUTS.items()})
+            else:
+                self.evdev.stop()
+        except Exception as exc:
+            print(f"dikte: failed to apply settings: {exc}", file=sys.stderr)
 
     def restart(self):
         """Replace this process with a fresh one, picking up code and settings.
@@ -1018,10 +1039,18 @@ def run_app(args):
         traceback.print_exception(etype, value, tb)
     sys.excepthook = _excepthook
 
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("mamak.dikte")
+        except Exception:
+            pass
+
     app = QApplication(sys.argv)
     app.setApplicationName("Dikte")
     app.setDesktopFileName("dikte")
     app.setQuitOnLastWindowClosed(False)
+    app.setWindowIcon(app_icon())
     # Before Dikte is built, because building it is what may start a server, and
     # a signal arriving in the middle of that would otherwise take the default
     # action and leave the server behind. A signal this early lands in the
@@ -1077,12 +1106,10 @@ def run_app(args):
     server.newConnection.connect(on_connection)
     app.aboutToQuit.connect(dikte.shutdown)
 
-    # No key for the chosen transcription provider means nothing can work yet,
-    # so the settings window is the only useful thing to open.
-    # A transcription provider that cannot run yet, whether that is a missing
-    # API key or a model nobody has downloaded, means nothing can work, so the
-    # settings window is the only useful thing to open.
-    if command == "settings" or not dikte.conf.transcribe_ready():
+    # A normal GUI launch (no explicit action command) or explicit "settings"
+    # command opens the Settings window. If a transcription provider cannot
+    # run yet, Settings is opened regardless.
+    if command in ("", "settings") or not dikte.conf.transcribe_ready():
         dikte.open_settings()
     elif command == "toggle":
         QTimer.singleShot(0, dikte.toggle)

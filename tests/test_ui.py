@@ -11,6 +11,7 @@ import unittest
 from typing import ClassVar
 from unittest import mock
 
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 import cleanup
@@ -318,6 +319,81 @@ class Settings(DikteTest):
         save.assert_called_once()
         self.assertEqual(warnings, [True], "the failure must be shown")
         self.assertEqual(applied, [], "applied must not fire on a failed save")
+    def test_repeated_and_unchanged_save_is_safe(self):
+        conf = cfg.Config()
+        window = self.window(conf)
+        applied_count = []
+        window.applied.connect(lambda: applied_count.append(True))
+        window._save()
+        window._save()
+        self.assertEqual(len(applied_count), 2)
+
+    def test_settings_window_has_icon(self):
+        window = self.window(cfg.Config())
+        self.assertFalse(window.windowIcon().isNull())
+
+    def test_deferred_load_populates_status_and_history(self):
+        window = self.window(cfg.Config())
+        window._deferred_load()
+        self.assertIsNotNone(window.history)
+        self.assertIsNotNone(window.minutes_list)
+
+    def test_history_details_dialog_displays_metadata_and_texts(self):
+        row = {
+            "ts": "2026-08-21 12:00:00",
+            "duration": 4.5,
+            "elapsed": 1.2,
+            "transcribe_provider": "openai",
+            "model": "whisper-1",
+            "cleanup_provider": "google",
+            "cleanup_model": "google/gemini-2.5-flash",
+            "language": "tr",
+            "cleanup_error": "",
+            "raw": "merhaba dunya",
+            "text": "Merhaba dünya.",
+        }
+        dlg = settings_ui.HistoryDetailsDialog(row)
+        self.assertEqual(dlg.final_text_box.toPlainText(), "Merhaba dünya.")
+        self.assertEqual(dlg.raw_text_box.toPlainText(), "merhaba dunya")
+        self.assertIn("whisper-1", dlg.json_box.toPlainText())
+
+    def test_history_details_dialog_ask_mode(self):
+        row = {
+            "ts": "2026-08-21 12:05:00",
+            "duration": 0.0,
+            "mode": "ask",
+            "question": "What is the capital of Turkey?",
+            "assistant_provider": "claude",
+            "assistant_model": "claude-3-5-sonnet",
+            "raw": "What is the capital of Turkey?",
+            "text": "Ankara.",
+        }
+        dlg = settings_ui.HistoryDetailsDialog(row)
+        self.assertEqual(dlg.question_box.toPlainText(), "What is the capital of Turkey?")
+        self.assertEqual(dlg.final_text_box.toPlainText(), "Ankara.")
+
+    def test_history_details_dialog_clipboard_actions(self):
+        row = {
+            "ts": "now",
+            "raw": "raw text",
+            "text": "final text",
+        }
+        dlg = settings_ui.HistoryDetailsDialog(row)
+        dlg._copy_final()
+        self.assertEqual(QGuiApplication.clipboard().text(), "final text")
+        dlg._copy_raw()
+        self.assertEqual(QGuiApplication.clipboard().text(), "raw text")
+        dlg._copy_json()
+        self.assertIn("final text", QGuiApplication.clipboard().text())
+
+    def test_show_history_details_opens_dialog(self):
+        window = self.window(cfg.Config())
+        cfg.append_history({"ts": "now", "text": "test entry", "raw": "test raw"})
+        window._load_history()
+        self.assertGreater(window.history.count(), 0)
+        with mock.patch.object(settings_ui.HistoryDetailsDialog, "exec") as mock_exec:
+            window._show_history_details(window.history.item(0))
+            mock_exec.assert_called_once()
 
     def test_the_window_is_readable_in_turkish_too(self):
         self.write_config({"ui_language": "tr"})

@@ -4,10 +4,10 @@
   "env": {
     "ANTHROPIC_BASE_URL": "https://api.emirhanmamak.com/v1",
     "ANTHROPIC_AUTH_TOKEN": "sk-82a63578b0ac1e9c-d9e388-2be58dae",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "meta-ai/muse-spark-1.2",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "qwencloud-combo",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "llm-api/deepseek-v4-flash-0731",
-    "ANTHROPIC_DEFAULT_FABLE_MODEL": "llm-api/qwen3.8-max",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "llm-api/gemini-3.7-flash",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "llm-api/gemini-3.7-flash",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "llm-api/gemini-3.7-flash",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "llm-api/gemini-3.7-flash",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "permissions": {

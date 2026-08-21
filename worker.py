@@ -153,16 +153,21 @@ class Pipeline(QObject):
                         time.sleep(0.35)
                         paste.copy_bytes(previous)
 
+            is_cleanup = conf["assistant_cleanup"] if ask else conf["cleanup_enabled"]
             cfg.append_history({
                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "duration": round(duration, 1),
                 "elapsed": round(time.monotonic() - started, 1),
+                "transcribe_provider": getattr(target, "provider", conf["transcribe_provider"]),
                 "model": target.model,
-                "cleanup_model": cleanup.model(conf) if conf["cleanup_enabled"] else "",
+                "cleanup_provider": conf["cleanup_provider"] if is_cleanup else "",
+                "cleanup_model": cleanup.model(conf) if is_cleanup else "",
                 "cleanup_error": warning,
                 "mode": "ask" if ask else "",
                 "question": question,
                 "assistant_model": conf["assistant_model"] if ask else "",
+                "assistant_provider": assistant.provider(conf) if ask else "",
+                "language": conf["language"],
                 "raw": raw,
                 "text": text,
             })
