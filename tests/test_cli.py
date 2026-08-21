@@ -464,11 +464,18 @@ class ProvidersRegistry(DikteTest):
         self.assertEqual(cfg.Config()["providers"], [])
 
     def test_a_built_in_is_not_removed_from_the_terminal(self):
-        code, _, err = self.run_cmd(cli.cmd_providers_remove, id="openai")
+        # Deepgram is a standing built-in; the retired gateways are ghosts a
+        # fresh config does not even know, so "unknown provider" is their
+        # answer instead.
+        code, _, err = self.run_cmd(cli.cmd_providers_remove, id="deepgram")
         self.assertEqual(code, 2)
         self.assertIn("only a provider you added", err)
+        code, _, err = self.run_cmd(cli.cmd_providers_remove, id="openai")
+        self.assertEqual(code, 2)
+        self.assertIn("unknown provider", err)
 
     def test_testing_a_provider(self):
+        self.write_config({"openai_api_key": "sk-test"})
         with mock.patch.object(cli.providers, "test_provider",
                                return_value="Key works.") as test:
             code, out, _ = self.run_cmd(cli.cmd_providers_test, id="openai")
@@ -482,6 +489,7 @@ class ProvidersRegistry(DikteTest):
         self.assertIn("no key", err)
 
     def test_the_models_of_a_provider(self):
+        self.write_config({"openai_api_key": "sk-test"})
         with mock.patch.object(cli.providers, "fetch_models",
                                return_value=["a/model", "b/model"]) as fetch:
             code, out, _ = self.run_cmd(cli.cmd_providers_models, id="openai",
@@ -545,12 +553,24 @@ class Doctor(DikteTest):
             cli.cmd_doctor(Options(json=as_json))
         return json.loads(out.getvalue()) if as_json else out.getvalue()
 
+    def test_cleanup_on_the_local_model_is_a_question_about_the_program(self):
+        """The default: no key and no PATH binary, but the model downloaded
+        and the program there."""
+        reply = self.run_doctor()
+        self.assertEqual(reply["cleanup"]["provider"], "local")
+        self.assertEqual(reply["cleanup"]["model"], "")
+        self.assertIn("llama.cpp, cleaning up on no model yet",
+                      self.run_doctor(as_json=False))
+
     def test_cleanup_on_openrouter_is_a_question_about_the_key(self):
-        reply = self.run_doctor(cleanup_model="some/model")
+        reply = self.run_doctor(cleanup_provider="openrouter",
+                                cleanup_model="some/model")
         self.assertEqual(reply["cleanup"]["provider"], "openrouter")
         self.assertEqual(reply["cleanup"]["model"], "some/model")
+        self.assertFalse(reply["cleanup"]["key"])
         self.assertIn("OpenRouter key, cleaning up on some/model",
-                      self.run_doctor(as_json=False, cleanup_model="some/model"))
+                      self.run_doctor(as_json=False, cleanup_provider="openrouter",
+                                      cleanup_model="some/model"))
 
     def test_cleanup_on_a_cli_is_a_question_about_the_program(self):
         reply = self.run_doctor(cleanup_provider="codex",

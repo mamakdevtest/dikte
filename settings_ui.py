@@ -37,12 +37,11 @@ LANGUAGES = [
     ("German", "de"), ("French", "fr"), ("Spanish", "es"), ("Arabic", "ar"),
 ]
 CORNERS = ["bottom-left", "bottom-right", "top-left", "top-right"]
-# The provider box offers what config knows how to reach, this machine first.
-TRANSCRIBE_PROVIDERS = ([("This machine (whisper.cpp)", "local")]
-                        + [(who.service, name)
-                           for name, who in cfg.TRANSCRIBERS.items()])
-# Starting points for the model box; "Fetch model list" replaces them with
-# whatever the provider offers today.
+# The provider boxes offer what the registry holds for the job at hand, this
+# machine first — see the *_choices helpers, which read providers.definitions
+# so a retired gateway a config still references stays on offer and one nobody
+# chose never appears. These are only the starting points for the model boxes;
+# "Fetch model list" replaces them with whatever the provider offers today.
 TRANSCRIBE_MODELS = {
     "openai": ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"],
     "groq": ["whisper-large-v3-turbo", "whisper-large-v3"],
@@ -60,15 +59,6 @@ CLEANUP_MODELS = [
     "google/gemini-2.5-flash-lite", "anthropic/claude-haiku-4.5",
     "openai/gpt-5-mini", "meta-llama/llama-3.3-70b-instruct",
 ]
-# In the order they answer in. A request to OpenRouter is over in a second, a
-# model here takes a little longer and costs nothing, and the two CLIs the agent
-# can run on open a whole session to do the smaller job.
-CLEANUP_PROVIDERS = [
-    ("OpenRouter", "openrouter"), ("LLM API", "llmapi"),
-    ("This machine (llama.cpp)", "local"),
-    ("Claude Code", "claude"), ("Codex", "codex"),
-    ("Antigravity", "antigravity"),
-]
 # Cleaning up a sentence is the lightest thing either of them will ever be
 # asked, so the small model comes first.
 CLEANUP_CLAUDE_MODELS = ["haiku", "sonnet", "opus", "fable"]
@@ -77,10 +67,6 @@ CLEANUP_CLAUDE_MODELS = ["haiku", "sonnet", "opus", "fable"]
 MEETING_MODELS = [
     "google/gemini-3.5-flash", "google/gemini-3.1-pro-preview",
     "anthropic/claude-sonnet-5", "openai/gpt-5.4", "x-ai/grok-4.5",
-]
-ASSISTANT_PROVIDERS = [
-    ("Claude Code", "claude"), ("Codex", "codex"), ("Antigravity", "antigravity"),
-    ("OpenRouter", "openrouter"), ("LLM API", "llmapi"),
 ]
 # Antigravity names its models in slugs that carry the effort, so these are
 # starting points only; "Fetch model list" replaces them with whatever
@@ -148,6 +134,18 @@ MAC_SHORTCUTS = [
 ]
 AUDIO_FILTER = ("*.mp3 *.wav *.m4a *.ogg *.opus *.flac *.aac *.wma "
                 "*.mp4 *.mkv *.webm *.mov *.avi")
+
+# The flat setting each in-row key field edits: the standing Deepgram entry
+# and the retired gateways, whose ghost rows keep their key where it always
+# was. Shaped like the registry's legacy table, so a field exists exactly
+# when its provider has a row.
+KEY_SETTINGS = {
+    "openai": "openai_api_key",
+    "groq": "groq_api_key",
+    "openrouter": "openrouter_api_key",
+    "llmapi": "llmapi_api_key",
+    "deepgram": "deepgram_api_key",
+}
 
 
 class LocalModelBox(QGroupBox):
@@ -803,6 +801,9 @@ class SettingsWindow(QDialog):
     _test_done = pyqtSignal(str, bool, str)
     # Same, for a provider tested from its registry row.
     _provider_test_done = pyqtSignal(str, bool, str)
+    # Whether one minimal run through the cleanup provider and model worked,
+    # and what it answered.
+    _model_test_done = pyqtSignal(bool, str)
 
     def __init__(self, conf, meetings=None, parent=None):
         super().__init__(parent)
@@ -865,6 +866,7 @@ class SettingsWindow(QDialog):
         self._provider_versions_done.connect(self._on_provider_versions_done)
         self._test_done.connect(self._on_test_done)
         self._provider_test_done.connect(self._on_provider_test_done)
+        self._model_test_done.connect(self._on_model_test_done)
         self.transcriber.progress.connect(self._on_file_progress)
         self.transcriber.finished.connect(self._on_file_finished)
         self.transcriber.failed.connect(self._on_file_failed)
@@ -976,8 +978,8 @@ class SettingsWindow(QDialog):
         stt = QGroupBox(t("Speech to text"))
         stt_form = QFormLayout(stt)
         self.transcribe_provider = QComboBox()
-        for label, value in TRANSCRIBE_PROVIDERS:
-            self.transcribe_provider.addItem(t(label), value)
+        for label, value in self._transcribe_choices():
+            self.transcribe_provider.addItem(label, value)
         stt_form.addRow(t("Provider"), self.transcribe_provider)
 
         # A hosted provider takes any model id that is typed at it; the local
@@ -1032,13 +1034,13 @@ class SettingsWindow(QDialog):
         orr_form.addRow("", self.cleanup_enabled)
 
         self.cleanup_provider = QComboBox()
-        for label, value in CLEANUP_PROVIDERS:
-            self.cleanup_provider.addItem(t(label), value)
+        for label, value in self._cleanup_choices():
+            self.cleanup_provider.addItem(label, value)
         self.cleanup_provider.setToolTip(t(
-            "OpenRouter and LLM API are the quickest and need nothing installed. "
-            "llama.cpp runs here, on a model downloaded below. Claude Code and "
-            "Codex clean up on the subscription you already have, without a "
-            "second key, and take a few seconds longer because each one opens a "
+            "llama.cpp runs here, on a model downloaded below; nothing to pay, "
+            "nothing to install beyond it. Claude Code, Codex and Antigravity "
+            "clean up on the subscription you already have, without a second "
+            "key, and take a few seconds longer because each one opens a "
             "session to do it."
         ))
         self.cleanup_provider.currentIndexChanged.connect(self._cleanup_provider_changed)
@@ -1103,6 +1105,18 @@ class SettingsWindow(QDialog):
               "that cannot think ignore this.")
         )
         orr_form.addRow(t("Thinking"), self.cleanup_reasoning)
+
+        # A quiet second check beside the model rows: not the key, the whole
+        # road — one minimal run through the provider and model chosen above,
+        # so what arrives is proven rather than presumed.
+        self.cleanup_test = QPushButton(t("Test"))
+        self.cleanup_test.setToolTip(t(
+            "Sends one test sentence to the cleanup model and shows its reply. "
+            "Proves the key, the address and the model id together."))
+        self.cleanup_test.clicked.connect(self._test_cleanup_model)
+        self.cleanup_test_status = QLabel("")
+        self.cleanup_test_status.setWordWrap(True)
+        orr_form.addRow(self._row(self.cleanup_test), self.cleanup_test_status)
 
         self.models_label = QLabel(t("Runs on OpenRouter."))
         self.models_label.setWordWrap(True)
@@ -1176,7 +1190,12 @@ class SettingsWindow(QDialog):
         return box
 
     def _built_in_rows(self):
-        """A row per built-in, in the registry's order; how many were drawn."""
+        """A row per built-in the registry offers, in its order; how many were
+        drawn.
+
+        A retired gateway joins only while the config still references it, so
+        its key field exists exactly then — a fresh config gets no row for a
+        gateway nobody chose, and no field for a key nobody has."""
         testers = {"openai": self._test_openai, "groq": self._test_groq,
                    "openrouter": self._test_openrouter,
                    "llmapi": self._test_llmapi,
@@ -1216,12 +1235,6 @@ class SettingsWindow(QDialog):
                 self.provider_grid.addWidget(button, row, 3)
                 self._testers[pid] = (button, answer)
             row += 1
-        # Under the names the rest of the window always used.
-        self.openai_key = self._key_fields["openai"]
-        self.groq_key = self._key_fields["groq"]
-        self.openrouter_key = self._key_fields["openrouter"]
-        self.llmapi_key = self._key_fields["llmapi"]
-        self.deepgram_key = self._key_fields["deepgram"]
         return row
 
     def _rebuild_custom_rows(self, defs):
@@ -1274,15 +1287,17 @@ class SettingsWindow(QDialog):
             row += 1
 
     def _refresh_providers(self):
-        """Redraw the registry rows, and offer the user's own gateways in the
-        two provider boxes wherever a compatible one fits."""
+        """Redraw the registry rows, and offer what the registry holds in every
+        provider box, wherever a compatible one fits."""
         defs = providers.definitions(self.conf)
         self._rebuild_custom_rows(defs)
         self._update_local_rows()
         self._update_cli_rows(defs)
         self._fetch_cli_versions(defs)
-        self._fill_providers(self.transcribe_provider, TRANSCRIBE_PROVIDERS)
-        self._fill_providers(self.cleanup_provider, CLEANUP_PROVIDERS)
+        self._fill_providers(self.transcribe_provider, self._transcribe_choices())
+        self._fill_providers(self.cleanup_provider, self._cleanup_choices())
+        self._fill_providers(self.meeting_provider, self._meeting_choices())
+        self._fill_providers(self.assistant_provider, self._assistant_choices())
         self._cleanup_provider_changed()
 
     def _update_local_rows(self):
@@ -1336,17 +1351,58 @@ class SettingsWindow(QDialog):
         self._provider_versions.update(found)
         self._update_cli_rows(providers.definitions(self.conf))
 
-    def _fill_providers(self, combo, base):
-        """A provider box: the built-ins it started with stay put, the user's
-        own gateways follow whatever the registry holds now."""
+    # ---- the provider boxes ------------------------------------------------
+
+    def _transcribe_choices(self):
+        """(label, value) for speech to text: whoever the registry says can
+        hear, this machine first. A fresh config offers the local whisper.cpp
+        and Deepgram; a retired gateway joins when the config references it."""
+        out = []
+        for pid, who in providers.definitions(self.conf).items():
+            if providers.TRANSCRIPTION not in who.capabilities:
+                continue
+            label = t("This machine (whisper.cpp)") if pid == "local" else who.name
+            out.append((label, pid))
+        return out
+
+    def _cleanup_choices(self):
+        """(label, value) for cleanup: everyone cleanup.py can dispatch to.
+
+        The registry's llama entry is `local-llm`, but the setting — and
+        cleanup.provider() — have always said `local` for it, so the row keeps
+        the value the rest of the program resolves."""
+        out = []
+        for pid, who in providers.definitions(self.conf).items():
+            if pid == "local-llm":
+                out.append((t("This machine (llama.cpp)"), "local"))
+            elif pid != "local" and (pid in cleanup.PROVIDERS or who.custom):
+                out.append((who.name, pid))
+        return out
+
+    def _meeting_choices(self):
+        """(label, value) for the minutes: the local model, the hosted gateways
+        the minutes request knows how to reach, and the user's own. The CLIs
+        stay out — a minutes run is one long request, not a session."""
+        out = [(t("This machine (llama.cpp)"), "local")]
+        for pid, who in providers.definitions(self.conf).items():
+            if who.custom or pid in ("openrouter", "llmapi"):
+                out.append((who.name, pid))
+        return out
+
+    def _assistant_choices(self):
+        """(label, value) for the agent: everyone assistant.py dispatches to."""
+        return [(who.name, pid)
+                for pid, who in providers.definitions(self.conf).items()
+                if pid in assistant.PROVIDERS]
+
+    def _fill_providers(self, combo, choices):
+        """A provider box redrawn from the registry: what it holds now, with
+        whoever was chosen kept chosen."""
         current = combo.currentData()
         combo.blockSignals(True)
         combo.clear()
-        for label, value in base:
-            combo.addItem(t(label), value)
-        for pid, who in providers.definitions(self.conf).items():
-            if who.custom:
-                combo.addItem(who.name, pid)
+        for label, value in choices:
+            combo.addItem(label, value)
         combo.setCurrentIndex(max(combo.findData(current), 0))
         combo.blockSignals(False)
 
@@ -1489,15 +1545,15 @@ class SettingsWindow(QDialog):
         layout.addWidget(self.assistant_found)
 
         how = QGroupBox(t("How it runs"))
-        how_form = QFormLayout(how)
+        how_form = self.how_form = QFormLayout(how)
         self._shortcut_row(
             how_form, "ask", t("Shortcut"),
             t("No global shortcut installed. The tray menu asks it too."),
         )
 
         self.assistant_provider = QComboBox()
-        for label, value in ASSISTANT_PROVIDERS:
-            self.assistant_provider.addItem(t(label), value)
+        for label, value in self._assistant_choices():
+            self.assistant_provider.addItem(label, value)
         self.assistant_provider.currentIndexChanged.connect(
             self._assistant_provider_changed
         )
@@ -1758,10 +1814,11 @@ class SettingsWindow(QDialog):
         models = QGroupBox(t("Minutes"))
         models_form = self.meeting_form = QFormLayout(models)
         self.meeting_provider = QComboBox()
-        # Both write the minutes over one /chat/completions request, so the
-        # choice is a matter of which key and which bill, nothing else.
-        self.meeting_provider.addItem("OpenRouter", "openrouter")
-        self.meeting_provider.addItem("LLM API", "llmapi")
+        # The local model and the hosted gateways all write the minutes over
+        # one request, so the choice is a matter of which key and which bill,
+        # nothing else.
+        for label, value in self._meeting_choices():
+            self.meeting_provider.addItem(label, value)
         self.meeting_provider.currentIndexChanged.connect(
             self._meeting_provider_changed)
         models_form.addRow(t("Runs on"), self.meeting_provider)
@@ -2151,10 +2208,13 @@ class SettingsWindow(QDialog):
         self.filter_hallucinations.setChecked(conf["filter_hallucinations"])
         self.keep_audio.setChecked(conf["keep_audio"])
 
+        # A retired gateway only has a row while the config references it, so
+        # only the fields that were drawn are loaded — the rest keep whatever
+        # was stored, the way any setting the window does not show does.
+        for pid, field in self._key_fields.items():
+            field.setText(conf[KEY_SETTINGS[pid]])
         for name, who in cfg.TRANSCRIBERS.items():
-            self._key_fields[name].setText(conf[who.key])
             self._models[name] = conf[who.model]
-        self._key_fields["llmapi"].setText(conf["llmapi_api_key"])
         # The registry list and the custom entries in the two provider boxes.
         self._refresh_providers()
         for pid, who in providers.definitions(conf).items():
@@ -2220,7 +2280,10 @@ class SettingsWindow(QDialog):
         self.meeting_other_name.setText(conf["meeting_other_name"])
         self.meeting_participants.setPlainText(conf["meeting_participants"])
         self._select_data(self.meeting_provider, conf["meeting_provider"])
-        self.meeting_model.setCurrentText(conf["meeting_model"])
+        chosen_minutes = conf["meeting_provider"]
+        self.meeting_model.setCurrentText(
+            providers.custom_model(conf, chosen_minutes, "minutes")
+            if chosen_minutes.startswith("user/") else conf["meeting_model"])
         self.meeting_llmapi_model.setCurrentText(conf["meeting_llmapi_model"])
         self._meeting_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.meeting_reasoning, conf["meeting_reasoning"])
@@ -2279,16 +2342,19 @@ class SettingsWindow(QDialog):
             providers.set_custom_model(conf, provider, "transcription",
                                        self._models[provider])
         for name, who in cfg.TRANSCRIBERS.items():
-            conf[who.key] = self._key_fields[name].text().strip()
             conf[who.model] = self._models[name].strip() or cfg.DEFAULTS[who.model]
-        conf["llmapi_api_key"] = self._key_fields["llmapi"].text().strip()
+        # Only the fields that were drawn: a gateway with no row was never
+        # offered a key here, and its stored one is not the window's to clear.
+        for pid, setting in KEY_SETTINGS.items():
+            if pid in self._key_fields:
+                conf[setting] = self._key_fields[pid].text().strip()
         conf["local_model"] = self.local_whisper.selected()
         conf["local_gpu"] = self.local_gpu.isChecked()
         conf["local_preload"] = self.local_preload.isChecked()
         conf["local_threads"] = self.local_threads.value()
 
         conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
-        cleanup_provider = self.cleanup_provider.currentData() or "openrouter"
+        cleanup_provider = self.cleanup_provider.currentData() or "local"
         conf["cleanup_provider"] = cleanup_provider
         if cleanup_provider.startswith("user/"):
             # The shared row edits the gateway's own model, not OpenRouter's.
@@ -2360,9 +2426,15 @@ class SettingsWindow(QDialog):
         conf["meeting_self_name"] = self.meeting_self_name.text().strip()
         conf["meeting_other_name"] = self.meeting_other_name.text().strip()
         conf["meeting_participants"] = self.meeting_participants.toPlainText().strip()
-        conf["meeting_provider"] = self.meeting_provider.currentData() or "openrouter"
-        conf["meeting_model"] = (self.meeting_model.currentText().strip()
-                                 or cfg.DEFAULTS["meeting_model"])
+        conf["meeting_provider"] = self.meeting_provider.currentData() or "local"
+        if conf["meeting_provider"].startswith("user/"):
+            # The gateway's own entry holds its minutes model apart, the way
+            # the cleanup model and the transcription model are held apart.
+            providers.set_custom_model(conf, conf["meeting_provider"], "minutes",
+                                       self.meeting_model.currentText().strip())
+        else:
+            conf["meeting_model"] = (self.meeting_model.currentText().strip()
+                                     or cfg.DEFAULTS["meeting_model"])
         conf["meeting_llmapi_model"] = (self.meeting_llmapi_model.currentText().strip()
                                         or cfg.DEFAULTS["meeting_llmapi_model"])
         conf["meeting_reasoning"] = self.meeting_reasoning.currentData() or ""
@@ -2445,11 +2517,7 @@ class SettingsWindow(QDialog):
         data = dict(self.conf.data)
         field = self._key_fields.get(pid)
         if field is not None and field.text().strip():
-            setting = {"openai": "openai_api_key", "groq": "groq_api_key",
-                       "openrouter": "openrouter_api_key",
-                       "llmapi": "llmapi_api_key",
-                       "deepgram": "deepgram_api_key"}[pid]
-            data[setting] = field.text().strip()
+            data[KEY_SETTINGS[pid]] = field.text().strip()
         return _ConfView(data)
 
     def _load_transcribe_models(self):
@@ -2484,7 +2552,7 @@ class SettingsWindow(QDialog):
         self.refresh_models.setEnabled(False)
         self.refresh_llmapi_models.setEnabled(False)
         self.models_label.setText(t("Fetching model list…"))
-        provider = self.cleanup_provider.currentData() or "openrouter"
+        provider = self.cleanup_provider.currentData() or "local"
         conf = self._conf_view(provider)
 
         def work():
@@ -2604,7 +2672,7 @@ class SettingsWindow(QDialog):
         if error:
             self.models_label.setText(t("Could not fetch the list: {error}", error=error))
             return
-        provider = self.cleanup_provider.currentData() or "openrouter"
+        provider = self.cleanup_provider.currentData() or "local"
         # The fetched list is one catalog's, so it fills only the rows that
         # read from that catalog; a meeting on another provider keeps its own.
         if provider == "llmapi":
@@ -2678,6 +2746,61 @@ class SettingsWindow(QDialog):
         button, answer = self._testers[provider]
         button.setEnabled(True)
         answer.setText(("✓ " if ok else "✗ ") + message)
+
+    def _cleanup_conf_view(self):
+        """The cleanup settings as they sit on screen right now, key, provider,
+        model and all, for the Test button to run through.
+
+        What is typed in the window is what a test should prove, not what was
+        last saved; a user/* gateway's model lands in a copy of its entry so
+        the real one is not written from a test.
+        """
+        provider = self.cleanup_provider.currentData() or "local"
+        conf = self._conf_view(provider)
+        conf.data["cleanup_provider"] = provider
+        conf.data["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
+        models = {"openrouter": (self.cleanup_model, "cleanup_model"),
+                  "llmapi": (self.cleanup_llmapi_model, "cleanup_llmapi_model"),
+                  "claude": (self.cleanup_claude_model, "cleanup_claude_model"),
+                  "codex": (self.cleanup_codex_model, "cleanup_codex_model"),
+                  "antigravity": (self.cleanup_agy_model, "cleanup_agy_model")}
+        if provider.startswith("user/"):
+            conf.data["providers"] = json.loads(
+                json.dumps(self.conf.data.get("providers") or []))
+            providers.set_custom_model(conf, provider, "text",
+                                       self.cleanup_model.currentText().strip())
+        elif provider == "local":
+            # The model is the download box's choice, not an editable id.
+            conf.data["local_llm_model"] = self.local_llm.selected()
+            conf.data["local_llm_reasoning"] = (
+                self.local_llm_reasoning.currentData() or "")
+        elif provider in models:
+            box, setting = models[provider]
+            text = box.currentText().strip()
+            if provider == "codex" and text == t("Codex's own default"):
+                text = ""
+            conf.data[setting] = text
+        return conf
+
+    def _test_cleanup_model(self):
+        """One minimal run through the cleanup provider and model set above,
+        off the interface thread: a CLI run or a local model can take as long
+        as a network request."""
+        conf = self._cleanup_conf_view()
+        self.cleanup_test.setEnabled(False)
+        self.cleanup_test_status.setText(t("Trying…"))
+
+        def work():
+            try:
+                self._model_test_done.emit(True, cleanup.test_model(conf))
+            except api.ApiError as exc:   # CleanupError is one of these
+                self._model_test_done.emit(False, str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_model_test_done(self, ok, message):
+        self.cleanup_test.setEnabled(True)
+        self.cleanup_test_status.setText(("✓ " if ok else "✗ ") + message)
 
     # ---- audio file ------------------------------------------------------
 
@@ -2823,7 +2946,7 @@ class SettingsWindow(QDialog):
         )
 
     def _cleanup_provider_changed(self):
-        provider = self.cleanup_provider.currentData() or "openrouter"
+        provider = self.cleanup_provider.currentData() or "local"
         custom = providers.provider(self.conf, provider)
         # A gateway of the user's own answers the same request OpenRouter does,
         # so it shares that row and that fetch button.
@@ -2838,8 +2961,11 @@ class SettingsWindow(QDialog):
                                         provider == "codex")
         self.cleanup_form.setRowVisible(self.cleanup_agy_model_row,
                                         provider == "antigravity")
+        # Antigravity's model slugs carry the effort (…-low, …-high), so a
+        # separate thinking choice would be a second word fighting the first.
         self.cleanup_form.setRowVisible(self.cleanup_reasoning,
-                                        provider != "local")
+                                        provider not in ("local",
+                                                         "antigravity"))
         self.cleanup_form.setRowVisible(self.local_llm, provider == "local")
         self.cleanup_form.setRowVisible(self.local_llm_options, provider == "local")
         self.refresh_models.setVisible(provider == "openrouter" or gateway)
@@ -2869,14 +2995,19 @@ class SettingsWindow(QDialog):
         self.agy_box.setVisible(provider == "antigravity")
         self.openrouter_box.setVisible(provider == "openrouter")
         self.llmapi_box.setVisible(provider == "llmapi")
+        # Antigravity's slugs carry the effort in the model name, so the
+        # shared thinking row would only lie; the box above names it instead.
+        self.how_form.setRowVisible(self.assistant_reasoning,
+                                    provider != "antigravity")
         self._refresh_assistant_status()
 
     def _meeting_provider_changed(self):
-        provider = self.meeting_provider.currentData() or "openrouter"
-        # One row per provider, as in the cleanup group above: the two models
-        # are ids from different catalogs.
-        self.meeting_form.setRowVisible(self.meeting_model,
-                                        provider == "openrouter")
+        provider = self.meeting_provider.currentData() or "local"
+        # One row per provider, as in the cleanup group above: a hosted
+        # gateway's id and a local model file are not the same field.
+        self.meeting_form.setRowVisible(
+            self.meeting_model,
+            provider == "openrouter" or provider.startswith("user/"))
         self.meeting_form.setRowVisible(self.meeting_llmapi_model,
                                         provider == "llmapi")
 

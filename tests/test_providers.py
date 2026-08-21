@@ -30,19 +30,23 @@ def gateway(conf, name="Gateway", base_url="https://gw.example/v1", keys=()):
 
 
 class Definitions(DikteTest):
-    def test_every_built_in_is_present_with_its_capabilities(self):
+    def test_a_fresh_config_offers_exactly_the_six(self):
         table = providers.definitions(self.config())
-        for pid in ("local", "local-llm", "openai", "groq", "openrouter",
-                    "llmapi", "deepgram", "claude", "codex", "antigravity"):
-            self.assertIn(pid, table)
+        self.assertEqual(set(table),
+                         {"local", "local-llm", "deepgram", "claude", "codex",
+                          "antigravity"})
+        for who in table.values():
+            self.assertFalse(who.retired)
+
+    def test_each_default_with_its_capabilities(self):
+        table = providers.definitions(self.config())
         self.assertEqual(table["deepgram"].capabilities,
                          (providers.TRANSCRIPTION,))
         self.assertEqual(table["antigravity"].capabilities, (providers.TEXT,))
         self.assertEqual(table["claude"].capabilities, (providers.TEXT,))
+        self.assertEqual(table["codex"].capabilities, (providers.TEXT,))
         self.assertEqual(table["local"].capabilities, (providers.TRANSCRIPTION,))
         self.assertEqual(table["local-llm"].capabilities, (providers.TEXT,))
-        self.assertEqual(table["openai"].capabilities,
-                         (providers.TRANSCRIPTION, providers.TEXT))
 
     def test_transports(self):
         table = providers.definitions(self.config())
@@ -50,7 +54,7 @@ class Definitions(DikteTest):
         self.assertEqual(table["local-llm"].transport, "local")
         self.assertEqual(table["claude"].transport, "cli")
         self.assertEqual(table["antigravity"].transport, "cli")
-        self.assertEqual(table["openai"].transport, "http")
+        self.assertEqual(table["deepgram"].transport, "http")
 
     def test_custom_providers_appear_with_user_ids(self):
         conf = self.config(providers=[gateway(conf=None, name="My gate")])
@@ -61,7 +65,8 @@ class Definitions(DikteTest):
         self.assertEqual(who.base_url, "https://gw.example/v1")
         self.assertTrue(who.custom)
         self.assertTrue(who.editable)
-        self.assertFalse(table["openai"].custom)
+        self.assertFalse(who.retired)
+        self.assertFalse(table["deepgram"].custom)
 
     def test_broken_entries_are_dropped(self):
         conf = self.config(providers=[{"no": "id"}, "junk", gateway(None)])
@@ -69,7 +74,7 @@ class Definitions(DikteTest):
 
     def test_supports_filters_by_capability(self):
         conf = self.config()
-        self.assertTrue(providers.supports(conf, "openai", providers.TEXT))
+        self.assertTrue(providers.supports(conf, "local-llm", providers.TEXT))
         self.assertTrue(providers.supports(conf, "deepgram",
                                            providers.TRANSCRIPTION))
         self.assertFalse(providers.supports(conf, "deepgram", providers.TEXT))
@@ -85,6 +90,77 @@ class Definitions(DikteTest):
         self.assertIn("user/abc123", text)
         everything = providers.http_providers(conf)
         self.assertIn("deepgram", everything)
+
+
+class RetiredGateways(DikteTest):
+    """The hosted gateways this version dropped from the offer: ghosts, in the
+    table only while the config still points at them, and working end to end
+    while they are."""
+
+    def test_a_stored_key_brings_one_back(self):
+        conf = self.config(openai_api_key="sk-old")
+        who = providers.definitions(conf)["openai"]
+        self.assertTrue(who.retired)
+        self.assertEqual(who.transport, "http")
+        self.assertEqual(who.capabilities,
+                         (providers.TRANSCRIPTION, providers.TEXT))
+        self.assertFalse(who.custom)
+
+    def test_a_provider_setting_brings_one_back(self):
+        for setting in ("transcribe_provider", "cleanup_provider",
+                        "meeting_provider", "assistant_provider"):
+            with self.subTest(setting=setting):
+                conf = self.config(**{setting: "groq"})
+                self.assertTrue(
+                    providers.definitions(conf)["groq"].retired)
+
+    def test_the_environment_counts_as_a_key(self):
+        with mock.patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}):
+            self.assertIn("openrouter",
+                          providers.definitions(self.config()))
+
+    def test_one_comes_back_only_for_itself(self):
+        conf = self.config(openrouter_api_key="sk-only-this-one")
+        table = providers.definitions(conf)
+        self.assertIn("openrouter", table)
+        for pid in ("openai", "groq", "llmapi"):
+            self.assertNotIn(pid, table)
+
+    def test_a_cleaned_config_sees_none_of_them(self):
+        conf = self.config(openai_api_key="sk-gone")
+        conf["openai_api_key"] = ""
+        for pid in ("openai", "groq", "openrouter", "llmapi"):
+            with self.subTest(pid=pid):
+                self.assertNotIn(pid, providers.definitions(conf))
+                self.assertIsNone(providers.provider(conf, pid))
+
+    def test_a_ghost_keeps_reading_its_flat_settings(self):
+        conf = self.config(openai_api_key="sk-old",
+                           openai_base_url="https://api.openai.com/v1/")
+        self.assertEqual(providers.credential(conf, "openai"), "sk-old")
+        self.assertEqual(providers.base_url(conf, "openai"),
+                         "https://api.openai.com/v1")
+
+    def test_a_ghost_still_fetches_its_models(self):
+        with fake_urlopen({"data": [{"id": "a/whisper-large"},
+                                    {"id": "openai/gpt-4o"}]}) as calls:
+            ids = providers.fetch_models(
+                self.config(openrouter_api_key="sk-old"), "openrouter")
+        self.assertEqual(ids, ["a/whisper-large", "openai/gpt-4o"])
+        self.assertTrue(calls[0].full_url.startswith(
+            "https://openrouter.ai/api/v1/models"))
+
+    def test_a_ghost_still_answers_the_key_test(self):
+        with fake_urlopen({"data": {"limit": 5, "usage": 1}}):
+            verdict = providers.test_provider(
+                self.config(openrouter_api_key="sk-old"), "openrouter")
+        self.assertIn("Key works", verdict)
+
+    def test_an_unreferenced_one_is_an_unknown_provider(self):
+        with self.assertRaises(api.ApiError):
+            providers.fetch_models(self.config(), "openai")
+        with self.assertRaises(api.ApiError):
+            providers.test_provider(self.config(), "openrouter")
 
 
 class CredentialResolution(DikteTest):
@@ -240,7 +316,8 @@ class FetchModels(DikteTest):
 
     def test_openrouter_transcription_narrows_the_query(self):
         with fake_urlopen({"data": []}) as calls:
-            providers.fetch_models(self.config(), "openrouter",
+            providers.fetch_models(self.config(openrouter_api_key="k"),
+                                   "openrouter",
                                    capability=providers.TRANSCRIPTION)
         self.assertIn("output_modalities", calls[0].full_url)
 
@@ -253,11 +330,14 @@ class FetchModels(DikteTest):
                                                    ["image"],
                                                    "output_modalities":
                                                        ["image"]}}]}):
-            ids = providers.fetch_models(self.config(), "llmapi")
+            ids = providers.fetch_models(self.config(llmapi_api_key="k"),
+                                         "llmapi")
         self.assertEqual(ids, ["m-text"])
 
     def test_openai_dispatch_and_empty_key(self):
-        conf = self.config()
+        # Referenced by a provider setting but keyless: the ghost is there and
+        # the complaint is the empty key, not an unknown provider.
+        conf = self.config(transcribe_provider="openai")
         with self.assertRaises(api.ApiError):
             providers.fetch_models(conf, "openai")
         with mock.patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
@@ -475,8 +555,11 @@ class CodexModels(ThrowawayHome):
 
 class TestProvider(DikteTest):
     def test_openai_with_no_key(self):
+        # Selected but keyless: the ghost is there and the missing key is the
+        # complaint.
         with self.assertRaises(api.ApiError):
-            providers.test_provider(self.config(), "openai")
+            providers.test_provider(
+                self.config(transcribe_provider="openai"), "openai")
 
     def test_openai_with_a_key(self):
         with fake_urlopen({"data": [{"id": "whisper-1"}]}):

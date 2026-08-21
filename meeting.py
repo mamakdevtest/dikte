@@ -28,6 +28,7 @@ import api
 import cleanup
 import config as cfg
 import filetranscribe
+import providers
 import vad
 from filetranscribe import Cancelled, format_timestamp
 from i18n import t
@@ -119,31 +120,8 @@ class MeetingPipeline(QObject):
 
             self._check()
             self._say(t("Writing the minutes…"))
-            # OpenRouter has always written the minutes; LLM API answers the
-            # same request, so the only change is who answers it.
-            if self.conf["meeting_provider"] == "llmapi":
-                minutes_key = self.conf.llmapi_key()
-                minutes_model = self.conf["meeting_llmapi_model"]
-                minutes_url = self.conf["llmapi_base_url"]
-                minutes_provider = "llmapi"
-                minutes_service = "LLM API"
-            else:
-                minutes_key = self.conf.openrouter_key()
-                minutes_model = self.conf["meeting_model"]
-                minutes_url = self.conf["openrouter_base_url"]
-                minutes_provider = "openrouter"
-                minutes_service = "OpenRouter"
-            minutes = api.cleanup(
-                transcript,
-                minutes_key,
-                minutes_model,
-                self.conf.meeting_prompt(),
-                reasoning=self.conf["meeting_reasoning"],
-                base_url=minutes_url,
-                timeout=600,
-                provider=minutes_provider,
-                service=minutes_service,
-            )
+            minutes = self._minutes(transcript)
+            minutes_model = self._minutes_model()
             title = self._write(doc_path, minutes, transcript, entry)
             cfg.update_meeting(base, status="done", error="", title=title,
                                model=minutes_model)
@@ -231,6 +209,60 @@ class MeetingPipeline(QObject):
                             index=index, count=len(blocks)))
             out.append(cleanup.run(block, conf, prompt, timeout=600))
         return "\n".join(out)
+
+    def _minutes(self, transcript):
+        """Whoever the meeting provider is set to, handed the whole transcript.
+
+        The local default takes the same road a local cleanup does — llama.cpp
+        on this machine, no key and no bill — so a meeting configured on
+        nothing still gets its minutes when a model has been downloaded. The
+        hosted gateways all answer the one OpenAI-shaped request; which key,
+        which address and which model is the registry's to say, a user's own
+        gateway included. The CLIs are not offered the job: a minutes run is
+        one long request, not a session.
+        """
+        conf = self.conf
+        provider = conf["meeting_provider"]
+        if provider == "local":
+            return cleanup._local(transcript, conf, conf.meeting_prompt(), 600)
+        if provider == "llmapi":
+            return api.cleanup(
+                transcript, conf.llmapi_key(), conf["meeting_llmapi_model"],
+                conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
+                base_url=conf["llmapi_base_url"], timeout=600,
+                provider="llmapi", service="LLM API",
+            )
+        who = providers.provider(conf, provider)
+        if who is not None and who.transport == "http":
+            model = (providers.custom_model(conf, provider, "minutes")
+                     if who.custom else conf["meeting_model"])
+            return api.cleanup(
+                transcript, providers.credential(conf, provider), model,
+                conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
+                base_url=providers.base_url(conf, provider), timeout=600,
+                provider=provider, service=who.name,
+            )
+        # A name none of the branches knows: the road the minutes have always
+        # taken, which fails loudly on its empty key rather than quietly
+        # re-routing the meeting to somebody else's bill.
+        return api.cleanup(
+            transcript, conf.openrouter_key(), conf["meeting_model"],
+            conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
+            base_url=conf["openrouter_base_url"], timeout=600,
+            provider="openrouter", service="OpenRouter",
+        )
+
+    def _minutes_model(self):
+        """The name the history row records for whoever wrote the minutes."""
+        provider = self.conf["meeting_provider"]
+        if provider == "local":
+            return self.conf["local_llm_model"]
+        if provider == "llmapi":
+            return self.conf["meeting_llmapi_model"]
+        who = providers.provider(self.conf, provider)
+        if who is not None and who.custom:
+            return providers.custom_model(self.conf, provider, "minutes")
+        return self.conf["meeting_model"]
 
     def _write(self, doc_path, minutes, transcript, entry):
         """Write the document, and hand back the title it ended up with."""

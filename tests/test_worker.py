@@ -22,8 +22,11 @@ from tests.support import DikteTest, make_wav, speech
 class Chain(DikteTest):
     def setUp(self):
         super().setUp()
+        # The cleanup default is the local model now; this chain holds the
+        # hosted road, which the mocked api.cleanup answers either way.
         self.conf = self.config(openai_api_key="sk-test",
-                                openrouter_api_key="sk-or-test")
+                                openrouter_api_key="sk-or-test",
+                                cleanup_provider="openrouter")
         self.wav = make_wav(self.path("clip.wav"), speech(2.0))
         # The levels a real recording of that length would have handed over.
         self.rms = [0.0005] * 40 + [0.2] * 20

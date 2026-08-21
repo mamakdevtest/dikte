@@ -12,6 +12,7 @@ import wave
 from unittest import mock
 
 import api
+import cleanup
 import config as cfg
 import meeting
 from tests.support import DikteTest, make_wav, silence, speech, stereo, tone
@@ -220,7 +221,12 @@ class Pipeline(DikteTest):
 
     def setUp(self):
         super().setUp()
-        self.conf = self.config(openrouter_api_key="sk-or-test")
+        # Both defaults are the local model now; these tests hold the old
+        # hosted road for the transcript cleanup and the minutes, and the one
+        # test that covers the local minutes road fakes it below.
+        self.conf = self.config(openrouter_api_key="sk-or-test",
+                                cleanup_provider="openrouter",
+                                meeting_provider="openrouter")
         self.base = "20260801-100000"
         self.doc, self.wav = cfg.meeting_paths(self.base)
         self.wav.parent.mkdir(parents=True, exist_ok=True)
@@ -273,6 +279,27 @@ class Pipeline(DikteTest):
         self.assertEqual(call.call_args.kwargs["provider"], "llmapi")
         self.assertEqual(call.call_args.kwargs["service"], "LLM API")
         self.assertEqual(cfg.read_meetings()[0]["model"], "some/minutes")
+
+    def test_the_local_model_writes_the_minutes_when_chosen(self):
+        """The default: llama.cpp on this machine, the same road a local
+        cleanup takes — no key, no bill, and the meeting prompt not the
+        cleanup one."""
+        self.conf["meeting_provider"] = "local"
+        self.conf["local_llm_model"] = "gemma-3-4b-it-Q4_K_M.gguf"
+        self.conf["meeting_cleanup"] = False
+        with mock.patch.object(api, "transcribe_segments",
+                               return_value=[(0.0, 1.0, "hello")]), \
+                mock.patch.object(cleanup, "_local",
+                                  return_value="# Kickoff\n\nAgreed.") as call:
+            meeting.MeetingPipeline(self.conf)._work(cfg.read_meetings()[0])
+        text, conf, prompt, timeout = call.call_args.args
+        self.assertEqual(prompt, self.conf.meeting_prompt())
+        self.assertEqual(timeout, 600)
+        row = cfg.read_meetings()[0]
+        self.assertEqual(row["status"], "done")
+        self.assertEqual(row["title"], "Kickoff")
+        # The history names the model that actually wrote them.
+        self.assertEqual(row["model"], "gemma-3-4b-it-Q4_K_M.gguf")
 
     def test_the_row_ends_up_done_with_its_title(self):
         self.run_pipeline()

@@ -1,11 +1,13 @@
 """Who rewrites the transcript once it has been heard.
 
-Normally a small model on OpenRouter: one request, a second, a few tenths of a
-cent. A machine with Claude Code or Codex on it is already paying for a model
-though, and the subscription that answers "put that in my calendar on Thursday"
-can just as well take the "eee"s out of a sentence. No second key, no second
-bill. It costs seconds rather than one, because a CLI opens a whole session to
-do it, which is the trade.
+Normally the local model: llama.cpp on this machine, no key and no bill, and a
+dictation left uncleaned when no model is configured — the callers keep the raw
+transcript either way. A machine with Claude Code, Codex or Antigravity on it
+is already paying for a model though, and the subscription that answers "put
+that in my calendar on Thursday" can just as well take the "eee"s out of a
+sentence. A hosted gateway set up in its day still answers too. The CLIs cost
+seconds rather than one, because one opens a whole session to do it, which is
+the trade.
 
 Whoever does it, the job is the same one: no tools, no files, no memory of the
 last dictation. There is nothing here to look up and nothing to carry over, and
@@ -24,7 +26,10 @@ import ggml
 import providers
 from i18n import t
 
-PROVIDERS = ("openrouter", "llmapi", "local", "claude", "codex", "antigravity")
+# The retired hosted gateways stay dispatchable: a config still set to one is
+# a user who set it up, and the run must keep reaching it.
+PROVIDERS = ("local", "claude", "codex", "antigravity",
+             "openrouter", "llmapi")
 
 
 def _subprocess_kwargs():
@@ -46,10 +51,10 @@ class CleanupError(api.ApiError):
 def provider(conf):
     chosen = conf["cleanup_provider"]
     # A user/* gateway is a real choice, not an unknown name: it must not be
-    # quietly traded for OpenRouter's key.
+    # quietly traded for the local model.
     if chosen.startswith("user/"):
         return chosen
-    return chosen if chosen in PROVIDERS else "openrouter"
+    return chosen if chosen in PROVIDERS else "local"
 
 
 def executable(name):
@@ -90,7 +95,35 @@ def run(text, conf, system_prompt, timeout=180, aborter=None):
     `aborter` is only of use to the two that answer over HTTP; a CLI is stopped
     between blocks instead, which is close enough when a block is seconds.
     """
-    name = provider(conf)
+    return _dispatch(provider(conf), text, conf, system_prompt, timeout,
+                     aborter)
+
+
+# What the settings window's model test sends: a sentence nobody would miss
+# and an instruction with one right answer. Neither the user's cleanup prompt
+# nor any key rides with them.
+_TEST_TEXT = "This is a test."
+_TEST_PROMPT = "Reply with exactly: OK"
+
+
+def test_model(conf, timeout=None):
+    """One minimal run through the cleanup provider and model set right now.
+
+    It answers with the model's reply, or raises what run() would raise: the
+    point is to prove the whole road — key, address, model id, CLI — rather
+    than to clean anything. The wait is run()'s, floors included: a live agy
+    run takes minutes whatever the text is.
+    """
+    return _dispatch(provider(conf), _TEST_TEXT, conf, _TEST_PROMPT,
+                     timeout if timeout is not None else 180)
+
+
+def _dispatch(name, text, conf, system_prompt, timeout, aborter=None):
+    """One cleanup request, routed to the provider named.
+
+    Both a dictation and the settings window's model test go through here, so
+    the road a test proves is the road the next real cleanup takes.
+    """
     if name.startswith("user/"):
         # A gateway out of Settings: the same OpenAI-shaped request as the
         # hosted ones, with the key and the address off its registry entry.
@@ -232,19 +265,17 @@ def _read(path):
 
 def _agy(text, conf, system_prompt, timeout):
     # `agy --print` takes no system prompt, so the rules ride in front of the
-    # transcript the way Codex's do. Effort lives in the slug (…-medium,
-    # …-high); --effort is said only when the setting names a rung agy has, and
-    # a model typed in is passed on exactly as typed — agy refuses a slug it
-    # does not know, which is the loud failure wanted here.
+    # transcript the way Codex's do. The model slug carries its own effort
+    # (…-medium, …-high) and no --effort is ever passed: a second word would
+    # fight the one in the model name. A model typed in goes through exactly
+    # as typed — agy refuses a slug it does not know, which is the loud
+    # failure wanted here.
     body = f"{system_prompt}\n\n---\n\n{_wrap(text)}"
     cmd = [
         "agy", "--print", body,
         "--model", model(conf),
         "--output-format", "text",
     ]
-    effort = assistant.AGY_EFFORT.get(conf["cleanup_reasoning"], "")
-    if effort:
-        cmd += ["--effort", effort]
 
     answer = _output(cmd, timeout, "Antigravity")
     if not answer:

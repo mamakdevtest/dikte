@@ -475,6 +475,17 @@ class Defaults(unittest.TestCase):
         self.assertEqual(cfg.DEFAULTS["openai_api_key"], "")
         self.assertEqual(cfg.DEFAULTS["openrouter_api_key"], "")
 
+    def test_the_jobs_default_to_this_machine(self):
+        """Local first: no key is needed to start, and an unconfigured local
+        model degrades to the raw transcript rather than to an error."""
+        self.assertEqual(cfg.DEFAULTS["transcribe_provider"], "local")
+        self.assertEqual(cfg.DEFAULTS["cleanup_provider"], "local")
+        self.assertEqual(cfg.DEFAULTS["meeting_provider"], "local")
+        # The hosted gateways keep their storage and env fallbacks for the
+        # configs that still point at them.
+        self.assertEqual(cfg.DEFAULTS["openrouter_base_url"],
+                         "https://openrouter.ai/api/v1")
+
     def test_every_language_specific_prompt_has_both_languages(self):
         for name in ("CLEANUP_PROMPT", "FILE_CLEANUP_PROMPT", "MEETING_PROMPT",
                      "ASSISTANT_PROMPT"):
@@ -539,7 +550,8 @@ class LocalCleanup(DikteTest):
         self.assertEqual(conf["meeting_model"], cfg.DEFAULTS["meeting_model"])
 
     def test_only_the_cleanup_setting_asks_for_the_local_model(self):
-        self.assertFalse(cfg.Config().uses_local_llm())
+        # Local is the default now, so a fresh config is already asking for it.
+        self.assertTrue(cfg.Config().uses_local_llm())
         self.assertTrue(self.config(cleanup_provider="local").uses_local_llm())
 
 

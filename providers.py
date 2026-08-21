@@ -1,11 +1,18 @@
 """The provider registry: one place that knows every provider Dikte can run on.
 
 A provider is either built in — local whisper.cpp and llama.cpp, Deepgram, the
-OpenAI-compatible services, the Claude Code, Codex and Antigravity CLIs — or
-created by the user in Settings: any number of OpenAI-compatible gateways,
-each holding any number of named API keys. Feature code (transcription,
-cleanup, assistant, meeting minutes) asks this module for a provider's
-credential, base URL and models instead of keeping its own list of names.
+Claude Code, Codex and Antigravity CLIs — or created by the user in Settings:
+any number of OpenAI-compatible gateways, each holding any number of named API
+keys. Feature code (transcription, cleanup, assistant, meeting minutes) asks
+this module for a provider's credential, base URL and models instead of
+keeping its own list of names.
+
+The hosted OpenAI-compatible services this version retired from the standing
+offer are still here as ghosts: a config that references one — a provider
+setting naming it, a stored key, the environment holding one — gets a working
+entry for it, flagged `retired`, and everything downstream (credential, base
+URL, models, the key test) keeps answering through the same tables. A config
+that references none never sees them offered.
 
 Model lists are fetched where the provider supports it — `/models`, `agy
 models`, the user's own Claude and Codex settings — and suggested where it
@@ -33,7 +40,8 @@ TEXT = "text"
 
 Provider = collections.namedtuple(
     "Provider",
-    "id name kind transport base_url capabilities editable custom")
+    "id name kind transport base_url capabilities editable custom retired",
+    defaults=(False,))   # retired: only a ghost ever carries True
 
 # kind              transport   credential
 # openai-compatible http        API key, Authorization: Bearer
@@ -47,14 +55,6 @@ Provider = collections.namedtuple(
 _BUILT_INS = [
     ("local", t("Local whisper"), "local-whisper", "", (TRANSCRIPTION,)),
     ("local-llm", t("Local llama"), "local-llama", "", (TEXT,)),
-    ("openai", "OpenAI", "openai-compatible",
-     "https://api.openai.com/v1", (TRANSCRIPTION, TEXT)),
-    ("groq", "Groq", "openai-compatible",
-     "https://api.groq.com/openai/v1", (TRANSCRIPTION, TEXT)),
-    ("openrouter", "OpenRouter", "openai-compatible",
-     "https://openrouter.ai/api/v1", (TRANSCRIPTION, TEXT)),
-    ("llmapi", "LLM API", "openai-compatible",
-     "https://api.llmapi.ai/v1", (TRANSCRIPTION, TEXT)),
     ("deepgram", "Deepgram", "deepgram",
      "https://api.deepgram.com/v1", (TRANSCRIPTION,)),
     ("claude", "Claude Code", "claude-cli", "", (TEXT,)),
@@ -62,10 +62,32 @@ _BUILT_INS = [
     ("antigravity", "Antigravity", "agy-cli", "", (TEXT,)),
 ]
 
-# The flat settings a built-in HTTP provider's key lives in, and the name the
-# key-test and model-fetch functions answer in. Local and CLI providers need
-# neither. This is the only table that maps a built-in to its legacy storage;
-# everything else goes through here.
+# The hosted gateways a version of this program used to offer. Retired from
+# the standing list, but a config that still references one keeps it working
+# end to end, so an update takes nothing away from whoever set one up.
+# (name, kind, base_url, capabilities)
+_RETIRED = {
+    "openai": ("OpenAI", "openai-compatible",
+               "https://api.openai.com/v1", (TRANSCRIPTION, TEXT)),
+    "groq": ("Groq", "openai-compatible",
+             "https://api.groq.com/openai/v1", (TRANSCRIPTION, TEXT)),
+    "openrouter": ("OpenRouter", "openai-compatible",
+                   "https://openrouter.ai/api/v1", (TRANSCRIPTION, TEXT)),
+    "llmapi": ("LLM API", "openai-compatible",
+               "https://api.llmapi.ai/v1", (TRANSCRIPTION, TEXT)),
+}
+
+# The settings that point a job at a provider. A retired id in any of them is
+# a config that still runs on that gateway and must keep being able to.
+_PROVIDER_SETTINGS = ("transcribe_provider", "cleanup_provider",
+                      "meeting_provider", "assistant_provider")
+
+# The flat settings an HTTP provider's key lives in, and the name the
+# key-test and model-fetch functions answer in. Deepgram is the one built-in
+# left here; the other four are the retired gateways, whose ghost entries keep
+# reading their key and base URL through this same table. Local and CLI
+# providers need neither. This is the only table that maps a standing or
+# retired provider to its legacy storage; everything else goes through here.
 _LEGACY = {
     "openai": ("openai_api_key", "openai_base_url"),
     "groq": ("groq_api_key", "groq_base_url"),
@@ -104,19 +126,42 @@ def custom_providers(conf):
     return [p for p in stored if isinstance(p, dict) and p.get("id")]
 
 
+def _referenced(conf, pid):
+    """Whether the config still points at a retired provider.
+
+    Either a job's provider setting names it, or its key is there to be used —
+    stored or in the environment, the way Config.api_key reads one. Anything
+    else is a name nobody chose, and a retired gateway nobody chose is one the
+    settings window should not be offering.
+    """
+    if any(conf[setting] == pid for setting in _PROVIDER_SETTINGS):
+        return True
+    setting = _LEGACY.get(pid, (None,))[0]
+    return bool(setting and conf.api_key(setting))
+
+
 def definitions(conf):
-    """Every provider: the built-ins plus the user's own, id → Provider."""
+    """Every provider: the built-ins, the referenced ghosts and the user's own.
+
+    A retired gateway joins only when the config references it (see
+    _referenced) and arrives flagged `retired`, so a caller can tell a standing
+    offer from a leftover that is merely still being honoured.
+    """
     table = {}
     for pid, name, kind, base_url, caps in _BUILT_INS:
         table[pid] = Provider(pid, name, kind, "http" if base_url else
                               ("local" if kind.startswith("local") else "cli"),
-                              base_url, caps, False, False)
+                              base_url, caps, False, False, False)
+    for pid, (name, kind, base_url, caps) in _RETIRED.items():
+        if _referenced(conf, pid):
+            table[pid] = Provider(pid, name, kind, "http", base_url, caps,
+                                  False, False, True)
     for entry in custom_providers(conf):
         pid = f"user/{entry['id']}"
         table[pid] = Provider(pid, entry.get("name") or pid,
                               "openai-compatible", "http",
                               entry.get("base_url") or "",
-                              (TRANSCRIPTION, TEXT), True, True)
+                              (TRANSCRIPTION, TEXT), True, True, False)
     return table
 
 

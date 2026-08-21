@@ -521,13 +521,12 @@ class AskAntigravity(DikteTest):
                                              assistant_agy_model=" "))
         self.assertNotIn("--model", cmd)
 
-    def test_the_effort_is_only_said_when_agy_has_the_rung(self):
-        _, cmd, _ = self.run_ask(self.config(
-            assistant_provider="antigravity", assistant_reasoning="medium"))
-        self.assertEqual(cmd[cmd.index("--effort") + 1], "medium")
-
-    def test_a_rung_the_slug_already_carries_is_left_unspoken(self):
-        for setting in ("none", "minimal", "xhigh", "max", ""):
+    def test_no_effort_is_ever_said_the_slug_carries_it(self):
+        # The slug names its own effort (…-low, …-high); an --effort flag
+        # would fight the one in the model name, so none is passed whatever
+        # the shared thinking setting holds.
+        for setting in ("none", "minimal", "low", "medium", "high", "xhigh",
+                        "max", ""):
             with self.subTest(setting=setting):
                 _, cmd, _ = self.run_ask(self.config(
                     assistant_provider="antigravity",
