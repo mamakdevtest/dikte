@@ -606,6 +606,24 @@ class ModelLists(DikteTest):
         with fake_urlopen({"data": [{"id": "gpt-4o"}, {"id": "o3"}]}):
             self.assertEqual(api.openai_models("sk-test"), ["gpt-4o", "o3"])
 
+    def test_the_text_mode_returns_the_whole_catalog_sorted(self):
+        """A cleanup box asks for everything the gateway offers; preferring
+        audio ids there would hand it a list of whispers to write text with."""
+        with fake_urlopen({"data": [{"id": "whisper-1"},
+                                    {"id": "gpt-5.x"},
+                                    {"id": "gemini-3-pro"}]}) as calls:
+            models = api.openai_models("sk-test",
+                                       "https://gw.example/v1", "Gateway",
+                                       audio=False)
+        self.assertEqual(models, ["gemini-3-pro", "gpt-5.x", "whisper-1"])
+        self.assertEqual(calls[0].full_url, "https://gw.example/v1/models")
+
+    def test_the_text_mode_keeps_the_same_error_handling(self):
+        with fake_urlopen(http_error(401)), self.assertRaises(api.ApiError):
+            api.openai_models("sk-test", audio=False)
+        with self.assertRaises(api.ApiError):
+            api.openai_models("", audio=False)
+
     def test_openai_needs_a_key(self):
         with self.assertRaises(api.ApiError):
             api.openai_models("")

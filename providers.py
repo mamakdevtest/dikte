@@ -7,13 +7,17 @@ each holding any number of named API keys. Feature code (transcription,
 cleanup, assistant, meeting minutes) asks this module for a provider's
 credential, base URL and models instead of keeping its own list of names.
 
-Model lists are fetched where the provider supports it (`/models`, `agy
-models`) and suggested where it does not (Claude and Codex aliases). The
-boxes that offer them stay editable, so a list that lags behind the service
-never blocks a model ID the user knows is there.
+Model lists are fetched where the provider supports it — `/models`, `agy
+models`, the user's own Claude and Codex settings — and suggested where it
+does not (the Claude aliases). The boxes that offer them stay editable, so a
+list that lags behind the service never blocks a model ID the user knows is
+there.
 """
 
 import collections
+import json
+import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -79,10 +83,19 @@ _EXECUTABLES = {"claude": "claude", "codex": "codex", "antigravity": "agy"}
 # typed over an alias works the same way it always did.
 CLAUDE_MODELS = ["haiku", "sonnet", "opus", "fable"]
 
-# Codex names its models per account; there is nothing to list locally, so
-# the box starts empty and stays editable — an empty model means "whatever
-# Codex itself is set to".
-CODEX_MODELS = []
+# The four settings.json env keys that re-point a Claude alias at a full model
+# id. Nothing else in that file's env is ever read: it holds tokens too.
+_CLAUDE_ENV_MODELS = (
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL",
+)
+
+# Codex names its models per account; these three are what the current CLI
+# offers out of the box, so the box has something to pick before config.toml
+# is read. An empty model still means "whatever Codex itself is set to".
+CODEX_MODELS = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]
 
 
 def custom_providers(conf):
@@ -151,7 +164,6 @@ def executable_version(pid):
 
 
 def _home():
-    import os
     return os.path.expanduser("~")
 
 
@@ -349,20 +361,131 @@ def fetch_models(conf, pid, capability=TEXT, timeout=20):
         if pid == "llmapi":
             return api.llmapi_models(key, url, transcription=(
                 capability == TRANSCRIPTION))
-        return api.openai_models(key, url, who.name)
+        return api.openai_models(key, url, who.name,
+                                 audio=(capability == TRANSCRIPTION))
     if who.kind == "deepgram":
         return api.deepgram_models()
     if who.kind == "agy-cli":
         return agy_models(timeout=timeout)
     if who.kind == "claude-cli":
-        return list(CLAUDE_MODELS)
+        # settings.json knows the full ids this machine actually runs; the
+        # aliases lead anyway, because they are the short names the CLI itself
+        # resolves — and they are all there is when the file says nothing.
+        discovered = claude_models()
+        return list(CLAUDE_MODELS) + [m for m in discovered
+                                      if m not in CLAUDE_MODELS]
     if who.kind == "codex-cli":
-        return list(CODEX_MODELS)
+        return codex_models()
     if who.kind == "local-whisper":
         return sorted(api.ggml.installed_whisper_models())
     if who.kind == "local-llama":
         return sorted(api.ggml.installed_llm_models())
     raise api.ApiError(t("This provider does not list models."))
+
+
+def _deduped(items):
+    """The list without repeats, order kept — a settings file repeats itself."""
+    seen, out = set(), []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _strings(entry, keyed=False):
+    """The string model names inside a dict (its keys or values) or a list.
+
+    Anything else — numbers, nested objects — is dropped rather than coerced:
+    a model box holds model ids, and only those.
+    """
+    if isinstance(entry, dict):
+        entry = entry.keys() if keyed else entry.values()
+    elif not isinstance(entry, (list, tuple)):
+        return []
+    return [item for item in entry if isinstance(item, str)]
+
+
+def claude_models():
+    """The models the user's own Claude Code settings name, aliases included.
+
+    ~/.claude/settings.json holds no catalog; it holds what this machine
+    runs: the top-level `model` alias, the ANTHROPIC_DEFAULT_*_MODEL values
+    that re-point the aliases at full ids, and whatever modelOverrides and
+    availableModels add. Those fields are the whole reading list — the rest
+    of the file (tokens, base URLs, other env) stays unread, because a model
+    box has no business with it. A missing or unparseable file answers [],
+    never a raise; the caller falls back to the aliases alone.
+
+    The aliases the settings reference lead — or all four when none does, so
+    the short names the CLI resolves are always on offer — followed by the
+    full ids in the order the file gave them.
+    """
+    try:
+        with open(os.path.join(_home(), ".claude", "settings.json"),
+                  encoding="utf-8") as fh:
+            settings = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(settings, dict):
+        return []
+
+    env = settings.get("env")
+    env = env if isinstance(env, dict) else {}
+    model = settings.get("model")
+    found = [model] if isinstance(model, str) else []
+    found += _strings([env.get(key) for key in _CLAUDE_ENV_MODELS])
+    found += _strings(settings.get("modelOverrides"))
+    found += _strings(settings.get("availableModels"), keyed=True)
+    found = [name.strip() for name in found]
+
+    aliases = [alias for alias in CLAUDE_MODELS if alias in found]
+    full_ids = _deduped(name for name in found
+                        if name and name not in CLAUDE_MODELS)
+    if not aliases and not full_ids:
+        return []
+    return (aliases or list(CLAUDE_MODELS)) + full_ids
+
+
+def codex_models():
+    """The model the user's Codex is set to, then the standing suggestions.
+
+    ~/.codex/config.toml names its model in one top-level line; nothing else
+    in the file is read. What Codex runs leads the list, the suggestions
+    follow so the box is never empty — a missing file means the suggestions
+    alone. Never raises.
+    """
+    try:
+        with open(os.path.join(_home(), ".codex", "config.toml"),
+                  encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        text = ""
+    current = _codex_current_model(text)
+    return _deduped([model for model in [current] + CODEX_MODELS if model])
+
+
+def _codex_current_model(text):
+    """The top-level `model = "..."` of a config.toml, or "".
+
+    tomllib is the honest read; the regex catches a file the parser refuses
+    — one that holds more than Codex promises — rather than losing the model
+    line with it. Only that line is ever matched, so nothing else in the
+    file, keys included, can end up in a model box.
+    """
+    try:
+        import tomllib
+        try:
+            data = tomllib.loads(text)
+        except ValueError:          # TOMLDecodeError: not TOML after all
+            data = None
+        if data is not None:
+            model = data.get("model")
+            return model.strip() if isinstance(model, str) else ""
+    except ImportError:             # Python older than the honest read
+        pass
+    match = re.search(r'^\s*model\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1).strip() if match else ""
 
 
 def agy_models(timeout=20):

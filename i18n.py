@@ -272,6 +272,8 @@ TR = {
     "Fetching model list…": "Model listesi çekiliyor…",
     "Could not fetch the list: {error}": "Liste alınamadı: {error}",
     "{count} models loaded.": "{count} model yüklendi.",
+    "No models named in your own settings; the standing list stays.":
+        "Kendi ayarlarında adı geçen model yok; mevcut liste aynen duruyor.",
     "Key works, no spending limit set.": "Anahtar çalışıyor, harcama sınırı yok.",
     "Key works. Used {usage} of {limit}.":
         "Anahtar çalışıyor. {limit} sınırının {usage} kadarı kullanılmış.",
