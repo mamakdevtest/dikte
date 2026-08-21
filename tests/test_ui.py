@@ -60,11 +60,9 @@ CHANGED = {
     "keep_audio": True,
     "openai_api_key": "sk-test-key",
     "groq_api_key": "gsk-test-key",
-    "openrouter_api_key": "sk-or-test-key",
-    "transcribe_provider": "openrouter",
+    "transcribe_provider": "openai",
     "transcribe_model": "whisper-1",
     "groq_transcribe_model": "whisper-large-v3",
-    "openrouter_transcribe_model": "openai/whisper-1",
     "cleanup_enabled": False,
     "cleanup_provider": "local",
     "cleanup_model": "some/other-model",
@@ -90,7 +88,6 @@ CHANGED = {
     "assistant_codex_model": "gpt-5",
     "assistant_codex_sandbox": "read-only",
     "assistant_agy_model": "gemini-3.1-pro-medium",
-    "assistant_openrouter_model": "some/agent-model",
     "assistant_reasoning": "high",
     "assistant_dir": "/tmp",
     "assistant_timeout": 600,
@@ -177,20 +174,19 @@ class Settings(DikteTest):
                 self.assertEqual(stored[key], value)
 
     def test_the_model_box_on_screen_belongs_to_whoever_cleans_up(self):
-        """An OpenRouter id and a Claude alias are not the same field."""
-        # The retired gateways only appear once the config references them,
-        # so a key for each is what puts them in the box to be chosen.
-        self.write_config({"openrouter_api_key": "sk-or-test",
-                           "llmapi_api_key": "sk-test"})
-        window = self.window(cfg.Config())
-        boxes = {"openrouter": window.cleanup_model_row,
-                 "llmapi": window.cleanup_llmapi_model_row,
+        """A gateway's own model id and a Claude alias are not the same field."""
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        window = self.window(conf)
+        boxes = {"gateway": window.cleanup_model_row,
                  "claude": window.cleanup_claude_model_row,
                  "codex": window.cleanup_codex_model_row,
                  "antigravity": window.cleanup_agy_model_row}
+        values = {"gateway": pid, "claude": "claude", "codex": "codex",
+                  "antigravity": "antigravity"}
         for provider, box in boxes.items():
             with self.subTest(provider=provider):
-                window._select_data(window.cleanup_provider, provider)
+                window._select_data(window.cleanup_provider, values[provider])
                 shown = [name for name, other in boxes.items()
                          if not other.isHidden()]
                 self.assertEqual(shown, [provider])
@@ -200,10 +196,11 @@ class Settings(DikteTest):
         window = self.window(cfg.Config())
         offered = [window.assistant_provider.itemData(i)
                    for i in range(window.assistant_provider.count())]
-        self.assertIn("antigravity", offered)
+        self.assertEqual(offered, ["claude", "codex", "antigravity"])
         window._select_data(window.assistant_provider, "antigravity")
         self.assertFalse(window.agy_box.isHidden())
         self.assertTrue(window.claude_box.isHidden())
+        self.assertTrue(window.gateway_box.isHidden())
 
     def test_antigravity_models_fill_both_of_its_boxes(self):
         """One catalog, fetched once, for the cleanup row and the agent's."""
@@ -330,13 +327,19 @@ class Settings(DikteTest):
         pid = f"user/{entry['id']}"
         self.assertEqual(entry["name"], "My gateway")
         self.assertIn(pid, window._testers)
-        offered = [window.cleanup_provider.itemData(i)
-                   for i in range(window.cleanup_provider.count())]
-        self.assertIn(pid, offered)
-        # And it takes the OpenRouter row, whose fetch button it shares.
+        for box in (window.transcribe_provider, window.cleanup_provider,
+                    window.meeting_provider, window.assistant_provider):
+            offered = [box.itemData(i) for i in range(box.count())]
+            self.assertIn(pid, offered)
+        # And it takes the shared model row, whose fetch button it shares.
         window._select_data(window.cleanup_provider, pid)
         self.assertFalse(window.cleanup_model_row.isHidden())
         self.assertTrue(window.refresh_models.isVisibleTo(window))
+        # The agent runs on it too, in a box of the gateway's own.
+        window._select_data(window.assistant_provider, pid)
+        self.assertFalse(window.gateway_box.isHidden())
+        self.assertEqual(window.gateway_box.title(), "My gateway")
+        self.assertTrue(window.claude_box.isHidden())
 
     def test_a_provider_removed_from_its_row_is_gone_from_the_boxes_too(self):
         conf = cfg.Config()
@@ -354,12 +357,12 @@ class Settings(DikteTest):
     def test_the_settings_the_window_does_not_show_are_left_alone(self):
         """A tab nobody wrote must not reset what the command line set."""
         self.write_config({"silence_db": -42.0, "speech_margin_db": 15.0,
-                           "openrouter_base_url": "http://localhost:1234/v1"})
+                           "local_binary": "/opt/whisper-stdio"})
         conf = cfg.Config()
         self.window(conf)._save()
         stored = self.read_config_file()
         self.assertEqual(stored["speech_margin_db"], 15.0)
-        self.assertEqual(stored["openrouter_base_url"], "http://localhost:1234/v1")
+        self.assertEqual(stored["local_binary"], "/opt/whisper-stdio")
 
     def test_every_global_shortcut_has_a_row_of_its_own(self):
         window = self.window(cfg.Config())
@@ -407,8 +410,7 @@ class Settings(DikteTest):
                            "openai_api_key": "sk-test",
                            "groq_api_key": "gsk-test",
                            "transcribe_model": "gpt-4o-transcribe",
-                           "groq_transcribe_model": "whisper-large-v3",
-                           "openrouter_transcribe_model": "openai/whisper-1"})
+                           "groq_transcribe_model": "whisper-large-v3"})
         conf = cfg.Config()
         window = self.window(conf)
         for provider in ("groq", "openai"):
@@ -421,31 +423,48 @@ class Settings(DikteTest):
 
     def test_the_provider_box_offers_every_provider_config_knows(self):
         """The registry decides: the standing built-ins on a fresh config, a
-        retired gateway only while the config still references it."""
+        retired gateway only while the config still references it. The ones
+        retired outright are never offered: a config that still holds one is
+        migrated to a gateway before the window is built."""
         window = self.window(cfg.Config())
         offered = [window.transcribe_provider.itemData(i)
                    for i in range(window.transcribe_provider.count())]
         self.assertEqual(offered, ["local", "deepgram"])
-        self.write_config({"openrouter_api_key": "sk-or-test"})
+        self.write_config({"groq_api_key": "gsk-test"})
         window = self.window(cfg.Config())
         offered = [window.transcribe_provider.itemData(i)
                    for i in range(window.transcribe_provider.count())]
-        self.assertEqual(offered, ["local", "deepgram", "openrouter"])
+        self.assertEqual(offered, ["local", "deepgram", "groq"])
+
+    def test_a_retired_gateway_joins_only_the_boxes_that_dispatch_to_it(self):
+        """OpenAI and Groq still hear speech; none of the other jobs can run
+        on them, so none of the other boxes offers them."""
+        self.write_config({"openai_api_key": "sk-test",
+                           "groq_api_key": "gsk-test"})
+        window = self.window(cfg.Config())
+        offered = [window.transcribe_provider.itemData(i)
+                   for i in range(window.transcribe_provider.count())]
+        self.assertEqual(offered, ["local", "deepgram", "openai", "groq"])
+        for box in (window.cleanup_provider, window.meeting_provider,
+                    window.assistant_provider):
+            offered = [box.itemData(i) for i in range(box.count())]
+            self.assertNotIn("openai", offered)
+            self.assertNotIn("groq", offered)
 
     def test_the_cleanup_box_offers_everyone_cleanup_py_dispatches_to(self):
-        """The local model and the three CLIs on a fresh config; the hosted
-        gateways join only while the config still references them."""
+        """The local model, the three CLIs, and the user's own gateways;
+        nothing else — the retired hosted ones are gone from the registry."""
         window = self.window(cfg.Config())
         offered = [window.cleanup_provider.itemData(i)
                    for i in range(window.cleanup_provider.count())]
         self.assertEqual(offered, ["local", "claude", "codex", "antigravity"])
-        self.write_config({"openrouter_api_key": "sk-or-test",
-                           "llmapi_api_key": "sk-test"})
-        window = self.window(cfg.Config())
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        window = self.window(conf)
         offered = [window.cleanup_provider.itemData(i)
                    for i in range(window.cleanup_provider.count())]
         self.assertEqual(offered, ["local", "claude", "codex", "antigravity",
-                                   "openrouter", "llmapi"])
+                                   pid])
 
     def test_antigravity_hides_the_thinking_row(self):
         """Its model slugs carry the effort in the name, so a separate choice
@@ -467,9 +486,10 @@ class Settings(DikteTest):
     def test_the_cleanup_test_button_runs_the_model_set_right_now(self):
         """One minimal run through the provider and model as they sit on
         screen, with what is typed in rather than what was last saved."""
-        self.write_config({"openrouter_api_key": "sk-or-test"})
-        window = self.window(cfg.Config())
-        window._select_data(window.cleanup_provider, "openrouter")
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        window = self.window(conf)
+        window._select_data(window.cleanup_provider, pid)
         window.cleanup_model.setCurrentText("some/model")
         window.cleanup_test_status.setText("stale line")
         with mock.patch.object(cleanup, "test_model",
@@ -477,58 +497,92 @@ class Settings(DikteTest):
             window.cleanup_test.click()
             self.assertFalse(window.cleanup_test.isEnabled())
             self.assertTrue(settle(lambda: window.cleanup_test.isEnabled()))
-        conf = ask.call_args.args[0]
-        self.assertEqual(conf["cleanup_provider"], "openrouter")
-        self.assertEqual(conf["cleanup_model"], "some/model")
+        seen = ask.call_args.args[0]
+        self.assertEqual(seen["cleanup_provider"], pid)
+        # The typed model lands in a copy of the gateway's entry, so the test
+        # proves what is on screen without writing it into the real one.
+        entry = next(e for e in seen["providers"] if f"user/{e['id']}" == pid)
+        self.assertEqual(entry["models"]["text"], "some/model")
         self.assertEqual(window.cleanup_test_status.text(), "✓ OK")
 
     def test_the_cleanup_test_button_shows_what_went_wrong(self):
-        self.write_config({"openrouter_api_key": "sk-or-test"})
-        window = self.window(cfg.Config())
-        window._select_data(window.cleanup_provider, "openrouter")
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        window = self.window(conf)
+        window._select_data(window.cleanup_provider, pid)
         with mock.patch.object(cleanup, "test_model",
                                side_effect=cleanup.CleanupError("bad key")):
             window.cleanup_test.click()
             self.assertTrue(settle(lambda: window.cleanup_test.isEnabled()))
         self.assertEqual(window.cleanup_test_status.text(), "✗ bad key")
 
-    def test_llmapi_settings_round_trip_through_the_window(self):
-        self.write_config({"cleanup_provider": "llmapi",
-                           "cleanup_llmapi_model": "some-cleaner",
-                           "assistant_provider": "llmapi",
-                           "assistant_llmapi_model": "some-asker",
-                           "meeting_provider": "llmapi",
-                           "meeting_llmapi_model": "some-minuteman",
-                           "llmapi_api_key": "sk-mine"})
+    def test_a_legacy_openrouter_config_becomes_a_gateway_the_window_edits(self):
+        """The retired gateways are gone, but a config holding one is migrated
+        on load: the gateway is on offer everywhere, its row is there, the
+        shared model rows show the models it carried over, and saving keeps
+        every job pointing at it rather than at the old flat settings."""
+        self.write_config({"openrouter_api_key": "sk-or-old",
+                           "openrouter_transcribe_model": "openai/whisper-1",
+                           "transcribe_provider": "openrouter",
+                           "cleanup_provider": "openrouter",
+                           "cleanup_model": "openai/gpt-4o-mini",
+                           "meeting_provider": "openrouter",
+                           "meeting_model": "anthropic/claude-haiku",
+                           "assistant_provider": "openrouter",
+                           "assistant_openrouter_model": "google/gemini-flash"})
         conf = cfg.Config()
-        self.window(conf)._save()
-        self.assertEqual(conf["cleanup_provider"], "llmapi")
-        self.assertEqual(conf["cleanup_llmapi_model"], "some-cleaner")
-        self.assertEqual(conf["assistant_provider"], "llmapi")
-        self.assertEqual(conf["assistant_llmapi_model"], "some-asker")
-        self.assertEqual(conf["meeting_provider"], "llmapi")
-        self.assertEqual(conf["meeting_llmapi_model"], "some-minuteman")
-        self.assertEqual(conf["llmapi_api_key"], "sk-mine")
+        (entry,) = conf["providers"]
+        pid = f"user/{entry['id']}"
+        self.assertEqual(entry["name"], "OpenRouter")
+        window = self.window(conf)
+        self.assertIn(pid, window._testers)
+        self.assertEqual(window.cleanup_provider.currentData(), pid)
+        self.assertEqual(window.cleanup_model.currentText(), "openai/gpt-4o-mini")
+        self.assertEqual(window.transcribe_provider.currentData(), pid)
+        self.assertEqual(window.transcribe_model.currentText(), "openai/whisper-1")
+        self.assertEqual(window.meeting_provider.currentData(), pid)
+        self.assertEqual(window.meeting_model.currentText(), "anthropic/claude-haiku")
+        self.assertEqual(window.assistant_provider.currentData(), pid)
+        self.assertEqual(window.gateway_box.title(), "OpenRouter")
+        self.assertEqual(window.assistant_gateway_model.currentText(),
+                         "google/gemini-flash")
+        window._save()
+        stored = self.read_config_file()
+        for setting in ("transcribe_provider", "cleanup_provider",
+                        "meeting_provider", "assistant_provider"):
+            with self.subTest(setting=setting):
+                self.assertEqual(stored[setting], pid)
+        self.assertNotIn("openrouter_api_key", stored)
+
+    def test_a_gateway_running_the_agent_round_trips_through_the_window(self):
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        providers.set_custom_model(conf, pid, "assistant", "some/asker")
+        conf["assistant_provider"] = pid
+        window = self.window(conf)
+        self.assertEqual(window.assistant_gateway_model.currentText(),
+                         "some/asker")
+        window.assistant_gateway_model.setCurrentText("other/asker")
+        window._save()
+        self.assertEqual(conf["assistant_provider"], pid)
+        self.assertEqual(providers.custom_model(conf, pid, "assistant"),
+                         "other/asker")
 
     def test_the_minutes_model_box_on_screen_belongs_to_whoever_writes_them(self):
-        self.write_config({"openrouter_api_key": "sk-or-test",
-                           "llmapi_api_key": "sk-test"})
-        window = self.window(cfg.Config())
-        boxes = {"openrouter": window.meeting_model,
-                 "llmapi": window.meeting_llmapi_model}
-        for provider, box in boxes.items():
-            with self.subTest(provider=provider):
-                window._select_data(window.meeting_provider, provider)
-                shown = [name for name, other in boxes.items()
-                         if not other.isHidden()]
-                self.assertEqual(shown, [provider])
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        window = self.window(conf)
+        window._select_data(window.meeting_provider, pid)
+        self.assertFalse(window.meeting_model.isHidden())
+        window._select_data(window.meeting_provider, "local")
+        self.assertTrue(window.meeting_model.isHidden())
 
-    def test_the_answer_to_a_test_lands_under_the_key_it_was_asked_about(self):
+    def test_the_answer_to_a_test_lands_in_the_row_that_asked_for_it(self):
         """One signal serves all the buttons, so it carries which one asked."""
         self.write_config({"groq_api_key": "gsk-test",
                            "openai_api_key": "sk-test"})
         window = self.window(cfg.Config())
-        window._on_test_done("groq", True, "it works")
+        window._on_provider_test_done("groq", True, "it works")
         button, answer = window._testers["groq"]
         self.assertEqual(answer.text(), "✓ it works")
         self.assertTrue(button.isEnabled())
@@ -919,9 +973,12 @@ class LocalModels(DikteTest):
         self.assertTrue(window.stt_form.isRowVisible(window.local_whisper))
 
     def test_only_the_chosen_cleaner_is_on_screen(self):
-        # The local model is the default; a hosted gateway named in the
-        # setting stays referenced, so its row stays on offer.
-        window = self.window(self.config(cleanup_provider="openrouter"))
+        # The local model is the default; a gateway of the user's own keeps
+        # the shared hosted row, which is not the same field as a model file.
+        conf = self.config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        conf["cleanup_provider"] = pid
+        window = self.window(conf)
         self.assertTrue(window.cleanup_form.isRowVisible(window.cleanup_model_row))
         self.assertFalse(window.cleanup_form.isRowVisible(window.local_llm))
         window._select_data(window.cleanup_provider, "local")

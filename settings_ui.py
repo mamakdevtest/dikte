@@ -45,13 +45,6 @@ CORNERS = ["bottom-left", "bottom-right", "top-left", "top-right"]
 TRANSCRIBE_MODELS = {
     "openai": ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"],
     "groq": ["whisper-large-v3-turbo", "whisper-large-v3"],
-    "openrouter": [
-        "openai/gpt-4o-transcribe", "openai/gpt-4o-mini-transcribe",
-        "openai/whisper-1", "openai/whisper-large-v3",
-        "openai/whisper-large-v3-turbo", "mistralai/voxtral-mini-transcribe",
-        "deepgram/nova-3", "google/chirp-3",
-    ],
-    "llmapi": ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"],
     "deepgram": ["nova-3", "nova-2", "base", "enhanced"],
 }
 CLEANUP_MODELS = [
@@ -81,11 +74,6 @@ AGY_ASSISTANT_MODELS = [
 # id does; a full id can be typed in when a particular one is wanted.
 ASSISTANT_MODELS = ["sonnet", "opus", "haiku", "fable"]
 CODEX_MODELS = ["gpt-5.4-codex", "gpt-5.4", "o4-mini"]
-# Starting points only; the box is editable and OpenRouter has hundreds.
-ASSISTANT_OR_MODELS = [
-    "google/gemini-3.5-flash", "anthropic/claude-sonnet-5", "openai/gpt-5.4",
-    "x-ai/grok-4.5", "google/gemini-3.1-pro-preview",
-]
 # What Claude Code may do without being able to ask. It cannot ask: there is no
 # window to answer in, so a mode that would have prompted denies instead.
 PERMISSION_MODES = [
@@ -142,8 +130,6 @@ AUDIO_FILTER = ("*.mp3 *.wav *.m4a *.ogg *.opus *.flac *.aac *.wma "
 KEY_SETTINGS = {
     "openai": "openai_api_key",
     "groq": "groq_api_key",
-    "openrouter": "openrouter_api_key",
-    "llmapi": "llmapi_api_key",
     "deepgram": "deepgram_api_key",
 }
 
@@ -797,9 +783,8 @@ class SettingsWindow(QDialog):
     _codex_models_loaded = pyqtSignal(list, str)
     # What a refresh found out about the CLI providers: pid → version line.
     _provider_versions_done = pyqtSignal(dict)
-    # Which key was tested, whether it worked, and what to write under it.
-    _test_done = pyqtSignal(str, bool, str)
-    # Same, for a provider tested from its registry row.
+    # Which provider was tested, whether it worked, and what to write in its
+    # row — the key rows and the rest alike.
     _provider_test_done = pyqtSignal(str, bool, str)
     # Whether one minimal run through the cleanup provider and model worked,
     # and what it answered.
@@ -864,7 +849,6 @@ class SettingsWindow(QDialog):
         self._claude_models_loaded.connect(self._on_claude_models_loaded)
         self._codex_models_loaded.connect(self._on_codex_models_loaded)
         self._provider_versions_done.connect(self._on_provider_versions_done)
-        self._test_done.connect(self._on_test_done)
         self._provider_test_done.connect(self._on_provider_test_done)
         self._model_test_done.connect(self._on_model_test_done)
         self.transcriber.progress.connect(self._on_file_progress)
@@ -1055,17 +1039,8 @@ class SettingsWindow(QDialog):
         orr_form.addRow(t("Model"), self.cleanup_model_row)
 
         # One row per provider rather than one box that means a different thing
-        # in each: an OpenRouter id and a Claude alias do not belong in the same
-        # field, and only the row of whoever is chosen is on screen.
-        self.cleanup_llmapi_model = QComboBox()
-        self.cleanup_llmapi_model.setEditable(True)
-        self.cleanup_llmapi_model.addItems(api.LLMAPI_RECOMMENDED)
-        self.refresh_llmapi_models = QPushButton(t("Fetch model list"))
-        self.refresh_llmapi_models.clicked.connect(self._load_models)
-        self.cleanup_llmapi_model_row = self._row(
-            self.cleanup_llmapi_model, self.refresh_llmapi_models)
-        orr_form.addRow(t("Model"), self.cleanup_llmapi_model_row)
-
+        # in each: a gateway's own model id and a Claude alias do not belong in
+        # the same field, and only the row of whoever is chosen is on screen.
         self.cleanup_claude_model = QComboBox()
         self.cleanup_claude_model.setEditable(True)
         self.cleanup_claude_model.addItems(CLEANUP_CLAUDE_MODELS)
@@ -1118,7 +1093,7 @@ class SettingsWindow(QDialog):
         self.cleanup_test_status.setWordWrap(True)
         orr_form.addRow(self._row(self.cleanup_test), self.cleanup_test_status)
 
-        self.models_label = QLabel(t("Runs on OpenRouter."))
+        self.models_label = QLabel("")
         self.models_label.setWordWrap(True)
         orr_form.addRow(self.models_label)
 
@@ -1159,8 +1134,6 @@ class SettingsWindow(QDialog):
     KEY_PLACEHOLDERS = {
         "openai": "sk-… (falls back to OPENAI_API_KEY)",
         "groq": "gsk_… (falls back to GROQ_API_KEY)",
-        "openrouter": "sk-or-… (falls back to OPENROUTER_API_KEY)",
-        "llmapi": "falls back to LLM_API_KEY",
         "deepgram": "(falls back to DEEPGRAM_API_KEY)",
     }
 
@@ -1196,28 +1169,27 @@ class SettingsWindow(QDialog):
         A retired gateway joins only while the config still references it, so
         its key field exists exactly then — a fresh config gets no row for a
         gateway nobody chose, and no field for a key nobody has."""
-        testers = {"openai": self._test_openai, "groq": self._test_groq,
-                   "openrouter": self._test_openrouter,
-                   "llmapi": self._test_llmapi,
-                   "deepgram": self._test_deepgram}
         row = 0
         for pid, who in providers.definitions(self.conf).items():
             if who.custom:
                 continue
             name = QLabel(who.name)
             self.provider_grid.addWidget(name, row, 0)
+            # Every row's Test asks the registry's own verdict, so a ghost
+            # gateway's key is probed the same way a standing one's is.
+            button = QPushButton(t("Test"))
+            button.clicked.connect(
+                lambda *_, pid=pid: self._test_provider(pid))
+            answer = QLabel("")
+            answer.setWordWrap(True)
             if pid in self.KEY_PLACEHOLDERS:
                 # The field, the button and the answer line are the ones
-                # save, load and the test handler have always gone through;
-                # this row only moves them out of the box they used to sit in.
+                # save and load have always gone through; this row only
+                # moves them out of the box they used to sit in.
                 name.setToolTip(providers.base_url(self.conf, pid))
                 field = QLineEdit()
                 field.setEchoMode(QLineEdit.EchoMode.Password)
                 field.setPlaceholderText(t(self.KEY_PLACEHOLDERS[pid]))
-                button = QPushButton(t("Test"))
-                button.clicked.connect(testers[pid])
-                answer = QLabel("")
-                answer.setWordWrap(True)
                 self.provider_grid.addWidget(field, row, 1)
                 self.provider_grid.addWidget(answer, row, 2)
                 self.provider_grid.addWidget(button, row, 3)
@@ -1226,11 +1198,6 @@ class SettingsWindow(QDialog):
             else:
                 # A local or CLI provider holds no key; its row's middle is
                 # the line that says what it is running, or not running.
-                answer = QLabel("")
-                answer.setWordWrap(True)
-                button = QPushButton(t("Test"))
-                button.clicked.connect(
-                    lambda *_, pid=pid: self._test_provider(pid))
                 self.provider_grid.addWidget(answer, row, 1, 1, 2)
                 self.provider_grid.addWidget(button, row, 3)
                 self._testers[pid] = (button, answer)
@@ -1380,20 +1347,23 @@ class SettingsWindow(QDialog):
         return out
 
     def _meeting_choices(self):
-        """(label, value) for the minutes: the local model, the hosted gateways
-        the minutes request knows how to reach, and the user's own. The CLIs
-        stay out — a minutes run is one long request, not a session."""
+        """(label, value) for the minutes: the local model, the user's own
+        gateways, nothing else. The retired hosted ones are gone from the
+        registry — a config that still named one was migrated to a gateway —
+        and the CLIs stay out: a minutes run is one long request, not a
+        session."""
         out = [(t("This machine (llama.cpp)"), "local")]
         for pid, who in providers.definitions(self.conf).items():
-            if who.custom or pid in ("openrouter", "llmapi"):
+            if who.custom:
                 out.append((who.name, pid))
         return out
 
     def _assistant_choices(self):
-        """(label, value) for the agent: everyone assistant.py dispatches to."""
+        """(label, value) for the agent: everyone assistant.py dispatches to,
+        the user's own gateways included."""
         return [(who.name, pid)
                 for pid, who in providers.definitions(self.conf).items()
-                if pid in assistant.PROVIDERS]
+                if pid in assistant.PROVIDERS or who.custom]
 
     def _fill_providers(self, combo, choices):
         """A provider box redrawn from the registry: what it holds now, with
@@ -1653,40 +1623,23 @@ class SettingsWindow(QDialog):
         agy_form.addRow(agy_note)
         layout.addWidget(self.agy_box)
 
-        self.openrouter_box = QGroupBox("OpenRouter")
-        or_form = QFormLayout(self.openrouter_box)
-        self.assistant_openrouter_model = QComboBox()
-        self.assistant_openrouter_model.setEditable(True)
-        self.assistant_openrouter_model.addItems(ASSISTANT_OR_MODELS)
-        or_form.addRow(t("Model"), self.assistant_openrouter_model)
-        or_note = QLabel(t(
-            "A plain question and a plain answer, over the OpenRouter key you "
-            "already have. It runs no commands, opens no files and reaches none "
-            "of your services, so it can tell you what the capital of Peru is "
-            "but not what is in your calendar. Working directory and permissions "
-            "above mean nothing here."
+        # A gateway of the user's own answers over the same plain chat the
+        # hosted ones used to; the box's title becomes the gateway's name.
+        self.gateway_box = QGroupBox("")
+        gateway_form = QFormLayout(self.gateway_box)
+        self.assistant_gateway_model = QComboBox()
+        self.assistant_gateway_model.setEditable(True)
+        gateway_form.addRow(t("Model"), self.assistant_gateway_model)
+        gateway_note = QLabel(t(
+            "A plain question and a plain answer, over this gateway's own key. "
+            "It runs no commands, opens no files and reaches none of your "
+            "services, so it can tell you what the capital of Peru is but not "
+            "what is in your calendar. Working directory and permissions above "
+            "mean nothing here."
         ))
-        or_note.setWordWrap(True)
-        or_form.addRow(or_note)
-        layout.addWidget(self.openrouter_box)
-
-        self.llmapi_box = QGroupBox("LLM API")
-        llmapi_form = QFormLayout(self.llmapi_box)
-        self.assistant_llmapi_model = QComboBox()
-        self.assistant_llmapi_model.setEditable(True)
-        self.assistant_llmapi_model.addItems(
-            [cfg.DEFAULTS["assistant_llmapi_model"], cfg.DEFAULTS["meeting_llmapi_model"]])
-        llmapi_form.addRow(t("Model"), self.assistant_llmapi_model)
-        llmapi_note = QLabel(t(
-            "A plain question and a plain answer, over the LLM API key you "
-            "already have. It runs no commands, opens no files and reaches none "
-            "of your services, so it can tell you what the capital of Peru is "
-            "but not what is in your calendar. Working directory and permissions "
-            "above mean nothing here."
-        ))
-        llmapi_note.setWordWrap(True)
-        llmapi_form.addRow(llmapi_note)
-        layout.addWidget(self.llmapi_box)
+        gateway_note.setWordWrap(True)
+        gateway_form.addRow(gateway_note)
+        layout.addWidget(self.gateway_box)
 
         thread = QGroupBox(t("The conversation"))
         thread_form = QFormLayout(thread)
@@ -1826,11 +1779,6 @@ class SettingsWindow(QDialog):
         self.meeting_model.setEditable(True)
         self.meeting_model.addItems(MEETING_MODELS)
         models_form.addRow(t("Model"), self.meeting_model)
-        self.meeting_llmapi_model = QComboBox()
-        self.meeting_llmapi_model.setEditable(True)
-        self.meeting_llmapi_model.addItems(
-            [cfg.DEFAULTS["meeting_llmapi_model"], cfg.DEFAULTS["cleanup_llmapi_model"]])
-        models_form.addRow(t("Model"), self.meeting_llmapi_model)
         self.meeting_reasoning = QComboBox()
         for label, value in REASONING_LEVELS:
             self.meeting_reasoning.addItem(t(label), value)
@@ -2234,7 +2182,6 @@ class SettingsWindow(QDialog):
         self.cleanup_model.setCurrentText(
             providers.custom_model(conf, chosen_cleanup, "text")
             if chosen_cleanup.startswith("user/") else conf["cleanup_model"])
-        self.cleanup_llmapi_model.setCurrentText(conf["cleanup_llmapi_model"])
         self.cleanup_claude_model.setCurrentText(conf["cleanup_claude_model"])
         self.cleanup_codex_model.setCurrentText(
             conf["cleanup_codex_model"] or t("Codex's own default")
@@ -2261,8 +2208,8 @@ class SettingsWindow(QDialog):
         self.assistant_agy_model.setCurrentText(
             conf["assistant_agy_model"] or cfg.DEFAULTS["assistant_agy_model"])
         self._select_data(self.assistant_codex_sandbox, conf["assistant_codex_sandbox"])
-        self.assistant_openrouter_model.setCurrentText(conf["assistant_openrouter_model"])
-        self.assistant_llmapi_model.setCurrentText(conf["assistant_llmapi_model"])
+        self.assistant_gateway_model.setCurrentText(
+            providers.custom_model(conf, conf["assistant_provider"], "assistant"))
         self._assistant_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.assistant_reasoning, conf["assistant_reasoning"])
         self.assistant_dir.setText(conf["assistant_dir"])
@@ -2284,7 +2231,6 @@ class SettingsWindow(QDialog):
         self.meeting_model.setCurrentText(
             providers.custom_model(conf, chosen_minutes, "minutes")
             if chosen_minutes.startswith("user/") else conf["meeting_model"])
-        self.meeting_llmapi_model.setCurrentText(conf["meeting_llmapi_model"])
         self._meeting_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.meeting_reasoning, conf["meeting_reasoning"])
         self._select_data(self.meeting_language, conf["meeting_language"])
@@ -2357,13 +2303,11 @@ class SettingsWindow(QDialog):
         cleanup_provider = self.cleanup_provider.currentData() or "local"
         conf["cleanup_provider"] = cleanup_provider
         if cleanup_provider.startswith("user/"):
-            # The shared row edits the gateway's own model, not OpenRouter's.
+            # The shared row edits the gateway's own model, held in its entry.
             providers.set_custom_model(conf, cleanup_provider, "text",
                                        self.cleanup_model.currentText().strip())
         else:
             conf["cleanup_model"] = self.cleanup_model.currentText().strip()
-        conf["cleanup_llmapi_model"] = (self.cleanup_llmapi_model.currentText().strip()
-                                        or cfg.DEFAULTS["cleanup_llmapi_model"])
         conf["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip()
                                         or cfg.DEFAULTS["cleanup_claude_model"])
         codex_cleanup_model = self.cleanup_codex_model.currentText().strip()
@@ -2388,7 +2332,14 @@ class SettingsWindow(QDialog):
                                        else file_prompt)
         conf["transcribe_prompt"] = self.transcribe_prompt.toPlainText().strip()
 
-        conf["assistant_provider"] = self.assistant_provider.currentData() or "claude"
+        assistant_provider = self.assistant_provider.currentData() or "claude"
+        conf["assistant_provider"] = assistant_provider
+        if assistant_provider.startswith("user/"):
+            # The gateway's own entry holds the model its commands run on,
+            # apart from the ones its cleanup and minutes run on.
+            providers.set_custom_model(
+                conf, assistant_provider, "assistant",
+                self.assistant_gateway_model.currentText().strip())
         conf["assistant_model"] = (self.assistant_model.currentText().strip()
                                    or cfg.DEFAULTS["assistant_model"])
         conf["assistant_permission_mode"] = (self.assistant_permission.currentData()
@@ -2403,14 +2354,6 @@ class SettingsWindow(QDialog):
                                        or cfg.DEFAULTS["assistant_agy_model"])
         conf["assistant_codex_sandbox"] = (self.assistant_codex_sandbox.currentData()
                                            or "workspace-write")
-        conf["assistant_openrouter_model"] = (
-            self.assistant_openrouter_model.currentText().strip()
-            or cfg.DEFAULTS["assistant_openrouter_model"]
-        )
-        conf["assistant_llmapi_model"] = (
-            self.assistant_llmapi_model.currentText().strip()
-            or cfg.DEFAULTS["assistant_llmapi_model"]
-        )
         conf["assistant_reasoning"] = self.assistant_reasoning.currentData() or ""
         conf["assistant_dir"] = self.assistant_dir.text().strip()
         conf["assistant_timeout"] = self.assistant_timeout.value()
@@ -2435,8 +2378,6 @@ class SettingsWindow(QDialog):
         else:
             conf["meeting_model"] = (self.meeting_model.currentText().strip()
                                      or cfg.DEFAULTS["meeting_model"])
-        conf["meeting_llmapi_model"] = (self.meeting_llmapi_model.currentText().strip()
-                                        or cfg.DEFAULTS["meeting_llmapi_model"])
         conf["meeting_reasoning"] = self.meeting_reasoning.currentData() or ""
         conf["meeting_language"] = self.meeting_language.currentData() or ""
         conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
@@ -2550,7 +2491,6 @@ class SettingsWindow(QDialog):
 
     def _load_models(self):
         self.refresh_models.setEnabled(False)
-        self.refresh_llmapi_models.setEnabled(False)
         self.models_label.setText(t("Fetching model list…"))
         provider = self.cleanup_provider.currentData() or "local"
         conf = self._conf_view(provider)
@@ -2668,84 +2608,24 @@ class SettingsWindow(QDialog):
 
     def _on_models_loaded(self, models, error):
         self.refresh_models.setEnabled(True)
-        self.refresh_llmapi_models.setEnabled(True)
         if error:
             self.models_label.setText(t("Could not fetch the list: {error}", error=error))
             return
         provider = self.cleanup_provider.currentData() or "local"
         # The fetched list is one catalog's, so it fills only the rows that
-        # read from that catalog; a meeting on another provider keeps its own.
-        if provider == "llmapi":
-            combos = [self.cleanup_llmapi_model]
-            if self.meeting_provider.currentData() == "llmapi":
-                combos.append(self.meeting_llmapi_model)
-        else:
-            combos = [self.cleanup_model]
-            if self.meeting_provider.currentData() == provider:
-                combos.append(self.meeting_model)
+        # read from that catalog; a job on another provider keeps its own.
+        combos = [self.cleanup_model]
+        for box, chosen in ((self.meeting_model, self.meeting_provider),
+                            (self.assistant_gateway_model,
+                             self.assistant_provider)):
+            if chosen.currentData() == provider:
+                combos.append(box)
         for combo in combos:
             current = combo.currentText()
             combo.clear()
             combo.addItems(models)
             combo.setCurrentText(current)
         self.models_label.setText(t("{count} models loaded.", count=len(models)))
-
-    def _test_openai(self):
-        key, base = self._typed_key("openai")
-        self._test_key("openai", lambda: t(
-            "Connection works. {count} audio models visible.",
-            count=len(api.openai_models(key, base)),
-        ))
-
-    def _test_groq(self):
-        key, base = self._typed_key("groq")
-        self._test_key("groq", lambda: t(
-            "Connection works. {count} audio models visible.",
-            count=len(api.openai_models(key, base, cfg.TRANSCRIBERS["groq"].service)),
-        ))
-
-    def _test_openrouter(self):
-        key, _ = self._typed_key("openrouter")
-        self._test_key("openrouter", lambda: api.openrouter_key_status(key))
-
-    def _test_llmapi(self):
-        key = self._key_fields["llmapi"].text().strip() or self.conf.llmapi_key()
-        base = self.conf["llmapi_base_url"]
-        self._test_key("llmapi", lambda: api.llmapi_key_status(key, base))
-
-    def _test_deepgram(self):
-        key = self._key_fields["deepgram"].text().strip() or self.conf.deepgram_key()
-        base = self.conf["deepgram_base_url"]
-        self._test_key("deepgram", lambda: api.deepgram_key_status(key, base))
-
-    def _typed_key(self, provider):
-        """(key, base URL) for a provider, preferring what is in the field now."""
-        who = cfg.TRANSCRIBERS[provider]
-        typed = self._key_fields[provider].text().strip()
-        return typed or self.conf.api_key(who.key), self.conf[who.url]
-
-    def _test_key(self, provider, ask):
-        """Run `ask` off the interface thread and write its answer under the key.
-
-        `ask` returns the line to show, or raises ApiError with the line to show
-        instead; either way it is read from a field before the thread starts.
-        """
-        button, answer = self._testers[provider]
-        button.setEnabled(False)
-        answer.setText(t("Trying…"))
-
-        def work():
-            try:
-                self._test_done.emit(provider, True, ask())
-            except api.ApiError as exc:
-                self._test_done.emit(provider, False, str(exc))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _on_test_done(self, provider, ok, message):
-        button, answer = self._testers[provider]
-        button.setEnabled(True)
-        answer.setText(("✓ " if ok else "✗ ") + message)
 
     def _cleanup_conf_view(self):
         """The cleanup settings as they sit on screen right now, key, provider,
@@ -2759,9 +2639,7 @@ class SettingsWindow(QDialog):
         conf = self._conf_view(provider)
         conf.data["cleanup_provider"] = provider
         conf.data["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
-        models = {"openrouter": (self.cleanup_model, "cleanup_model"),
-                  "llmapi": (self.cleanup_llmapi_model, "cleanup_llmapi_model"),
-                  "claude": (self.cleanup_claude_model, "cleanup_claude_model"),
+        models = {"claude": (self.cleanup_claude_model, "cleanup_claude_model"),
                   "codex": (self.cleanup_codex_model, "cleanup_codex_model"),
                   "antigravity": (self.cleanup_agy_model, "cleanup_agy_model")}
         if provider.startswith("user/"):
@@ -2948,13 +2826,10 @@ class SettingsWindow(QDialog):
     def _cleanup_provider_changed(self):
         provider = self.cleanup_provider.currentData() or "local"
         custom = providers.provider(self.conf, provider)
-        # A gateway of the user's own answers the same request OpenRouter does,
-        # so it shares that row and that fetch button.
+        # A gateway of the user's own answers the hosted request, so it owns
+        # the shared model row and the fetch button beside it.
         gateway = custom is not None and custom.custom
-        self.cleanup_form.setRowVisible(self.cleanup_model_row,
-                                        provider == "openrouter" or gateway)
-        self.cleanup_form.setRowVisible(self.cleanup_llmapi_model_row,
-                                        provider == "llmapi")
+        self.cleanup_form.setRowVisible(self.cleanup_model_row, gateway)
         self.cleanup_form.setRowVisible(self.cleanup_claude_model_row,
                                         provider == "claude")
         self.cleanup_form.setRowVisible(self.cleanup_codex_model_row,
@@ -2968,17 +2843,13 @@ class SettingsWindow(QDialog):
                                                          "antigravity"))
         self.cleanup_form.setRowVisible(self.local_llm, provider == "local")
         self.cleanup_form.setRowVisible(self.local_llm_options, provider == "local")
-        self.refresh_models.setVisible(provider == "openrouter" or gateway)
+        self.refresh_models.setVisible(gateway)
         binary = cleanup.executable(provider)
         found = shutil.which(binary) if binary else ""
         if provider == "local":
             self.models_label.setText(t("Runs on this machine, on llama.cpp."))
-        elif provider == "llmapi":
-            self.models_label.setText(t("Runs on LLM API."))
         elif gateway:
             self.models_label.setText(t("Runs on {name}.", name=custom.name))
-        elif not binary:
-            self.models_label.setText(t("Runs on OpenRouter."))
         elif found:
             self.models_label.setText(t("Found: {path}", path=found))
         else:
@@ -2990,11 +2861,14 @@ class SettingsWindow(QDialog):
 
     def _assistant_provider_changed(self):
         provider = self.assistant_provider.currentData() or "claude"
+        who = providers.provider(self.conf, provider)
         self.claude_box.setVisible(provider == "claude")
         self.codex_box.setVisible(provider == "codex")
         self.agy_box.setVisible(provider == "antigravity")
-        self.openrouter_box.setVisible(provider == "openrouter")
-        self.llmapi_box.setVisible(provider == "llmapi")
+        gateway = provider.startswith("user/")
+        self.gateway_box.setVisible(gateway)
+        if gateway and who is not None:
+            self.gateway_box.setTitle(who.name)
         # Antigravity's slugs carry the effort in the model name, so the
         # shared thinking row would only lie; the box above names it instead.
         self.how_form.setRowVisible(self.assistant_reasoning,
@@ -3006,20 +2880,19 @@ class SettingsWindow(QDialog):
         # One row per provider, as in the cleanup group above: a hosted
         # gateway's id and a local model file are not the same field.
         self.meeting_form.setRowVisible(
-            self.meeting_model,
-            provider == "openrouter" or provider.startswith("user/"))
-        self.meeting_form.setRowVisible(self.meeting_llmapi_model,
-                                        provider == "llmapi")
+            self.meeting_model, provider.startswith("user/"))
 
     def _refresh_assistant_status(self):
         provider = self.assistant_provider.currentData() or "claude"
+        who = providers.provider(self.conf, provider)
         binary = assistant.executable(provider)
         found = shutil.which(binary) if binary else ""
-        if not binary:
-            key_name = "LLM API" if provider == "llmapi" else "OpenRouter"
+        if who is not None and who.custom:
+            # A gateway is reached over HTTP, like the hosted ones used to be:
+            # no program to find, only whichever of its keys is active.
             self.assistant_found.setText(
                 t("Needs no program installed, only the {service} key.",
-                  service=key_name)
+                  service=who.name)
             )
         elif found:
             self.assistant_found.setText(t("Found: {path}", path=found))

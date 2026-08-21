@@ -2,8 +2,9 @@
 
 The CLIs are faked at subprocess.run: what the tests read is the argument list
 each one is given, where the answer is picked up from, and what happens to the
-chain when the program is missing, slow or unhappy. The OpenRouter path is the
-one that was always there and is checked here only for still being taken.
+chain when the program is missing, slow or unhappy. The hosted road is a
+gateway the user added in Settings, and is checked for carrying that entry's
+key, address and model rather than anybody else's.
 """
 
 import os
@@ -16,6 +17,24 @@ import cleanup
 import ggml
 from tests.support import DikteTest, fake_urlopen, sent_json, url_error
 from tests.test_api import FakeServer, chat_reply
+
+
+def gateway(entry_id="abc123", name="Gateway", base_url="https://gw.example/v1",
+            secret="sk-gw-test", models=None):
+    """A stored OpenAI-compatible gateway, as Settings would leave it.
+
+    Shared with the other chain suites, which hold the same road for their own
+    links of it. The default entry carries a cleanup model; pass `models={}`
+    for one whose boxes have never been filled.
+    """
+    entry = {"id": entry_id, "name": name, "base_url": base_url,
+             "enabled": True, "active": "", "keys": [], "models": {}}
+    if secret:
+        entry["keys"].append({"id": "key1", "label": "work", "secret": secret,
+                              "enabled": True})
+        entry["active"] = "key1"
+    entry["models"].update(models if models is not None else {"text": "some/model"})
+    return entry
 
 
 def fake_run(stdout="", code=0, stderr="", last_message=""):
@@ -40,6 +59,15 @@ class Provider(DikteTest):
         self.assertEqual(
             cleanup.provider(self.config(cleanup_provider="ollama")), "local")
 
+    def test_a_gateway_out_of_settings_is_a_choice_not_an_unknown_name(self):
+        conf = self.config(providers=[gateway()],
+                           cleanup_provider="user/abc123")
+        self.assertEqual(cleanup.provider(conf), "user/abc123")
+        # An entry that has gone missing stays a dead end rather than being
+        # quietly traded for the local model.
+        self.assertEqual(cleanup.provider(self.config(
+            cleanup_provider="user/gone")), "user/gone")
+
     def test_each_one_is_recognised(self):
         for name in cleanup.PROVIDERS:
             with self.subTest(name=name):
@@ -51,13 +79,9 @@ class Provider(DikteTest):
         self.assertEqual(cleanup.executable("codex"), "codex")
         self.assertEqual(cleanup.executable("antigravity"), "agy")
         self.assertEqual(cleanup.executable("local"), "")
-        self.assertEqual(cleanup.executable("openrouter"), "")
+        self.assertEqual(cleanup.executable("user/abc123"), "")
 
     def test_the_model_named_in_the_history_is_the_one_that_did_it(self):
-        # The hosted gateways stay dispatchable for the configs set on them.
-        self.assertEqual(cleanup.model(self.config(
-            cleanup_provider="openrouter", cleanup_model="some/model")),
-            "some/model")
         self.assertEqual(
             cleanup.model(self.config(cleanup_provider="local",
                                       local_llm_model="gemma.gguf")),
@@ -83,54 +107,58 @@ class Provider(DikteTest):
             "gemini-3.1-pro-high")
 
 
-class OpenRouter(DikteTest):
-    """Retired from the defaults, still answering the configs set on it."""
+class Gateway(DikteTest):
+    """The hosted road: a user-added gateway, reached through its entry."""
 
-    def test_it_is_still_one_request_with_the_settings_as_they_were(self):
-        conf = self.config(cleanup_provider="openrouter",
-                           openrouter_api_key="sk-or-test",
-                           cleanup_model="some/model", cleanup_reasoning="low")
+    def conf_with(self, **overrides):
+        values = dict(providers=[gateway()], cleanup_provider="user/abc123")
+        values.update(overrides)
+        return self.config(**values)
+
+    def test_it_is_one_request_with_the_entry_s_key_address_and_name(self):
+        conf = self.conf_with(cleanup_reasoning="low")
         with mock.patch.object(api, "cleanup", return_value="Done.") as call:
             self.assertEqual(cleanup.run("uh, done", conf, "the rules"), "Done.")
         text, key, model, prompt = call.call_args.args
         self.assertEqual((text, key, model, prompt),
-                         ("uh, done", "sk-or-test", "some/model", "the rules"))
+                         ("uh, done", "sk-gw-test", "some/model", "the rules"))
         self.assertEqual(call.call_args.kwargs["reasoning"], "low")
+        self.assertEqual(call.call_args.kwargs["base_url"],
+                         "https://gw.example/v1")
+        self.assertEqual(call.call_args.kwargs["provider"], "user/abc123")
+        self.assertEqual(call.call_args.kwargs["service"], "Gateway")
 
     def test_no_cli_is_started_for_it(self):
-        conf = self.config(cleanup_provider="openrouter",
-                           openrouter_api_key="sk-or-test")
+        conf = self.conf_with()
         patcher, calls = fake_run(stdout="never")
         with patcher, mock.patch.object(api, "cleanup", return_value="Done."):
             cleanup.run("uh, done", conf, "the rules")
         self.assertEqual(calls, [])
 
-
-class Llmapi(DikteTest):
-    """The same request as OpenRouter, answered from the LLM API base URL."""
-
-    def test_the_request_is_sent_with_llm_api_in_charge_of_the_words(self):
-        conf = self.config(cleanup_provider="llmapi", llmapi_api_key="sk-test",
-                           cleanup_llmapi_model="some/model",
-                           cleanup_reasoning="low")
-        with mock.patch.object(api, "cleanup", return_value="Done.") as call:
-            self.assertEqual(cleanup.run("uh, done", conf, "the rules"), "Done.")
-        text, key, model, prompt = call.call_args.args
-        self.assertEqual((text, key, model, prompt),
-                         ("uh, done", "sk-test", "some/model", "the rules"))
-        self.assertEqual(call.call_args.kwargs["reasoning"], "low")
-        self.assertEqual(call.call_args.kwargs["base_url"],
-                         conf["llmapi_base_url"])
-        self.assertEqual(call.call_args.kwargs["provider"], "llmapi")
-        self.assertEqual(call.call_args.kwargs["service"], "LLM API")
-
-    def test_the_model_reported_in_the_history_is_its_own(self):
+    def test_the_model_reported_in_the_history_is_the_entry_s_own(self):
+        self.assertEqual(cleanup.model(self.conf_with()), "some/model")
+        # An empty one is reported as empty, not borrowed from somebody else.
         self.assertEqual(
-            cleanup.model(self.config(cleanup_provider="llmapi")), "gpt-4o-mini")
-        self.assertEqual(
-            cleanup.model(self.config(cleanup_provider="llmapi",
-                                      cleanup_llmapi_model="some/model")),
-            "some/model")
+            cleanup.model(self.conf_with(providers=[gateway(models={})])), "")
+
+    def test_an_entry_that_is_gone_is_a_dead_end_not_a_detour(self):
+        conf = self.config(cleanup_provider="user/gone")
+        with mock.patch.object(api, "cleanup") as call:
+            with self.assertRaises(api.ApiError) as caught:
+                cleanup.run("uh, done", conf, "the rules")
+        call.assert_not_called()
+        self.assertIn("Unknown provider", str(caught.exception))
+
+    def test_an_empty_model_is_refused_here_rather_than_at_the_gateway(self):
+        """The contract: an empty box fails loudly with the fix in the message,
+        not as the gateway's own complaint about a nameless model."""
+        conf = self.conf_with(providers=[gateway(models={})])
+        with mock.patch.object(api, "cleanup") as call:
+            with self.assertRaises(api.ApiError) as caught:
+                cleanup.run("uh, done", conf, "the rules")
+        call.assert_not_called()
+        self.assertIn("Gateway", str(caught.exception))
+        self.assertIn("Settings", str(caught.exception))
 
 
 class ClaudeCode(DikteTest):
@@ -338,14 +366,13 @@ class TestModel(DikteTest):
         sent = " ".join(str(arg) for arg in call.call_args.args)
         self.assertNotIn("SECRET", sent)
 
-    def test_a_hosted_provider_keeps_its_key_and_model(self):
-        conf = self.config(cleanup_provider="openrouter",
-                           openrouter_api_key="sk-or-test",
-                           cleanup_model="some/model")
+    def test_a_hosted_gateway_keeps_its_key_and_model(self):
+        conf = self.config(providers=[gateway()],
+                           cleanup_provider="user/abc123")
         with mock.patch.object(api, "cleanup", return_value="OK") as call:
             self.assertEqual(cleanup.test_model(conf), "OK")
         text, key, model, prompt = call.call_args.args
-        self.assertEqual(key, "sk-or-test")
+        self.assertEqual(key, "sk-gw-test")
         self.assertEqual(model, "some/model")
 
     def test_each_cli_runs_through_its_own_runner(self):
@@ -388,7 +415,7 @@ if __name__ == "__main__":
 
 
 class Here(DikteTest):
-    """llama.cpp, answering the request OpenRouter answers."""
+    """llama.cpp, answering the request a hosted gateway answers."""
 
     def setUp(self):
         super().setUp()

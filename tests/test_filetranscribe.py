@@ -16,6 +16,7 @@ from unittest import mock
 import api
 import filetranscribe as ft
 from tests.support import DikteTest, make_wav, silence, tone
+from tests.test_cleanup import gateway
 
 
 class Timestamps(unittest.TestCase):
@@ -245,7 +246,7 @@ class Chunks(DikteTest):
         with mock.patch.object(ft, "_to_mp3", side_effect=lambda p, d, name, *a:
                                make_wav(os.path.join(d, name), silence(1))):
             chunks = self.worker._chunks(self.wav, self.root,
-                                         self.target("openrouter"), True)
+                                         self.target("user/abc123"), True)
         self.assertEqual(len(chunks), 1)
         self.assertTrue(chunks[0][0].endswith("audio.mp3"))
 
@@ -262,7 +263,7 @@ class Chunks(DikteTest):
 
         with mock.patch.object(ft, "_to_mp3", side_effect=encode):
             chunks = self.worker._chunks(wav, self.root,
-                                         self.target("openrouter"), True)
+                                         self.target("user/abc123"), True)
         self.assertGreater(len(chunks), 1)
         self.assertEqual(chunks[0][1], 0.0)
         for path, _ in chunks:
@@ -275,10 +276,10 @@ class Transcriber(DikteTest):
     def setUp(self):
         super().setUp()
         self.source = make_wav(self.path("input.wav"), tone(1.0))
-        # The hosted cleanup road, which the mocked api.cleanup answers; the
-        # local default would want llama.cpp.
-        self.conf = self.config(openrouter_api_key="sk-or-test",
-                                cleanup_provider="openrouter")
+        # The hosted cleanup road — a user-added gateway, which the mocked
+        # api.cleanup answers; the local default would want llama.cpp.
+        self.conf = self.config(providers=[gateway()],
+                                cleanup_provider="user/abc123")
 
     def run_chain(self, timestamps=False, cleanup=False, transcript="raw text",
                   segments=None, cleaned="clean text", fail=None):

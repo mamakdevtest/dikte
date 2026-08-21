@@ -12,13 +12,15 @@ offer are still here as ghosts: a config that references one — a provider
 setting naming it, a stored key, the environment holding one — gets a working
 entry for it, flagged `retired`, and everything downstream (credential, base
 URL, models, the key test) keeps answering through the same tables. A config
-that references none never sees them offered.
+that references none never sees them offered. Gateways retired one step
+further are not here at all; config.py turns whatever a config still holds of
+them into a user entry before this registry is asked.
 
 Model lists are fetched where the provider supports it — `/models`, `agy
-models`, the user's own Claude and Codex settings — and suggested where it
-does not (the Claude aliases). The boxes that offer them stay editable, so a
-list that lags behind the service never blocks a model ID the user knows is
-there.
+models`, `codex debug models`, the user's own Claude settings — and suggested
+where it does not (the Claude aliases). The boxes that offer them stay
+editable, so a list that lags behind the service never blocks a model ID the
+user knows is there.
 """
 
 import collections
@@ -65,16 +67,15 @@ _BUILT_INS = [
 # The hosted gateways a version of this program used to offer. Retired from
 # the standing list, but a config that still references one keeps it working
 # end to end, so an update takes nothing away from whoever set one up.
+# OpenRouter and LLM API were retired one step further: not ghosts but gone,
+# with config.py turning whatever a user still had of them into a plain
+# user/* gateway on load.
 # (name, kind, base_url, capabilities)
 _RETIRED = {
     "openai": ("OpenAI", "openai-compatible",
                "https://api.openai.com/v1", (TRANSCRIPTION, TEXT)),
     "groq": ("Groq", "openai-compatible",
              "https://api.groq.com/openai/v1", (TRANSCRIPTION, TEXT)),
-    "openrouter": ("OpenRouter", "openai-compatible",
-                   "https://openrouter.ai/api/v1", (TRANSCRIPTION, TEXT)),
-    "llmapi": ("LLM API", "openai-compatible",
-               "https://api.llmapi.ai/v1", (TRANSCRIPTION, TEXT)),
 }
 
 # The settings that point a job at a provider. A retired id in any of them is
@@ -84,15 +85,13 @@ _PROVIDER_SETTINGS = ("transcribe_provider", "cleanup_provider",
 
 # The flat settings an HTTP provider's key lives in, and the name the
 # key-test and model-fetch functions answer in. Deepgram is the one built-in
-# left here; the other four are the retired gateways, whose ghost entries keep
+# here; the other two are the retired gateways, whose ghost entries keep
 # reading their key and base URL through this same table. Local and CLI
 # providers need neither. This is the only table that maps a standing or
 # retired provider to its legacy storage; everything else goes through here.
 _LEGACY = {
     "openai": ("openai_api_key", "openai_base_url"),
     "groq": ("groq_api_key", "groq_base_url"),
-    "openrouter": ("openrouter_api_key", "openrouter_base_url"),
-    "llmapi": ("llmapi_api_key", "llmapi_base_url"),
     "deepgram": ("deepgram_api_key", "deepgram_base_url"),
 }
 
@@ -114,10 +113,9 @@ _CLAUDE_ENV_MODELS = (
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
 )
 
-# Codex names its models per account; these three are what the current CLI
-# offers out of the box, so the box has something to pick before config.toml
-# is read. An empty model still means "whatever Codex itself is set to".
-CODEX_MODELS = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]
+# Codex names its models per account, so its catalog is asked of the CLI
+# itself (see codex_models) rather than kept here. An empty model still means
+# "whatever Codex itself is set to".
 
 
 def custom_providers(conf):
@@ -399,14 +397,9 @@ def fetch_models(conf, pid, capability=TEXT, timeout=20):
         raise api.ApiError(t("Unknown provider."))
     key = credential(conf, pid)
     if who.kind == "openai-compatible":
-        url = base_url(conf, pid)
-        if pid == "openrouter":
-            return api.openrouter_models(key, transcription=(
-                capability == TRANSCRIPTION))
-        if pid == "llmapi":
-            return api.llmapi_models(key, url, transcription=(
-                capability == TRANSCRIPTION))
-        return api.openai_models(key, url, who.name,
+        # Every OpenAI-compatible provider — the ghost gateways and the user's
+        # own entries alike — answers the same /models with the same shapes.
+        return api.openai_models(key, base_url(conf, pid), who.name,
                                  audio=(capability == TRANSCRIPTION))
     if who.kind == "deepgram":
         return api.deepgram_models()
@@ -492,22 +485,55 @@ def claude_models():
     return (aliases or list(CLAUDE_MODELS)) + full_ids
 
 
-def codex_models():
-    """The model the user's Codex is set to, then the standing suggestions.
+def codex_models(timeout=30):
+    """The models the installed Codex CLI lists, the current one first.
 
-    ~/.codex/config.toml names its model in one top-level line; nothing else
-    in the file is read. What Codex runs leads the list, the suggestions
-    follow so the box is never empty — a missing file means the suggestions
-    alone. Never raises.
+    `codex debug models` prints the catalog this account may run: one JSON
+    object whose models each carry a slug, a visibility and a priority. The
+    slugs with visibility "list" are the ones the CLI itself offers, so those
+    are the ones offered here, ordered by the CLI's own priority. What
+    ~/.codex/config.toml says the user runs leads — that is the answer the box
+    is really for. A CLI that answers anything but that JSON, or fails, falls
+    back to the config.toml model alone; a machine without the executable
+    answers nothing. Never raises.
     """
+    exe = executable("codex")
+    if not exe:
+        return []
+    current = _codex_current_model(_codex_config_text())
+    try:
+        out = subprocess.run([exe, "debug", "models"], capture_output=True,
+                             text=True, timeout=timeout, cwd=_home(),
+                             creationflags=_no_window())
+    except (OSError, subprocess.SubprocessError):
+        return [current] if current else []
+    if out.returncode != 0:
+        return [current] if current else []
+    try:
+        catalog = json.loads(out.stdout)
+    except ValueError:
+        return [current] if current else []
+    models = catalog.get("models") if isinstance(catalog, dict) else None
+    listed = [m for m in (models if isinstance(models, list) else [])
+              if isinstance(m, dict) and m.get("visibility") == "list"]
+    # Ascending by the priority the CLI assigns; one that carries none keeps
+    # its place after the ones that do, in catalog order.
+    listed.sort(key=lambda m: m.get("priority")
+                if isinstance(m.get("priority"), (int, float))
+                else float("inf"))
+    slugs = [m["slug"].strip() for m in listed
+             if isinstance(m.get("slug"), str) and m["slug"].strip()]
+    return _deduped([current] + slugs if current else slugs)
+
+
+def _codex_config_text():
+    """The raw text of ~/.codex/config.toml, or "" when there is none."""
     try:
         with open(os.path.join(_home(), ".codex", "config.toml"),
                   encoding="utf-8") as fh:
-            text = fh.read()
+            return fh.read()
     except OSError:
-        text = ""
-    current = _codex_current_model(text)
-    return _deduped([model for model in [current] + CODEX_MODELS if model])
+        return ""
 
 
 def _codex_current_model(text):
@@ -573,10 +599,6 @@ def test_provider(conf, pid, timeout=30):
                                        base_url(conf, pid))
     if who.kind == "openai-compatible":
         key = credential(conf, pid)
-        if pid == "openrouter":
-            return api.openrouter_key_status(key)
-        if pid == "llmapi":
-            return api.llmapi_key_status(key, base_url(conf, pid))
         if not key:
             raise api.ApiError(t("{service} API key is empty. Add it in "
                                  "Settings.", service=who.name))

@@ -17,16 +17,18 @@ import config as cfg
 import paste
 import worker
 from tests.support import DikteTest, make_wav, speech
+from tests.test_cleanup import gateway
 
 
 class Chain(DikteTest):
     def setUp(self):
         super().setUp()
         # The cleanup default is the local model now; this chain holds the
-        # hosted road, which the mocked api.cleanup answers either way.
-        self.conf = self.config(openai_api_key="sk-test",
-                                openrouter_api_key="sk-or-test",
-                                cleanup_provider="openrouter")
+        # hosted road — a user-added gateway — which the mocked api.cleanup
+        # answers either way.
+        self.conf = self.config(
+            providers=[gateway()],
+            cleanup_provider="user/abc123")
         self.wav = make_wav(self.path("clip.wav"), speech(2.0))
         # The levels a real recording of that length would have handed over.
         self.rms = [0.0005] * 40 + [0.2] * 20
@@ -250,7 +252,9 @@ class Chain(DikteTest):
         self.assertEqual(row["duration"], 2.0)
         self.assertEqual(row["model"], self.conf.transcribe_target().model)
         self.assertEqual(row["transcribe_provider"], self.conf.transcribe_target().provider)
-        self.assertEqual(row["cleanup_provider"], "openrouter")
+        self.assertEqual(row["cleanup_provider"], "user/abc123")
+        # The gateway's own model, not another provider's default.
+        self.assertEqual(row["cleanup_model"], "some/model")
         self.assertEqual(row["mode"], "")
 
     def test_a_command_is_recorded_as_one(self):

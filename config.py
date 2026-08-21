@@ -425,17 +425,11 @@ DEFAULTS = {
     "openai_base_url": "https://api.openai.com/v1",
     "groq_api_key": "",
     "groq_base_url": "https://api.groq.com/openai/v1",
-    "openrouter_api_key": "",
-    "openrouter_base_url": "https://openrouter.ai/api/v1",
-    "llmapi_api_key": "",
-    "llmapi_base_url": "https://api.llmapi.ai/v1",
     "deepgram_api_key": "",
     "deepgram_base_url": "https://api.deepgram.com/v1",
     "transcribe_provider": "local",  # "local", or a key of TRANSCRIBERS
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
     "groq_transcribe_model": "whisper-large-v3-turbo",
-    "openrouter_transcribe_model": "openai/gpt-4o-transcribe",
-    "llmapi_transcribe_model": "gpt-4o-transcribe",
     "deepgram_transcribe_model": "nova-3",
     "language": "tr",
     "transcribe_prompt": "",
@@ -458,8 +452,9 @@ DEFAULTS = {
     # costs nothing either — callers keep the raw transcript — and a hosted
     # gateway a user actually set still works when named here.
     "cleanup_provider": "local",      # a name in cleanup.PROVIDERS
+    # A model id in the cleanup box, whichever hosted provider the box is
+    # editing: the user gateways share this row rather than one setting each.
     "cleanup_model": "google/gemini-3.5-flash-lite",
-    "cleanup_llmapi_model": "gpt-4o-mini",  # LLM API keeps its own choice
     "cleanup_claude_model": "haiku",   # Claude Code: an alias, or a full model id
     "cleanup_codex_model": "",         # empty -> whatever Codex is set to
     # Antigravity names its models in slugs that already carry the effort
@@ -517,9 +512,8 @@ DEFAULTS = {
     "meeting_cleanup": True,
     # The minutes follow the cleanup default: the local model when nothing is
     # configured, a hosted gateway when one is named and has its key.
-    "meeting_provider": "local",      # local | llmapi | openrouter
+    "meeting_provider": "local",      # "local", or an HTTP provider's id
     "meeting_model": "google/gemini-3.5-flash",
-    "meeting_llmapi_model": "gpt-4o",
     "meeting_reasoning": "",
     "meeting_prompt": "",           # empty -> language-specific default
     "meeting_self_name": "",        # empty -> "Me" in the interface language
@@ -530,13 +524,11 @@ DEFAULTS = {
 
     # --- speaking a command to an agent -------------------------------------
     "assistant_shortcut": "",       # empty -> tray only
-    "assistant_provider": "claude",  # claude | codex | openrouter | llmapi
+    "assistant_provider": "claude",  # claude, codex, antigravity or a gateway
     "assistant_model": "sonnet",    # Claude Code: an alias, or a full model id
     "assistant_permission_mode": "auto",
     "assistant_codex_model": "",    # empty -> whatever Codex is set to
     "assistant_codex_sandbox": "workspace-write",
-    "assistant_openrouter_model": "google/gemini-3.5-flash",
-    "assistant_llmapi_model": "gpt-4o-mini",
     # An Antigravity slug; the effort it carries is the one that runs, per the
     # note at cleanup_agy_model.
     "assistant_agy_model": "gemini-3.1-pro-high",
@@ -574,10 +566,6 @@ TRANSCRIBERS = {
                           "transcribe_model"),
     "groq": Transcriber("Groq", "groq_api_key", "groq_base_url",
                         "groq_transcribe_model"),
-    "openrouter": Transcriber("OpenRouter", "openrouter_api_key",
-                              "openrouter_base_url", "openrouter_transcribe_model"),
-    "llmapi": Transcriber("LLM API", "llmapi_api_key", "llmapi_base_url",
-                          "llmapi_transcribe_model"),
     "deepgram": Transcriber("Deepgram", "deepgram_api_key", "deepgram_base_url",
                             "deepgram_transcribe_model"),
 }
@@ -588,6 +576,30 @@ _CORNER_MIGRATION = {
     "sol-üst": "top-left", "sağ-üst": "top-right",
 }
 
+# The gateways this program stopped offering as providers outright. They are
+# not ghosts (providers._RETIRED holds those): whoever wants one now adds it
+# in Settings like any other OpenAI-compatible gateway. A config written
+# before that still holds their keys, base URLs, models and job settings
+# under their flat names; Config.load turns whatever it finds of them into a
+# user gateway before the DEFAULTS filter drops those keys for good.
+# (id, name, default base URL, environment variable)
+_RETIRED_GATEWAYS = (
+    ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1",
+     "OPENROUTER_API_KEY"),
+    ("llmapi", "LLM API", "https://api.llmapi.ai/v1", "LLMAPI_API_KEY"),
+)
+
+
+def _stored_text(value):
+    """A stored setting as a stripped string; anything else is nothing."""
+    return value.strip() if isinstance(value, str) else ""
+
+
+# The settings that point a job at a provider. A retired gateway's id in any
+# of them is a config that still runs on that gateway.
+_PROVIDER_JOBS = ("transcribe_provider", "cleanup_provider",
+                  "meeting_provider", "assistant_provider")
+
 
 class Config:
     def __init__(self):
@@ -595,15 +607,19 @@ class Config:
         self.load()
 
     def load(self):
+        stored = None
         try:
             with open(CONFIG_FILE, encoding="utf-8") as fh:
                 stored = json.load(fh)
-            if isinstance(stored, dict):
-                self.data.update({k: v for k, v in stored.items() if k in DEFAULTS})
         except FileNotFoundError:
             pass
         except (json.JSONDecodeError, OSError) as exc:
             print(f"dikte: could not read settings ({exc}), using defaults")
+        if isinstance(stored, dict):
+            self.data.update({k: v for k, v in stored.items() if k in DEFAULTS})
+            # Runs while the retired gateways' keys exist only in `stored`:
+            # the filter above has dropped them from self.data already.
+            self._migrate_retired_gateways(stored)
         self.data["overlay_corner"] = _CORNER_MIGRATION.get(
             self.data["overlay_corner"], self.data["overlay_corner"]
         )
@@ -611,6 +627,56 @@ class Config:
         if stored_prompt and _fingerprint(stored_prompt) in LEGACY_PROMPTS:
             self.data["cleanup_prompt"] = ""
         i18n.set_language(self.data["ui_language"])
+
+    def _migrate_retired_gateways(self, stored):
+        """Move a retired gateway's config into a user gateway, in self.data.
+
+        OpenRouter and LLM API used to be providers with flat settings of
+        their own. One of them in a config — a stored key, a job naming it,
+        the environment holding its key — becomes a providers entry here,
+        carrying the key and the model choices over, and every job that named
+        the old id is pointed at the new user/<id> one. Nothing leaves
+        self.data: the next save persists the result, and the base URL match
+        keeps a later load (the environment keeps its key past a save) from
+        adding a second copy.
+        """
+        import providers  # late: the registry stands on this module
+        for pid, name, default_url, env in _RETIRED_GATEWAYS:
+            key = _stored_text(stored.get(f"{pid}_api_key"))
+            from_env = os.environ.get(env, "").strip()
+            named = any(self.data[setting] == pid for setting in _PROVIDER_JOBS)
+            if not (key or from_env or named):
+                continue
+            url = _stored_text(stored.get(f"{pid}_base_url")) or default_url
+            entry = next((e for e in providers.custom_providers(self)
+                          if _stored_text(e.get("base_url")).rstrip("/")
+                          == url.rstrip("/")), None)
+            if entry is None:
+                new_pid = providers.add_provider(self, name, url)
+                if key or from_env:
+                    providers.add_credential(self, new_pid, t("Migrated"),
+                                             key or from_env)
+                for capability, model in self._retired_models(pid, stored).items():
+                    providers.set_custom_model(self, new_pid, capability, model)
+            else:
+                new_pid = f"user/{entry['id']}"
+            for setting in _PROVIDER_JOBS:
+                if self.data[setting] == pid:
+                    self.data[setting] = new_pid
+
+    def _retired_models(self, pid, stored):
+        """The model choices a retired gateway's jobs had, by capability."""
+        text = "cleanup_llmapi_model" if pid == "llmapi" else "cleanup_model"
+        minutes = ("meeting_llmapi_model" if pid == "llmapi"
+                   else "meeting_model")
+        assistant = ("assistant_llmapi_model" if pid == "llmapi"
+                     else "assistant_openrouter_model")
+        return {
+            "transcription": _stored_text(stored.get(f"{pid}_transcribe_model")),
+            "text": _stored_text(stored.get(text)),
+            "minutes": _stored_text(stored.get(minutes)),
+            "assistant": _stored_text(stored.get(assistant)),
+        }
 
     def save(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -642,12 +708,6 @@ class Config:
 
     def groq_key(self):
         return self.api_key("groq_api_key")
-
-    def openrouter_key(self):
-        return self.api_key("openrouter_api_key")
-
-    def llmapi_key(self):
-        return self.api_key("llmapi_api_key")
 
     def deepgram_key(self):
         return self.api_key("deepgram_api_key")

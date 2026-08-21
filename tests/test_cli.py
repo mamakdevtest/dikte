@@ -369,27 +369,20 @@ class Providers(DikteTest):
         self.assertEqual(calls[0].full_url, "https://api.groq.com/openai/v1/models")
         self.assertEqual(out.strip(), "whisper-large-v3")
 
-    def test_llmapi_is_a_choice_and_is_read_from_its_own_catalog(self):
-        parser = cli.build_parser()
-        self.assertEqual(parser.parse_args(
-            ["models", "--provider", "llmapi"]).provider, "llmapi")
-        self.assertEqual(parser.parse_args(["test-key", "llmapi"]).which, "llmapi")
-        self.write_config({"llmapi_api_key": "sk-test"})
-        with fake_urlopen({"data": [{"id": "z/model"}, {"id": "a/model"}]}) as calls:
-            code, out, _ = self.run_cmd(cli.cmd_models, provider="llmapi",
-                                        transcription=False)
-        self.assertEqual(code, 0)
-        self.assertEqual(calls[0].full_url, cfg.DEFAULTS["llmapi_base_url"] + "/models")
-        self.assertEqual(out.strip(), "a/model\nz/model")
-
-    def test_llmapi_transcription_models_come_from_its_own_catalog(self):
-        self.write_config({"llmapi_api_key": "sk-test"})
+    def test_the_speech_to_text_models_are_filtered_by_name(self):
+        self.write_config({"openai_api_key": "sk-test"})
         with fake_urlopen({"data": [{"id": "gpt-4o"}, {"id": "whisper-1"}]}) as calls:
-            code, out, _ = self.run_cmd(cli.cmd_models, provider="llmapi",
+            code, out, _ = self.run_cmd(cli.cmd_models, provider="openai",
                                         transcription=True)
         self.assertEqual(code, 0)
-        self.assertEqual(calls[0].full_url, cfg.DEFAULTS["llmapi_base_url"] + "/models")
+        self.assertEqual(calls[0].full_url, "https://api.openai.com/v1/models")
         self.assertEqual(out.strip(), "whisper-1")
+
+    def test_deepgram_s_constant_catalog_needs_no_request(self):
+        code, out, _ = self.run_cmd(cli.cmd_models, provider="deepgram",
+                                    transcription=False)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.split(), api.DEEPGRAM_MODELS)
 
     def test_a_key_that_is_not_there_is_reported_under_its_own_name(self):
         code, out, _ = self.run_cmd(cli.cmd_test_key, which="groq")
@@ -397,23 +390,24 @@ class Providers(DikteTest):
         self.assertIn("groq", out)
         self.assertIn("Groq", out)
 
-    def test_the_llmapi_key_is_checked_like_the_others(self):
-        """There is no /key endpoint, so the models list accepts or refuses
-        the key instead."""
-        self.write_config({"llmapi_api_key": "sk-test"})
+    def test_a_key_the_models_list_accepts_is_a_verdict(self):
+        """There is no /key endpoint to ask; /models is what accepts or
+        refuses the key, so a count of what it shows is the answer."""
+        self.write_config({"groq_api_key": "gsk-test"})
         with fake_urlopen({"data": [{"id": "a"}]}) as calls:
-            code, out, _ = self.run_cmd(cli.cmd_test_key, which="llmapi")
+            code, out, _ = self.run_cmd(cli.cmd_test_key, which="groq")
         self.assertEqual(code, 0)
-        self.assertEqual(calls[0].full_url, cfg.DEFAULTS["llmapi_base_url"] + "/models")
-        self.assertIn("Key works.", out)
+        self.assertEqual(calls[0].full_url, "https://api.groq.com/openai/v1/models")
+        self.assertIn("connection works", out)
 
 
-def custom_provider(name="Mine", secret="sk-hush-hush-1234"):
+def custom_provider(name="Mine", secret="sk-hush-hush-1234", models=None):
     """A stored gateway with one named key, as `providers add` would leave it."""
     return {"id": "abc123def0", "name": name, "base_url": "https://example.com/v1",
             "enabled": True, "active": "key0000001",
             "keys": [{"id": "key0000001", "label": "work", "secret": secret,
-                      "enabled": True}]}
+                      "enabled": True}],
+            "models": dict(models or {})}
 
 
 class ProvidersRegistry(DikteTest):
@@ -562,15 +556,21 @@ class Doctor(DikteTest):
         self.assertIn("llama.cpp, cleaning up on no model yet",
                       self.run_doctor(as_json=False))
 
-    def test_cleanup_on_openrouter_is_a_question_about_the_key(self):
-        reply = self.run_doctor(cleanup_provider="openrouter",
-                                cleanup_model="some/model")
-        self.assertEqual(reply["cleanup"]["provider"], "openrouter")
+    def test_cleanup_on_a_gateway_is_a_question_about_the_key(self):
+        """No key on the entry, so the report names what is missing; the model
+        it would clean up on is the entry's own."""
+        reply = self.run_doctor(cleanup_provider="user/abc123def0",
+                                providers=[custom_provider(
+                                    secret="", models={"text": "some/model"})])
+        self.assertEqual(reply["cleanup"]["provider"], "user/abc123def0")
         self.assertEqual(reply["cleanup"]["model"], "some/model")
         self.assertFalse(reply["cleanup"]["key"])
-        self.assertIn("OpenRouter key, cleaning up on some/model",
-                      self.run_doctor(as_json=False, cleanup_provider="openrouter",
-                                      cleanup_model="some/model"))
+        self.assertIn("Mine key, cleaning up on some/model",
+                      self.run_doctor(as_json=False,
+                                      cleanup_provider="user/abc123def0",
+                                      providers=[custom_provider(
+                                          secret="",
+                                          models={"text": "some/model"})]))
 
     def test_cleanup_on_a_cli_is_a_question_about_the_program(self):
         reply = self.run_doctor(cleanup_provider="codex",

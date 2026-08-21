@@ -1,4 +1,4 @@
-"""The two providers, over a faked urllib.
+"""The providers, over a faked urllib.
 
 Nothing here reaches the network. What is checked is the request that would have
 gone out, because that is what a new provider changes and what an old one
@@ -31,8 +31,8 @@ from tests.support import (
 
 OPENAI = api.Target("openai", "OpenAI", "sk-test", api.OPENAI_URL, "gpt-4o-transcribe")
 GROQ = api.Target("groq", "Groq", "gsk-test", api.GROQ_URL, "whisper-large-v3-turbo")
-OPENROUTER = api.Target("openrouter", "OpenRouter", "sk-or-test",
-                        api.OPENROUTER_URL, "openai/gpt-4o-transcribe")
+GATEWAY = api.Target("user/abc123", "My gateway", "sk-gw-test",
+                     "https://gw.example/v1", "whisper-1")
 DEEPGRAM = api.Target("deepgram", "Deepgram", "dg-test", api.DEEPGRAM_URL, "nova-3")
 
 
@@ -40,8 +40,8 @@ class TimestampModel(unittest.TestCase):
     def test_only_whisper_returns_segment_times(self):
         self.assertEqual(api.timestamp_model("openai"), "whisper-1")
 
-    def test_openrouter_namespaces_the_id(self):
-        self.assertEqual(api.timestamp_model("openrouter"), "openai/whisper-1")
+    def test_a_user_gateway_gets_whisper_too(self):
+        self.assertEqual(api.timestamp_model("user/abc123"), "whisper-1")
 
     def test_groq_keeps_the_model_that_was_chosen(self):
         """Every model it transcribes with is a whisper, so all of them do times."""
@@ -81,7 +81,8 @@ class Explain(DikteTest):
         self.assertIn("rate limiting", str(self.error(429)))
 
     def test_anything_else_keeps_the_original_text(self):
-        explained = api.explain(api.ApiError("something broke", 500), "OpenRouter")
+        explained = api.explain(api.ApiError("something broke", 500),
+                                "My gateway")
         self.assertIn("something broke", str(explained))
         self.assertEqual(explained.status, 500)
 
@@ -155,13 +156,13 @@ class Headers(unittest.TestCase):
         self.assertEqual(api._headers("openai", "sk-test")["Authorization"],
                          "Bearer sk-test")
 
-    def test_openai_gets_no_extras(self):
-        self.assertNotIn("HTTP-Referer", api._headers("openai", "sk-test"))
-
-    def test_openrouter_is_told_who_is_calling(self):
-        headers = api._headers("openrouter", "sk-or-test")
-        self.assertEqual(headers["HTTP-Referer"], api.APP_URL)
-        self.assertEqual(headers["X-Title"], "Dikte")
+    def test_no_provider_gets_extras(self):
+        """The OpenAI-shaped providers are all the same request; nobody is
+        singled out with extra headers."""
+        for provider in ("openai", "groq", "user/abc123"):
+            with self.subTest(provider=provider):
+                self.assertNotIn("HTTP-Referer", api._headers(provider, "sk-test"))
+                self.assertNotIn("X-Title", api._headers(provider, "sk-test"))
 
     def test_a_content_type_is_added_when_there_is_a_body(self):
         headers = api._headers("openai", "k", "application/json")
@@ -207,15 +208,15 @@ class Transcribe(DikteTest):
         self.assertEqual(multipart_fields(calls[0])["language"], "tr")
         self.assertNotIn("language", multipart_fields(calls[1]))
 
-    def test_the_glossary_goes_everywhere_but_openrouter(self):
-        """OpenRouter takes the field and throws it away, so spare it the bytes."""
+    def test_the_glossary_goes_to_every_openai_shaped_endpoint(self):
+        """whisper.cpp takes it as the initial prompt, the way OpenAI does,
+        and a gateway that ignores it is no worse off for the bytes."""
         with fake_urlopen({"text": "hi"}) as calls:
             api.transcribe(OPENAI, self.wav, prompt="Paraşüt, OpenFrame")
             api.transcribe(GROQ, self.wav, prompt="Paraşüt, OpenFrame")
-            api.transcribe(OPENROUTER, self.wav, prompt="Paraşüt, OpenFrame")
-        self.assertIn("prompt", multipart_fields(calls[0]))
-        self.assertIn("prompt", multipart_fields(calls[1]))
-        self.assertNotIn("prompt", multipart_fields(calls[2]))
+            api.transcribe(GATEWAY, self.wav, prompt="Paraşüt, OpenFrame")
+        for call in calls:
+            self.assertIn("prompt", multipart_fields(call))
 
     def test_groq_goes_to_groq(self):
         with fake_urlopen({"text": "hi"}) as calls:
@@ -230,11 +231,6 @@ class Transcribe(DikteTest):
             api.transcribe(GROQ, self.wav)
         self.assertIn("Groq", str(caught.exception))
 
-    def test_openrouter_is_attributed(self):
-        with fake_urlopen({"text": "hi"}) as calls:
-            api.transcribe(OPENROUTER, self.wav)
-        self.assertEqual(calls[0].get_header("X-title"), "Dikte")
-
     def test_no_key_at_all(self):
         with self.assertRaises(api.ApiError) as caught:
             api.transcribe(OPENAI._replace(api_key=""), self.wav)
@@ -247,8 +243,8 @@ class Transcribe(DikteTest):
     def test_a_rejected_key_is_explained_in_the_provider_s_name(self):
         with fake_urlopen(http_error(401, '{"error": {"message": "bad key"}}')), \
                 self.assertRaises(api.ApiError) as caught:
-            api.transcribe(OPENROUTER, self.wav)
-        self.assertIn("OpenRouter", str(caught.exception))
+            api.transcribe(GATEWAY, self.wav)
+        self.assertIn("My gateway", str(caught.exception))
         self.assertEqual(caught.exception.status, 401)
 
     def test_no_network(self):
@@ -354,10 +350,10 @@ class TranscribeSegments(DikteTest):
         self.assertEqual(fields["response_format"], "verbose_json")
         self.assertEqual(fields["timestamp_granularities[]"], "segment")
 
-    def test_openrouter_uses_the_namespaced_id(self):
+    def test_a_gateway_switches_to_the_timestamps_model(self):
         with fake_urlopen(self.reply([{"start": 0, "end": 1, "text": "hi"}])) as calls:
-            api.transcribe_segments(OPENROUTER, self.wav)
-        self.assertEqual(multipart_fields(calls[0])["model"], "openai/whisper-1")
+            api.transcribe_segments(GATEWAY, self.wav)
+        self.assertEqual(multipart_fields(calls[0])["model"], "whisper-1")
 
     def test_groq_stays_on_the_model_it_was_given(self):
         target = GROQ._replace(model="whisper-large-v3")
@@ -458,8 +454,10 @@ def chat_reply(content):
 
 class Cleanup(DikteTest):
     def call(self, replies, **kwargs):
+        kwargs.setdefault("base_url", "https://gw.example/v1")
+        kwargs.setdefault("service", "My gateway")
         with fake_urlopen(replies) as calls:
-            result = api.cleanup("uh, hello", "sk-or-test", "some/model",
+            result = api.cleanup("uh, hello", "sk-gw-test", "some/model",
                                  "you clean up text", **kwargs)
         return result, calls
 
@@ -470,7 +468,7 @@ class Cleanup(DikteTest):
     def test_it_goes_to_chat_completions(self):
         _, calls = self.call(chat_reply("Hello."))
         self.assertEqual(calls[0].full_url,
-                         "https://openrouter.ai/api/v1/chat/completions")
+                         "https://gw.example/v1/chat/completions")
 
     def test_the_prompt_and_the_transcript_are_kept_apart(self):
         _, calls = self.call(chat_reply("Hello."))
@@ -499,23 +497,31 @@ class Cleanup(DikteTest):
 
     def test_no_key(self):
         with self.assertRaises(api.ApiError):
-            api.cleanup("hello", "", "some/model", "prompt")
+            api.cleanup("hello", "", "some/model", "prompt",
+                        base_url="https://gw.example/v1",
+                        service="My gateway")
 
     def test_a_reply_with_no_choices_says_why(self):
         with fake_urlopen({"error": {"message": "model is offline"}}), \
                 self.assertRaises(api.ApiError) as caught:
-            api.cleanup("hello", "k", "m", "p")
+            api.cleanup("hello", "k", "m", "p",
+                        base_url="https://gw.example/v1",
+                        service="My gateway")
         self.assertIn("model is offline", str(caught.exception))
 
     def test_an_empty_answer(self):
         with fake_urlopen(chat_reply("   ")), self.assertRaises(api.ApiError):
-            api.cleanup("hello", "k", "m", "p")
+            api.cleanup("hello", "k", "m", "p",
+                        base_url="https://gw.example/v1",
+                        service="My gateway")
 
     def test_a_rate_limit_is_explained(self):
         with fake_urlopen(http_error(429)), \
                 self.assertRaises(api.ApiError) as caught:
-            api.cleanup("hello", "k", "m", "p")
-        self.assertIn("OpenRouter", str(caught.exception))
+            api.cleanup("hello", "k", "m", "p",
+                        base_url="https://gw.example/v1",
+                        service="My gateway")
+        self.assertIn("My gateway", str(caught.exception))
 
 
 class Chat(DikteTest):
@@ -524,78 +530,34 @@ class Chat(DikteTest):
                    {"role": "assistant", "content": "done"}]
         with fake_urlopen(chat_reply("moved it")) as calls:
             api.chat(history + [{"role": "user", "content": "move it"}],
-                     "k", "some/model", "you are an agent")
+                     "k", "some/model", "you are an agent",
+                     base_url="https://gw.example/v1", service="My gateway")
         payload = sent_json(calls[0])
         self.assertEqual(payload["messages"][0],
                          {"role": "system", "content": "you are an agent"})
         self.assertEqual(payload["messages"][1:], history +
                          [{"role": "user", "content": "move it"}])
+        self.assertEqual(calls[0].full_url,
+                         "https://gw.example/v1/chat/completions")
 
     def test_no_temperature_is_forced_on_a_conversation(self):
         with fake_urlopen(chat_reply("hi")) as calls:
-            api.chat([{"role": "user", "content": "hi"}], "k", "m", "p")
+            api.chat([{"role": "user", "content": "hi"}], "k", "m", "p",
+                     base_url="https://gw.example/v1")
         self.assertNotIn("temperature", sent_json(calls[0]))
 
     def test_no_key(self):
         with self.assertRaises(api.ApiError):
-            api.chat([], "", "m", "p")
+            api.chat([], "", "m", "p", base_url="https://gw.example/v1")
 
     def test_an_empty_answer(self):
-        with fake_urlopen(chat_reply("")), self.assertRaises(api.ApiError):
-            api.chat([{"role": "user", "content": "hi"}], "k", "m", "p")
-
-
-class KeyStatus(DikteTest):
-    def test_a_key_with_no_limit(self):
-        with fake_urlopen({"data": {"limit": None, "usage": 3}}):
-            self.assertIn("no spending limit",
-                          api.openrouter_key_status("sk-or-test"))
-
-    def test_a_key_with_a_limit_reports_both_numbers(self):
-        with fake_urlopen({"data": {"limit": 10, "usage": 2.5}}):
-            message = api.openrouter_key_status("sk-or-test")
-        self.assertIn("2.5", message)
-        self.assertIn("10", message)
-
-    def test_no_key(self):
-        with self.assertRaises(api.ApiError):
-            api.openrouter_key_status("")
-
-    def test_a_key_the_service_rejects(self):
-        with fake_urlopen(http_error(401)), \
-                self.assertRaises(api.ApiError) as caught:
-            api.openrouter_key_status("sk-or-bad")
-        self.assertEqual(caught.exception.status, 401)
+        with fake_urlopen(chat_reply("")):
+            with self.assertRaises(api.ApiError):
+                api.chat([{"role": "user", "content": "hi"}], "k", "m", "p",
+                         base_url="https://gw.example/v1")
 
 
 class ModelLists(DikteTest):
-    def test_openrouter_returns_sorted_ids(self):
-        with fake_urlopen({"data": [{"id": "z/model"}, {"id": "a/model"}]}):
-            self.assertEqual(api.openrouter_models(), ["a/model", "z/model"])
-
-    def test_the_model_list_needs_no_key(self):
-        with fake_urlopen({"data": []}) as calls:
-            api.openrouter_models()
-        self.assertIsNone(calls[0].get_header("Authorization"))
-
-    def test_a_key_is_sent_when_there_is_one(self):
-        with fake_urlopen({"data": []}) as calls:
-            api.openrouter_models("sk-or-test")
-        self.assertEqual(calls[0].get_header("Authorization"), "Bearer sk-or-test")
-
-    def test_speech_models_are_asked_for_and_filtered_again(self):
-        """A query parameter the API stops honouring must not leak the lot."""
-        with fake_urlopen({"data": [
-            {"id": "openai/whisper-1",
-             "architecture": {"output_modalities": ["transcription"]}},
-            {"id": "google/gemini-3.5-flash",
-             "architecture": {"output_modalities": ["text"]}},
-            {"id": "broken/model"},
-        ]}) as calls:
-            models = api.openrouter_models(transcription=True)
-        self.assertIn("output_modalities=transcription", calls[0].full_url)
-        self.assertEqual(models, ["openai/whisper-1"])
-
     def test_openai_narrows_to_the_audio_models(self):
         with fake_urlopen({"data": [{"id": "gpt-4o"}, {"id": "whisper-1"},
                                     {"id": "gpt-4o-transcribe"}]}):
@@ -635,79 +597,12 @@ class ModelLists(DikteTest):
         self.assertEqual(calls[0].full_url, "https://api.groq.com/openai/v1/models")
         self.assertEqual(models, ["whisper-large-v3"])
 
-    def test_llmapi_keeps_text_models_and_silent_ones(self):
-        """The filter is told by the catalog's own modalities; a model the
-        catalog says nothing about stays, because the box is editable."""
-        with fake_urlopen({"data": [
-            {"id": "z/text", "architecture": {"input_modalities": ["text"],
-                                              "output_modalities": ["text"]}},
-            {"id": "a/text"},
-            {"id": "an/audio", "architecture": {"input_modalities": ["audio"],
-                                                "output_modalities": ["text"]}},
-            {"id": "b/text", "architecture": {"input_modalities": ["text"],
-                                              "output_modalities": ["text"]}},
-        ]}):
-            self.assertEqual(api.llmapi_models(), ["a/text", "b/text", "z/text"])
-
-    def test_llmapi_the_recommended_cleanup_models_lead_the_list(self):
-        """Cleanup is a short, frequent job, so the small and fast ones come
-        first and the alphabet follows; one that has dropped out of the
-        catalog simply stops leading."""
-        with fake_urlopen({"data": [
-            {"id": "z/model"}, {"id": api.LLMAPI_RECOMMENDED[2]},
-            {"id": api.LLMAPI_RECOMMENDED[0]}, {"id": "a/model"},
-        ]}):
-            self.assertEqual(api.llmapi_models(),
-                             [api.LLMAPI_RECOMMENDED[0], api.LLMAPI_RECOMMENDED[2],
-                              "a/model", "z/model"])
-
-    def test_llmapi_works_without_a_key(self):
-        with fake_urlopen({"data": []}) as calls:
-            api.llmapi_models()
-        self.assertIsNone(calls[0].get_header("Authorization"))
-        self.assertEqual(calls[0].full_url, api.LLMAPI_URL + "/models")
-
-    def test_llmapi_sends_a_key_when_there_is_one(self):
-        with fake_urlopen({"data": []}) as calls:
-            api.llmapi_models("sk-test", "http://localhost:1234/v1/")
-        self.assertEqual(calls[0].get_header("Authorization"), "Bearer sk-test")
-        self.assertEqual(calls[0].full_url, "http://localhost:1234/v1/models")
-
-    def test_llmapi_transcription_keeps_only_what_audio_transcriptions_takes(self):
-        """Filtered by name the way openai_models() does it: the catalog's
-        modalities are not reliable enough about which whisper a key may
-        call."""
-        with fake_urlopen({"data": [
-            {"id": "gpt-4o-transcribe"}, {"id": "gpt-4o"},
-            {"id": "whisper-1"}, {"id": "claude-3.5"},
-        ]}):
-            self.assertEqual(api.llmapi_models("sk-test", transcription=True),
-                             ["gpt-4o-transcribe", "whisper-1"])
-
-    def test_llmapi_transcription_reads_the_same_catalog(self):
-        with fake_urlopen({"data": [{"id": "whisper-1"}]}) as calls:
-            api.llmapi_models(transcription=True)
-        self.assertEqual(calls[0].full_url, api.LLMAPI_URL + "/models")
-
-    def test_llmapi_key_status(self):
-        """There is no /key endpoint; /models refuses a key it does not know
-        and its list says how much the key sees."""
-        with fake_urlopen({"data": [{"id": "a"}, {"id": "b"}]}) as calls:
-            self.assertEqual(api.llmapi_key_status("sk-test"),
-                             "Key works. 2 models visible.")
-        self.assertEqual(calls[0].full_url, api.LLMAPI_URL + "/models")
-        self.assertEqual(calls[0].get_header("Authorization"), "Bearer sk-test")
-
-    def test_llmapi_key_status_needs_a_key(self):
-        with self.assertRaises(api.ApiError):
-            api.llmapi_key_status("")
-
-    def test_a_rejected_llmapi_key_says_llm_api(self):
+    def test_a_rejected_key_says_the_service_it_was_sent_to(self):
         with fake_urlopen(http_error(401)), \
                 self.assertRaises(api.ApiError) as caught:
-            api.llmapi_key_status("sk-bad")
-        self.assertEqual(caught.exception.status, 401)
-        self.assertIn("LLM API", str(caught.exception))
+            api.openai_models("sk-gw-test", "https://gw.example/v1",
+                              "My gateway")
+        self.assertIn("My gateway", str(caught.exception))
 
 
 class Deepgram(DikteTest):
