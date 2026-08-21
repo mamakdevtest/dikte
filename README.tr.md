@@ -4,9 +4,9 @@
 çevrilir, bir model transkripti temizler (ıı'lar, tekrarlar, eksik noktalama),
 sonuç panoya kopyalanır ve o an yazdığın pencereye yapıştırılır.
 
-KDE Plasma 6 / Wayland için yazıldı, GNOME X11 ve macOS'ta da çalışır. Sistem
-paketleri dışında bağımlılığı yok: sadece Python standart kütüphanesi (3.11 veya
-üstü) ve PyQt6.
+KDE Plasma 6 / Wayland için yazıldı, GNOME X11, macOS ve Windows'ta da çalışır.
+Sistem paketleri dışında bağımlılığı yok: sadece Python standart kütüphanesi
+(3.11 veya üstü) ve PyQt6.
 
 *[English README](README.md)*
 
@@ -58,6 +58,17 @@ macOS'ta `install.sh`'ın kuracağı bir kısayol kaydı yok, tuşları yakalaya
 dinleyici orada mekanizmanın kendisi, dolayısıyla kurulacak bir şey de yok:
 `brew install ffmpeg`, `pip install PyQt6`, sonra `python dikte.py`. Toplantı
 için BlackHole ya da Loopback gerekiyor, hoparlörden çıkanı kimse vermiyor.
+
+Windows'ta kayıt doğrudan sistem mikrofonundan alınır (WinMM, ek sürücü
+gerekmez), yapıştırma ise `SendInput` ile çalışır; tek gereken Python 3.11+
+ve ffmpeg (`winget install Gyan.FFmpeg`). Kurucu PowerShell; kısayol, global
+kısayolları işletim sistemine bağlamak yerine Başlat menüsüne bir girdi
+kurar, tuşları yine gömülü dinleyici yakalar:
+
+```powershell
+winget install Gyan.FFmpeg
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
 
 `install.sh` `dikte` komutunu, menü girdisini, oturum açılışında otomatik
 başlatmayı ve iki global kısayolu kurar; tuşları da iki argümanı. `./update.sh`
