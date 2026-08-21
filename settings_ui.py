@@ -73,7 +73,8 @@ AGY_ASSISTANT_MODELS = [
 # Aliases resolve to the newest model of that name, so they age better than an
 # id does; a full id can be typed in when a particular one is wanted.
 ASSISTANT_MODELS = ["sonnet", "opus", "haiku", "fable"]
-CODEX_MODELS = ["gpt-5.4-codex", "gpt-5.4", "o4-mini"]
+# The fixed family every Codex offers; the Fetch button adds the live catalog.
+CODEX_MODELS = providers.CODEX_FIXED_MODELS
 # What Claude Code may do without being able to ask. It cannot ask: there is no
 # window to answer in, so a mode that would have prompted denies instead.
 PERMISSION_MODES = [

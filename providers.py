@@ -485,6 +485,13 @@ def claude_models():
     return (aliases or list(CLAUDE_MODELS)) + full_ids
 
 
+# The models every Codex offers, whatever its catalog says this week. They
+# seed the boxes before anything is fetched and stay in the list after it,
+# so the current family is always one click away. The live catalog only
+# adds to them.
+CODEX_FIXED_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"]
+
+
 def codex_models(timeout=30):
     """The models the installed Codex CLI lists, the current one first.
 
@@ -493,29 +500,29 @@ def codex_models(timeout=30):
     slugs with visibility "list" are the ones the CLI itself offers, so those
     are the ones offered here, ordered by the CLI's own priority. What
     ~/.codex/config.toml says the user runs leads — that is the answer the box
-    is really for. A CLI that answers anything but that JSON, or fails, falls
-    back to the config.toml model alone; a machine without the executable
-    answers nothing. Never raises.
+    is really for. CODEX_FIXED_MODELS ride along whatever the CLI answers,
+    and are the whole answer when it answers nothing. Never raises.
     """
+    current = _codex_current_model(_codex_config_text())
     exe = executable("codex")
     if not exe:
-        return []
-    current = _codex_current_model(_codex_config_text())
+        return _deduped([current] + CODEX_FIXED_MODELS if current
+                        else list(CODEX_FIXED_MODELS))
     try:
         out = subprocess.run([exe, "debug", "models"], capture_output=True,
                              text=True, timeout=timeout, cwd=_home(),
                              creationflags=_no_window())
     except (OSError, subprocess.SubprocessError):
-        return [current] if current else []
-    if out.returncode != 0:
-        return [current] if current else []
-    try:
-        catalog = json.loads(out.stdout)
-    except ValueError:
-        return [current] if current else []
-    models = catalog.get("models") if isinstance(catalog, dict) else None
-    listed = [m for m in (models if isinstance(models, list) else [])
-              if isinstance(m, dict) and m.get("visibility") == "list"]
+        out = None
+    listed = []
+    if out is not None and out.returncode == 0:
+        try:
+            catalog = json.loads(out.stdout)
+        except ValueError:
+            catalog = None
+        models = catalog.get("models") if isinstance(catalog, dict) else None
+        listed = [m for m in (models if isinstance(models, list) else [])
+                  if isinstance(m, dict) and m.get("visibility") == "list"]
     # Ascending by the priority the CLI assigns; one that carries none keeps
     # its place after the ones that do, in catalog order.
     listed.sort(key=lambda m: m.get("priority")
@@ -523,7 +530,8 @@ def codex_models(timeout=30):
                 else float("inf"))
     slugs = [m["slug"].strip() for m in listed
              if isinstance(m.get("slug"), str) and m["slug"].strip()]
-    return _deduped([current] + slugs if current else slugs)
+    head = ([current] if current else []) + list(CODEX_FIXED_MODELS)
+    return _deduped(head + slugs)
 
 
 def _codex_config_text():

@@ -376,7 +376,7 @@ class FetchModels(DikteTest):
             self.assertEqual(providers.fetch_models(self.config(), "claude"),
                              providers.CLAUDE_MODELS)
             self.assertEqual(providers.fetch_models(self.config(), "codex"),
-                             [])
+                             providers.CODEX_FIXED_MODELS)
 
     def test_antigravity_parses_slugs(self):
         self.patch_attr(providers, "executable",
@@ -534,15 +534,16 @@ class CodexModels(ThrowawayHome):
         self.config_toml("")
         self.fake_cli(self.catalog())
         self.assertEqual(providers.codex_models(),
-                         ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra",
-                          "gpt-5.5-old"])
+                         providers.CODEX_FIXED_MODELS + ["gpt-5.5-old"])
 
     def test_the_current_model_leads_and_is_not_repeated(self):
         self.config_toml('model = "gpt-5.6-luna"\n')
         self.fake_cli(self.catalog())
+        # luna is in the fixed family too, so leading with it drops the
+        # duplicate the concatenation would otherwise expect.
         self.assertEqual(providers.codex_models(),
                          ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
-                          "gpt-5.5-old"])
+                          "gpt-5.5", "gpt-5.5-old"])
 
     def test_only_slugs_the_cli_lists_are_offered(self):
         self.config_toml("")
@@ -559,29 +560,31 @@ class CodexModels(ThrowawayHome):
     def test_a_cli_that_fails_falls_back_to_the_current_model(self):
         self.config_toml('model = "gpt-5.5-codex"\n')
         self.fake_cli([], returncode=1)
-        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"] + providers.CODEX_FIXED_MODELS)
 
     def test_output_the_json_parser_refuses_falls_back_too(self):
         self.config_toml('model = "gpt-5.5-codex"\n')
         self.fake_cli([], stdout="codex: not logged in\n")
-        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+        self.assertEqual(providers.codex_models(),
+                         ["gpt-5.5-codex"] + providers.CODEX_FIXED_MODELS)
 
     def test_json_that_is_not_the_catalog_falls_back_too(self):
         self.config_toml('model = "gpt-5.5-codex"\n')
         self.fake_cli([], stdout=json.dumps({"error": "no account"}))
-        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"] + providers.CODEX_FIXED_MODELS)
         self.fake_cli([], stdout=json.dumps(["not", "the", "catalog"]))
-        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"] + providers.CODEX_FIXED_MODELS)
 
     def test_no_current_model_and_an_unusable_cli_answers_nothing(self):
         self.config_toml("")
         self.fake_cli([], returncode=1)
-        self.assertEqual(providers.codex_models(), [])
+        self.assertEqual(providers.codex_models(), list(providers.CODEX_FIXED_MODELS))
 
-    def test_no_executable_answers_nothing(self):
+    def test_no_executable_answers_the_fixed_family(self):
         self.patch_attr(providers, "executable", mock.Mock(return_value=None))
         self.config_toml('model = "gpt-5.5-codex"\n')
-        self.assertEqual(providers.codex_models(), [])
+        self.assertEqual(providers.codex_models(),
+                         ["gpt-5.5-codex"] + providers.CODEX_FIXED_MODELS)
 
     def test_secrets_stay_out_of_the_model_box(self):
         """Only the top-level model line and the catalog's slugs are read;
@@ -599,12 +602,12 @@ class CodexModels(ThrowawayHome):
     def test_a_config_file_the_parser_refuses_still_yields_the_model(self):
         self.config_toml('model = "gpt-5.5-codex"\nnot <<< toml\n')
         self.fake_cli([], returncode=1)
-        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"] + providers.CODEX_FIXED_MODELS)
 
     def test_an_empty_model_line_is_dropped(self):
         self.config_toml('model = ""\n')
         self.fake_cli([], returncode=1)
-        self.assertEqual(providers.codex_models(), [])
+        self.assertEqual(providers.codex_models(), list(providers.CODEX_FIXED_MODELS))
 
     def test_fetch_models_routes_codex_through_the_same_reader(self):
         self.config_toml('model = "gpt-5.6-sol"\n')
