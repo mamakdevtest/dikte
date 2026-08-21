@@ -81,11 +81,8 @@ CLAUDE_EFFORT = {"none": "low", "minimal": "low", "low": "low",
 CODEX_EFFORT = {"none": "low", "minimal": "low", "low": "low",
                 "medium": "medium", "high": "high", "xhigh": "high",
                 "max": "high"}
-# Antigravity bakes its effort into the model slug (…-low, …-high), so a
-# setting that names a rung it has is passed on as --effort and everything
-# else is left unspoken: the slug already decided, and remapping a rung the
-# CLI does have onto one it does not would fight it.
-AGY_EFFORT = {"low": "low", "medium": "medium", "high": "high"}
+# Antigravity has no rungs to offer: its model slugs carry the effort
+# (…-low, …-high), so nothing is ever said on the matter.
 
 
 class AssistantError(Exception):
@@ -371,12 +368,10 @@ def _ask_antigravity(prompt, conf, on_stage):
         "--output-format", "text",
     ]
     # An empty setting means whatever Antigravity itself is set to, the same
-    # deal Codex gets; anything typed in is passed on exactly as typed.
+    # deal Codex gets; anything typed in is passed on exactly as typed. The
+    # slug carries its own effort, so no --effort is ever passed either.
     if conf["assistant_agy_model"].strip():
         cmd += ["--model", conf["assistant_agy_model"].strip()]
-    effort = AGY_EFFORT.get(conf["assistant_reasoning"], "")
-    if effort:
-        cmd += ["--effort", effort]
     # A live agy run takes minutes; the shared 240-second default would kill
     # it, so the floor is 300 unless the setting already waits longer.
     timeout = max(conf["assistant_timeout"], 300)

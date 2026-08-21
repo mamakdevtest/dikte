@@ -239,16 +239,22 @@ TR = {
         "Anahtar çalışıyor. {count} model görünüyor.",
     "Key works.": "Anahtar çalışıyor.",
     "Clean the transcript with a model": "Transkripti bir modelle temizle",
-    "OpenRouter and LLM API are the quickest and need nothing installed. "
-    "llama.cpp runs here, on a model downloaded below. Claude Code and "
-    "Codex clean up on the subscription you already have, without a "
-    "second key, and take a few seconds longer because each one opens a "
+    "llama.cpp runs here, on a model downloaded below; nothing to pay, "
+    "nothing to install beyond it. Claude Code, Codex and Antigravity "
+    "clean up on the subscription you already have, without a second "
+    "key, and take a few seconds longer because each one opens a "
     "session to do it.":
-        "En hızlıları OpenRouter ile LLM API'dir ve kurulu bir program istemezler. "
-        "llama.cpp bu makinede, aşağıdan indirilen bir modelle çalışır. "
-        "Claude Code ile Codex, temizliği hâlihazırda ödediğin abonelik üzerinden "
-        "yapar, ikinci bir anahtar istemez; her biri bunun için bir oturum açtığından "
-        "birkaç saniye daha uzun sürer.",
+        "llama.cpp bu makinede, aşağıdan indirilen bir modelle çalışır; "
+        "ödenecek bir şey, kurulacak başka bir program yok. Claude Code, "
+        "Codex ve Antigravity temizliği hâlihazırda ödediğin abonelik üzerinden "
+        "yapar, ikinci bir anahtar istemez; her biri bunun için bir oturum "
+        "açtığından birkaç saniye daha uzun sürer.",
+    "This machine (whisper.cpp)": "Bu makine (whisper.cpp)",
+    "This machine (llama.cpp)": "Bu makine (llama.cpp)",
+    "Sends one test sentence to the cleanup model and shows its reply. "
+    "Proves the key, the address and the model id together.":
+        "Temizleme modeline bir test cümlesi gönderir ve yanıtını gösterir. "
+        "Anahtarı, adresi ve model kimliğini birlikte sınar.",
     "{binary} is not on your PATH, so cleanup would fail and the raw transcript "
     "would be pasted. Install it, or pick another one above.":
         "{binary} PATH'te değil; temizleme başarısız olur ve ham transkript "

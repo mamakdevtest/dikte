@@ -275,7 +275,10 @@ class Transcriber(DikteTest):
     def setUp(self):
         super().setUp()
         self.source = make_wav(self.path("input.wav"), tone(1.0))
-        self.conf = self.config(openrouter_api_key="sk-or-test")
+        # The hosted cleanup road, which the mocked api.cleanup answers; the
+        # local default would want llama.cpp.
+        self.conf = self.config(openrouter_api_key="sk-or-test",
+                                cleanup_provider="openrouter")
 
     def run_chain(self, timestamps=False, cleanup=False, transcript="raw text",
                   segments=None, cleaned="clean text", fail=None):

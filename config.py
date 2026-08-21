@@ -454,14 +454,17 @@ DEFAULTS = {
     "local_binary": "",             # empty -> whichever copy ggml.py finds
 
     "cleanup_enabled": True,
-    "cleanup_provider": "openrouter",  # a name in cleanup.PROVIDERS
+    # The local model by default: no key, no bill. An unconfigured local model
+    # costs nothing either — callers keep the raw transcript — and a hosted
+    # gateway a user actually set still works when named here.
+    "cleanup_provider": "local",      # a name in cleanup.PROVIDERS
     "cleanup_model": "google/gemini-3.5-flash-lite",
     "cleanup_llmapi_model": "gpt-4o-mini",  # LLM API keeps its own choice
     "cleanup_claude_model": "haiku",   # Claude Code: an alias, or a full model id
     "cleanup_codex_model": "",         # empty -> whatever Codex is set to
     # Antigravity names its models in slugs that already carry the effort
-    # (-medium, -high), so there is no separate reasoning setting for it; the
-    # shared one is only spoken as --effort when it names low, medium or high.
+    # (-medium, -high). The slug decides, and no --effort is ever passed: a
+    # second word would fight the one in the model name.
     "cleanup_agy_model": "gemini-3.6-flash-medium",
     "cleanup_reasoning": "",        # empty -> whatever the model does by default
 
@@ -512,7 +515,9 @@ DEFAULTS = {
     "meeting_language": "",         # empty -> the dictation speech language
     "meeting_max_seconds": 14400,   # 4 hours
     "meeting_cleanup": True,
-    "meeting_provider": "openrouter",  # openrouter | llmapi
+    # The minutes follow the cleanup default: the local model when nothing is
+    # configured, a hosted gateway when one is named and has its key.
+    "meeting_provider": "local",      # local | llmapi | openrouter
     "meeting_model": "google/gemini-3.5-flash",
     "meeting_llmapi_model": "gpt-4o",
     "meeting_reasoning": "",

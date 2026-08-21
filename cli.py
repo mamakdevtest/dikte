@@ -994,13 +994,21 @@ def cmd_doctor(opts):
     programs = {name: shutil.which(name) or "" for name in wanted if name}
     target = conf.transcribe_target()
     cleaner = cleanup.provider(conf)
+    if cleaner == "llmapi":
+        cleaner_key = conf.llmapi_key()
+    elif cleaner.startswith("user/"):
+        cleaner_key = providers.credential(conf, cleaner)
+    elif cleaner == "openrouter":
+        cleaner_key = conf.openrouter_key()
+    else:
+        cleaner_key = ""    # the local model and the CLIs need no key
     checks = {
         "programs": programs,
         "transcription": {"provider": target.provider, "model": target.model,
                           "key": bool(target.api_key)},
         "cleanup": {"enabled": conf["cleanup_enabled"], "provider": cleaner,
                     "model": cleanup.model(conf),
-                    "key": bool(conf.openrouter_key())},
+                    "key": bool(cleaner_key)},
         "agent": {"provider": assistant.provider(conf),
                   "directory": assistant.working_dir(conf)},
         "running": ipc.send("status") is not None,
@@ -1010,14 +1018,24 @@ def cmd_doctor(opts):
     lines += [
         f"{'✓' if target.api_key else '✗'} {target.service} key, transcribing on "
         f"{target.model}",
-        # Cleanup on a CLI needs no key, so what is checked is the program.
-        (f"{'✓' if conf.openrouter_key() else '✗'} OpenRouter key, cleaning up on "
-         f"{conf['cleanup_model']}") if cleaner == "openrouter" else
-        (f"{'✓' if programs[cleanup.executable(cleaner)] else '✗'} "
-         f"{cleanup.executable(cleaner)}, cleaning up on {cleanup.model(conf)}"),
-        f"{'✓' if checks['running'] else '·'} application "
-        + ("running" if checks["running"] else "not running"),
     ]
+    # Cleanup on a CLI needs no key, so what is checked is the program; on the
+    # local model, the program and the model being in place; on a hosted
+    # gateway, the key.
+    if cleaner == "local":
+        lines.append(f"{'✓' if conf.local_llm_ready() else '✗'} llama.cpp, "
+                     f"cleaning up on {cleanup.model(conf) or 'no model yet'}")
+    elif cleaner in ("openrouter", "llmapi") or cleaner.startswith("user/"):
+        who = providers.provider(conf, cleaner)
+        name = who.name if who else cleaner
+        lines.append(f"{'✓' if cleaner_key else '✗'} {name} key, cleaning up on "
+                     f"{cleanup.model(conf)}")
+    else:
+        lines.append(f"{'✓' if programs[cleanup.executable(cleaner)] else '✗'} "
+                     f"{cleanup.executable(cleaner)}, cleaning up on {cleanup.model(conf)}")
+    lines.append(
+        f"{'✓' if checks['running'] else '·'} application "
+        + ("running" if checks["running"] else "not running"))
     return out(opts, {"ok": True, **checks}, "\n".join(lines))
 
 

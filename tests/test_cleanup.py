@@ -33,12 +33,12 @@ def fake_run(stdout="", code=0, stderr="", last_message=""):
 
 
 class Provider(DikteTest):
-    def test_the_default_is_still_openrouter(self):
-        self.assertEqual(cleanup.provider(self.config()), "openrouter")
+    def test_the_default_is_the_local_model(self):
+        self.assertEqual(cleanup.provider(self.config()), "local")
 
     def test_a_provider_this_version_does_not_have(self):
         self.assertEqual(
-            cleanup.provider(self.config(cleanup_provider="ollama")), "openrouter")
+            cleanup.provider(self.config(cleanup_provider="ollama")), "local")
 
     def test_each_one_is_recognised(self):
         for name in cleanup.PROVIDERS:
@@ -50,11 +50,18 @@ class Provider(DikteTest):
         self.assertEqual(cleanup.executable("claude"), "claude")
         self.assertEqual(cleanup.executable("codex"), "codex")
         self.assertEqual(cleanup.executable("antigravity"), "agy")
+        self.assertEqual(cleanup.executable("local"), "")
         self.assertEqual(cleanup.executable("openrouter"), "")
 
     def test_the_model_named_in_the_history_is_the_one_that_did_it(self):
-        self.assertEqual(cleanup.model(self.config(cleanup_model="some/model")),
-                         "some/model")
+        # The hosted gateways stay dispatchable for the configs set on them.
+        self.assertEqual(cleanup.model(self.config(
+            cleanup_provider="openrouter", cleanup_model="some/model")),
+            "some/model")
+        self.assertEqual(
+            cleanup.model(self.config(cleanup_provider="local",
+                                      local_llm_model="gemma.gguf")),
+            "gemma.gguf")
         self.assertEqual(
             cleanup.model(self.config(cleanup_provider="claude")), "haiku")
         self.assertEqual(
@@ -77,8 +84,11 @@ class Provider(DikteTest):
 
 
 class OpenRouter(DikteTest):
+    """Retired from the defaults, still answering the configs set on it."""
+
     def test_it_is_still_one_request_with_the_settings_as_they_were(self):
-        conf = self.config(openrouter_api_key="sk-or-test",
+        conf = self.config(cleanup_provider="openrouter",
+                           openrouter_api_key="sk-or-test",
                            cleanup_model="some/model", cleanup_reasoning="low")
         with mock.patch.object(api, "cleanup", return_value="Done.") as call:
             self.assertEqual(cleanup.run("uh, done", conf, "the rules"), "Done.")
@@ -88,7 +98,8 @@ class OpenRouter(DikteTest):
         self.assertEqual(call.call_args.kwargs["reasoning"], "low")
 
     def test_no_cli_is_started_for_it(self):
-        conf = self.config(openrouter_api_key="sk-or-test")
+        conf = self.config(cleanup_provider="openrouter",
+                           openrouter_api_key="sk-or-test")
         patcher, calls = fake_run(stdout="never")
         with patcher, mock.patch.object(api, "cleanup", return_value="Done."):
             cleanup.run("uh, done", conf, "the rules")
@@ -274,15 +285,12 @@ class Antigravity(DikteTest):
         _, cmd = self.run_cleanup(stdout="Book it.")
         self.assertEqual(cmd[cmd.index("--model") + 1], "gemini-3.1-pro-high")
 
-    def test_the_effort_is_only_said_when_agy_has_the_rung(self):
-        self.conf["cleanup_reasoning"] = "high"
-        _, cmd = self.run_cleanup(stdout="Book it.")
-        self.assertEqual(cmd[cmd.index("--effort") + 1], "high")
-
-    def test_a_rung_the_slug_already_carries_is_left_unspoken(self):
-        # none/minimal/xhigh/max have no --effort of agy's own: the slug
-        # decides, so nothing is passed on and nothing is remapped.
-        for setting in ("none", "minimal", "xhigh", "max", ""):
+    def test_no_effort_is_ever_said_the_slug_carries_it(self):
+        # The slug names its own effort (…-medium, …-high); an --effort flag
+        # would fight the one in the model name, so none is passed whatever
+        # the shared thinking setting holds.
+        for setting in ("none", "minimal", "low", "medium", "high", "xhigh",
+                        "max", ""):
             with self.subTest(setting=setting):
                 self.conf["cleanup_reasoning"] = setting
                 _, cmd = self.run_cleanup(stdout="Book it.")
@@ -302,6 +310,77 @@ class Antigravity(DikteTest):
     def test_an_answer_of_nothing_is_a_failure(self):
         with self.assertRaises(cleanup.CleanupError):
             self.run_cleanup(stdout="   \n")
+
+
+class TestModel(DikteTest):
+    """The settings window's model test: one tiny request down the same road a
+    dictation takes, carrying nothing of the user's."""
+
+    def test_the_local_model_answers_and_the_reply_comes_back(self):
+        conf = self.config(cleanup_provider="local",
+                           local_llm_model="gemma.gguf")
+        # The server the local branch would start, faked: the request itself
+        # is answered by the patched api.cleanup.
+        self.patch_attr(ggml, "llm", FakeServer())
+        with mock.patch.object(api, "cleanup", return_value="OK") as call:
+            self.assertEqual(cleanup.test_model(conf), "OK")
+        text, key, model, prompt = call.call_args.args
+        self.assertEqual(text, "This is a test.")
+        self.assertEqual(prompt, "Reply with exactly: OK")
+        self.assertEqual(model, "gemma.gguf")
+
+    def test_the_user_s_own_cleanup_prompt_stays_home(self):
+        conf = self.config(cleanup_provider="local", local_llm_model="gemma.gguf",
+                           cleanup_prompt="MY SECRET RULES")
+        self.patch_attr(ggml, "llm", FakeServer())
+        with mock.patch.object(api, "cleanup", return_value="OK") as call:
+            cleanup.test_model(conf)
+        sent = " ".join(str(arg) for arg in call.call_args.args)
+        self.assertNotIn("SECRET", sent)
+
+    def test_a_hosted_provider_keeps_its_key_and_model(self):
+        conf = self.config(cleanup_provider="openrouter",
+                           openrouter_api_key="sk-or-test",
+                           cleanup_model="some/model")
+        with mock.patch.object(api, "cleanup", return_value="OK") as call:
+            self.assertEqual(cleanup.test_model(conf), "OK")
+        text, key, model, prompt = call.call_args.args
+        self.assertEqual(key, "sk-or-test")
+        self.assertEqual(model, "some/model")
+
+    def test_each_cli_runs_through_its_own_runner(self):
+        for name, runner in (("claude", "_claude"), ("codex", "_codex"),
+                             ("antigravity", "_agy")):
+            with self.subTest(name=name):
+                conf = self.config(cleanup_provider=name)
+                with mock.patch.object(cleanup, runner,
+                                       return_value="OK") as run:
+                    self.assertEqual(cleanup.test_model(conf), "OK")
+                text, conf_arg, prompt = run.call_args.args[:3]
+                self.assertEqual(text, "This is a test.")
+                self.assertEqual(prompt, "Reply with exactly: OK")
+
+    def test_the_agy_wait_keeps_its_floor(self):
+        # A live agy run takes minutes whatever the text is, so the test waits
+        # as long as a real cleanup would.
+        conf = self.config(cleanup_provider="antigravity")
+        with mock.patch.object(cleanup, "_agy", return_value="OK") as run:
+            cleanup.test_model(conf)
+        self.assertEqual(run.call_args.args[3], 300)
+
+    def test_a_timeout_of_one_s_own_is_honoured(self):
+        conf = self.config(cleanup_provider="claude")
+        with mock.patch.object(cleanup, "_claude", return_value="OK") as run:
+            cleanup.test_model(conf, timeout=90)
+        self.assertEqual(run.call_args.args[3], 90)
+
+    def test_a_failure_is_raised_not_swallowed(self):
+        conf = self.config(cleanup_provider="local")
+        self.patch_attr(ggml, "llm", FakeServer())
+        with mock.patch.object(api, "cleanup",
+                               side_effect=api.ApiError("no server")):
+            with self.assertRaises(api.ApiError):
+                cleanup.test_model(conf)
 
 
 if __name__ == "__main__":
