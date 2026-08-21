@@ -478,24 +478,25 @@ def parse_windows_shortcut(text):
 
 
 class WindowsHotkey(QObject):
-    """Global hotkeys via RegisterHotKey + a hidden message loop.
+    """Global hotkeys via RegisterHotKey + a dedicated background message thread.
 
-    Win32 requires one window (here a message-only window) that receives
-    WM_HOTKEY (0x0312). Each shortcut gets an integer id.
+    Win32 requires a message queue that receives WM_HOTKEY (0x0312).
+    Running the message loop in a dedicated background thread ensures the
+    main GUI thread is never blocked and messages never interfere with Qt.
     """
 
     triggered = pyqtSignal(str)
     failed = pyqtSignal(str)
 
     WM_HOTKEY = 0x0312
+    WM_QUIT = 0x0012
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._ids = []          # issued ids
-        self._names = {}        # id -> name
-        self._hwnd = None
         self._thread = None
+        self._thread_id = None
         self._stop = threading.Event()
+        self._ready = threading.Event()
         self._user32 = None
         self._kernel32 = None
 
@@ -508,7 +509,6 @@ class WindowsHotkey(QObject):
         if not bindings:
             return False
 
-        # Load Win32 on demand so import succeeds on macOS/Linux.
         try:
             self._user32 = ctypes.windll.user32
             self._kernel32 = ctypes.windll.kernel32
@@ -516,19 +516,7 @@ class WindowsHotkey(QObject):
             self.failed.emit(t("Could not reach the Windows shortcut service."))
             return False
 
-        # Message-only window: class-less version via HWND_MESSAGE (-3).
-        # Use a tiny hidden window with no class registration.
-        try:
-            self._hwnd = self._user32.CreateWindowExW(
-                0, "STATIC", None, 0, 0, 0, 0, 0,
-                ctypes.c_void_p(-3), None, None, None,
-            )
-        except OSError:
-            self._hwnd = None
-
-        # Fallback to a raw HWND = 0 in case CreateWindowEx fails.
-        hwnd_for_register = self._hwnd or 0
-        ok_any = False
+        parsed_bindings = {}
         for ident, (name, shortcut) in enumerate(bindings.items(), 1):
             if not shortcut:
                 continue
@@ -538,10 +526,53 @@ class WindowsHotkey(QObject):
                     t("Could not parse the shortcut: {shortcut}", shortcut=shortcut)
                 )
                 continue
+            parsed_bindings[ident] = (name, shortcut, mods, vk)
+
+        if not parsed_bindings:
+            return False
+
+        self._stop.clear()
+        self._ready.clear()
+        self._thread = threading.Thread(
+            target=self._pump,
+            args=(parsed_bindings,),
+            daemon=True,
+        )
+        self._thread.start()
+        self._ready.wait(timeout=1.0)
+        return True
+
+    def _pump(self, parsed_bindings):
+        user32 = self._user32
+        kernel32 = self._kernel32
+        if user32 is None or kernel32 is None:
+            self._ready.set()
+            return
+
+        self._thread_id = kernel32.GetCurrentThreadId()
+
+        # Force creation of message queue on this background thread
+        msg = ctypes.wintypes.MSG() if hasattr(ctypes, "wintypes") else None
+        if msg is None:
+            class _MSG(ctypes.Structure):
+                _fields_ = [
+                    ("hwnd", ctypes.c_void_p),
+                    ("message", ctypes.c_uint),
+                    ("wParam", ctypes.c_void_p),
+                    ("lParam", ctypes.c_void_p),
+                    ("time", ctypes.c_uint32),
+                    ("pt_x", ctypes.c_long),
+                    ("pt_y", ctypes.c_long),
+                ]
+            msg = _MSG()
+
+        user32.PeekMessageW(ctypes.byref(msg), 0, 0, 0, 0)
+
+        registered_names = {}
+        registered_ids = []
+        for ident, (name, shortcut, mods, vk) in parsed_bindings.items():
             try:
-                res = self._user32.RegisterHotKey(
-                    ctypes.c_void_p(hwnd_for_register), ident, mods, vk
-                )
+                res = user32.RegisterHotKey(0, ident, mods, vk)
             except OSError:
                 res = 0
             if not res:
@@ -550,85 +581,53 @@ class WindowsHotkey(QObject):
                     "application already holds it.", shortcut=shortcut
                 ))
                 continue
-            self._ids.append(ident)
-            self._names[ident] = name
+            registered_names[ident] = name
+            registered_ids.append(ident)
             _REGISTERED[SHORTCUTS.get(name, Shortcut(name, "", "", "", "")).desktop_id
                         if name in SHORTCUTS else name] = shortcut
-            ok_any = True
 
-        # Message pump thread: blocks on GetMessage until WM_HOTKEY or quit.
-        self._stop.clear()
+        self._ready.set()
 
-        def _pump():
-            try:
-                msg = ctypes.wintypes.MSG() if hasattr(ctypes, "wintypes") else None
-                # When ctypes.wintypes.MSG is unavailable (harmless), use a raw buffer.
-                if msg is None:
-                    class _MSG(ctypes.Structure):
-                        _fields_ = [
-                            ("hwnd", ctypes.c_void_p),
-                            ("message", ctypes.c_uint),
-                            ("wParam", ctypes.c_void_p),
-                            ("lParam", ctypes.c_void_p),
-                            ("time", ctypes.c_uint32),
-                            ("pt_x", ctypes.c_long),
-                            ("pt_y", ctypes.c_long),
-                        ]
-                    msg = _MSG()
-                user32 = self._user32
-                while not self._stop.is_set():
-                    ret = user32.GetMessageW(ctypes.byref(msg), ctypes.c_void_p(hwnd_for_register), 0, 0)
-                    if ret == 0:  # WM_QUIT
-                        break
-                    if ret == -1:
-                        break
-                    if msg.message == self.WM_HOTKEY:
-                        ident = int(msg.wParam) if isinstance(msg.wParam, int) else int(ctypes.cast(msg.wParam, ctypes.c_void_p).value or 0)  # noqa: E501
-                        # wParam is WPARAM (UINT_PTR); GetMessage stores it verbatim.
-                        # Simpler: ctypes already exposed it as int-like
-                        try:
-                            ident2 = int(msg.wParam)  # type: ignore[arg-type]
-                        except Exception:
-                            ident2 = ident
-                        name = self._names.get(ident2)
-                        if name:
-                            self.triggered.emit(name)
-                    user32.TranslateMessage(ctypes.byref(msg))
-                    user32.DispatchMessageW(ctypes.byref(msg))
-            except OSError:
-                pass
+        if not registered_ids:
+            return
 
-        # Only start the pump when at least one hotkey was registered; otherwise
-        # GetMessage would block forever with no way to receive WM_HOTKEY.
-        if ok_any:
-            self._thread = threading.Thread(target=_pump, daemon=True)
-            self._thread.start()
-        return ok_any
-
-    def stop(self):
-        if self._user32 is not None and self._ids:
-            hwnd = self._hwnd or 0
-            for ident in list(self._ids):
+        try:
+            while not self._stop.is_set():
+                ret = user32.GetMessageW(ctypes.byref(msg), 0, 0, 0)
+                if ret <= 0:  # 0 for WM_QUIT, -1 for error
+                    break
+                if msg.message == self.WM_HOTKEY:
+                    try:
+                        ident = int(msg.wParam)
+                    except Exception:
+                        ident = int(ctypes.cast(msg.wParam, ctypes.c_void_p).value or 0)
+                    name = registered_names.get(ident)
+                    if name:
+                        self.triggered.emit(name)
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+        except OSError:
+            pass
+        finally:
+            for ident in registered_ids:
                 try:
-                    self._user32.UnregisterHotKey(ctypes.c_void_p(hwnd), ident)
+                    user32.UnregisterHotKey(0, ident)
                 except OSError:
                     pass
-            # Wake GetMessage so the thread can exit.
+
+    def stop(self):
+        self._stop.set()
+        if self._user32 is not None and self._thread_id is not None:
             try:
-                self._user32.PostMessageW(ctypes.c_void_p(hwnd or 0), 0x0012, 0, 0)  # WM_QUIT
+                self._user32.PostThreadMessageW(self._thread_id, self.WM_QUIT, 0, 0)
             except OSError:
                 pass
-        self._stop.set()
-        self._ids = []
-        self._names = {}
-        # Thread will exit shortly; don't join on the GUI thread for long.
-        if self._thread is not None:
+        if self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=0.6)
-            self._thread = None
+        self._thread = None
+        self._thread_id = None
         self._user32 = None
-        self._hwnd = None
-        # Only clear our own entries, mirroring CarbonHotkey.
-        # Keep it simple: clear all (Windows has no KDE/GNOME file to clash with).
+        self._kernel32 = None
         _REGISTERED.clear()
 
 

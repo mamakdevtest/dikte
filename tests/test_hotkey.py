@@ -681,5 +681,41 @@ class MacChooser(DikteTest):
             self.assertFalse(hotkey.valid_shortcut("Cmd+Space"))
 
 
+class Windows(DikteTest):
+    """What the shortcut verbs mean on Windows."""
+
+    def setUp(self):
+        super().setUp()
+        self.patch_attr(hotkey.sys, "platform", "win32")
+        self.addCleanup(hotkey._REGISTERED.clear)
+
+    def test_the_listener_is_the_one_windows_has(self):
+        self.assertIsInstance(hotkey.listener(), hotkey.WindowsHotkey)
+
+    def test_there_is_nothing_to_install_into(self):
+        self.assertFalse(hotkey.installs_shortcuts())
+        self.assertFalse(hotkey.shortcut_needs_restart())
+        self.assertEqual(hotkey.desktop_name(), "Windows")
+
+    def test_windows_shortcut_validation(self):
+        self.assertTrue(hotkey.valid_shortcut("Ctrl+Space"))
+        self.assertTrue(hotkey.valid_shortcut("Ctrl+Alt+Shift+V"))
+        self.assertFalse(hotkey.valid_shortcut("Invalid+Combo+Key"))
+
+    def test_windows_hotkey_start_stop_lifecycle(self):
+        hk = hotkey.WindowsHotkey()
+        hk.stop()
+        self.assertFalse(hk.running)
+        with mock.patch.object(hotkey.ctypes.windll, "user32") as user32, \
+                mock.patch.object(hotkey.ctypes.windll, "kernel32") as kernel32:
+            kernel32.GetCurrentThreadId.return_value = 9999
+            user32.RegisterHotKey.return_value = 1
+            user32.GetMessageW.return_value = 0
+            started = hk.start({"toggle": "Ctrl+Space"})
+            self.assertTrue(started)
+            hk.stop()
+            self.assertFalse(hk.running)
+
+
 if __name__ == "__main__":
     unittest.main()

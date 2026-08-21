@@ -9,6 +9,7 @@ socket is faked, and everything that runs locally runs for real.
 import contextlib
 import io
 import json
+import sys
 import unittest
 from unittest import mock
 
@@ -499,9 +500,15 @@ class WithoutAnInstance(DikteTest):
         # comes back in real use and must not be allowed to here.
         with mock.patch.object(ipc, "send", return_value=None), \
                 mock.patch.object(cli, "launch_gui") as launch, \
+                mock.patch.object(sys, "stdin", io.StringIO("")), \
                 captured() as (out, err):
             code = cli.run(argv)
         return code, out.getvalue(), err.getvalue(), launch
+
+    def test_plain_launch_starts_gui_application(self):
+        """dikte with no arguments launches the GUI application."""
+        _, _, _, launch = self.run_verb([])
+        launch.assert_called_once_with("")
 
     def test_pressing_the_key_on_a_fresh_login_starts_it_recording(self):
         """What the KDE shortcut has always relied on."""
@@ -509,9 +516,9 @@ class WithoutAnInstance(DikteTest):
         launch.assert_called_once_with("toggle")
 
     def test_every_verb_that_opens_a_window_can_start_it(self):
-        for verb in ("settings", "toggle", "ask", "meeting"):
+        for verb in ("", "settings", "toggle", "ask", "meeting"):
             with self.subTest(verb=verb):
-                self.assertTrue(self.run_verb([verb])[3].called)
+                self.assertTrue(self.run_verb([verb] if verb else [])[3].called)
 
     def test_a_verb_asked_to_wait_starts_nothing(self):
         """There would be no run to wait for; the process would just be replaced."""

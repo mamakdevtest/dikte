@@ -246,6 +246,8 @@ class Chain(DikteTest):
         self.assertEqual(row["text"], "Book it for Thursday.")
         self.assertEqual(row["duration"], 2.0)
         self.assertEqual(row["model"], self.conf.transcribe_target().model)
+        self.assertEqual(row["transcribe_provider"], self.conf.transcribe_target().provider)
+        self.assertEqual(row["cleanup_provider"], "openrouter")
         self.assertEqual(row["mode"], "")
 
     def test_a_command_is_recorded_as_one(self):

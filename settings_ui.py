@@ -1,14 +1,15 @@
 """Settings window."""
 
+import json
 import os
 import shutil
 import threading
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices, QGuiApplication, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -468,6 +469,161 @@ class LocalModelBox(QGroupBox):
             self.status.setText(t("{name} has not been downloaded yet.", name=name))
 
 
+def _app_icon():
+    """Application and window icon from shipped assets or system theme."""
+    icon = QIcon.fromTheme("dikte")
+    if not icon.isNull():
+        return icon
+    base = os.path.dirname(__file__)
+    for cand in (
+        os.path.join(base, "icons", "dikte.ico"),
+        os.path.join(base, "icons", "dikte.png"),
+    ):
+        if os.path.isfile(cand):
+            icon = QIcon(cand)
+            if not icon.isNull():
+                return icon
+    return QIcon()
+
+
+class HistoryDetailsDialog(QDialog):
+    """Detailed properties and execution metadata for a dictation history entry."""
+
+    def __init__(self, row, parent=None):
+        super().__init__(parent)
+        self.row = row or {}
+        self.setWindowTitle(t("Dictation Details"))
+        self.setWindowIcon(_app_icon())
+        self.resize(620, 530)
+
+        layout = QVBoxLayout(self)
+
+        # 1. Summary metadata grid
+        summary_group = QGroupBox(t("Properties"))
+        grid = QGridLayout(summary_group)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+
+        ts = self.row.get("ts", "-")
+        duration = f"{self.row.get('duration', 0):.1f} s" if "duration" in self.row else "-"
+        elapsed = f"{self.row.get('elapsed', 0):.1f} s" if self.row.get("elapsed") is not None else "-"
+        mode_str = t("Agent Ask") if self.row.get("mode") == "ask" else t("Dictation")
+        lang = self.row.get("language") or "-"
+
+        transcribe_prov = self.row.get("transcribe_provider") or "-"
+        transcribe_mdl = self.row.get("model") or self.row.get("transcribe_model") or "-"
+
+        cleanup_mdl = self.row.get("cleanup_model") or t("None / Disabled")
+        cleanup_prov = self.row.get("cleanup_provider") or "-"
+        if cleanup_prov == "-" and cleanup_mdl != t("None / Disabled"):
+            if "/" in cleanup_mdl:
+                cleanup_prov = cleanup_mdl.split("/")[0]
+
+        status_err = self.row.get("cleanup_error") or t("Success")
+
+        def _val_label(txt, is_error=False):
+            lbl = QLabel(str(txt))
+            lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            if is_error:
+                lbl.setStyleSheet("color: #ff6b6b;")
+            return lbl
+
+        row_idx = 0
+        grid.addWidget(QLabel(f"<b>{t('Timestamp')}:</b>"), row_idx, 0)
+        grid.addWidget(_val_label(ts), row_idx, 1)
+        grid.addWidget(QLabel(f"<b>{t('Mode')}:</b>"), row_idx, 2)
+        grid.addWidget(_val_label(mode_str), row_idx, 3)
+
+        row_idx += 1
+        grid.addWidget(QLabel(f"<b>{t('Audio duration')}:</b>"), row_idx, 0)
+        grid.addWidget(_val_label(duration), row_idx, 1)
+        grid.addWidget(QLabel(f"<b>{t('Processing time')}:</b>"), row_idx, 2)
+        grid.addWidget(_val_label(elapsed), row_idx, 3)
+
+        row_idx += 1
+        grid.addWidget(QLabel(f"<b>{t('Speech language')}:</b>"), row_idx, 0)
+        grid.addWidget(_val_label(lang), row_idx, 1)
+        grid.addWidget(QLabel(f"<b>{t('Status / Error')}:</b>"), row_idx, 2)
+        grid.addWidget(_val_label(status_err, is_error=bool(self.row.get("cleanup_error"))), row_idx, 3)
+
+        row_idx += 1
+        grid.addWidget(QLabel(f"<b>{t('Transcription')}:</b>"), row_idx, 0)
+        transcribe_summary = f"{transcribe_prov} ({transcribe_mdl})" if transcribe_prov != "-" else transcribe_mdl
+        grid.addWidget(_val_label(transcribe_summary), row_idx, 1, 1, 3)
+
+        row_idx += 1
+        grid.addWidget(QLabel(f"<b>{t('Cleanup AI')}:</b>"), row_idx, 0)
+        cleanup_summary = f"{cleanup_prov} ({cleanup_mdl})" if cleanup_prov != "-" and cleanup_mdl != t("None / Disabled") else cleanup_mdl
+        grid.addWidget(_val_label(cleanup_summary), row_idx, 1, 1, 3)
+
+        if self.row.get("mode") == "ask":
+            row_idx += 1
+            asst_prov = self.row.get("assistant_provider") or "-"
+            asst_mdl = self.row.get("assistant_model") or "-"
+            asst_summary = f"{asst_prov} ({asst_mdl})" if asst_prov != "-" else asst_mdl
+            grid.addWidget(QLabel(f"<b>{t('Agent / Assistant')}:</b>"), row_idx, 0)
+            grid.addWidget(_val_label(asst_summary), row_idx, 1, 1, 3)
+
+        layout.addWidget(summary_group)
+
+        # 2. Text tabs
+        tabs = QTabWidget()
+
+        self.final_text_box = QPlainTextEdit()
+        self.final_text_box.setReadOnly(True)
+        self.final_text_box.setPlainText(self.row.get("text", ""))
+        tabs.addTab(self.final_text_box, t("Final text"))
+
+        self.raw_text_box = QPlainTextEdit()
+        self.raw_text_box.setReadOnly(True)
+        self.raw_text_box.setPlainText(self.row.get("raw", ""))
+        tabs.addTab(self.raw_text_box, t("Raw transcript"))
+
+        if self.row.get("mode") == "ask" or self.row.get("question"):
+            self.question_box = QPlainTextEdit()
+            self.question_box.setReadOnly(True)
+            self.question_box.setPlainText(self.row.get("question", ""))
+            tabs.addTab(self.question_box, t("Question"))
+
+        self.json_box = QPlainTextEdit()
+        self.json_box.setReadOnly(True)
+        self.json_box.setPlainText(json.dumps(self.row, ensure_ascii=False, indent=2))
+        tabs.addTab(self.json_box, t("Metadata (JSON)"))
+
+        layout.addWidget(tabs, 1)
+
+        # 3. Action Buttons
+        btn_layout = QHBoxLayout()
+        copy_final_btn = QPushButton(t("Copy final text"))
+        copy_final_btn.clicked.connect(self._copy_final)
+        btn_layout.addWidget(copy_final_btn)
+
+        copy_raw_btn = QPushButton(t("Copy raw transcript"))
+        copy_raw_btn.clicked.connect(self._copy_raw)
+        btn_layout.addWidget(copy_raw_btn)
+
+        copy_json_btn = QPushButton(t("Copy JSON"))
+        copy_json_btn.clicked.connect(self._copy_json)
+        btn_layout.addWidget(copy_json_btn)
+
+        btn_layout.addStretch(1)
+
+        close_btn = QPushButton(t("Close"))
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _copy_final(self):
+        QGuiApplication.clipboard().setText(self.row.get("text", ""))
+
+    def _copy_raw(self):
+        QGuiApplication.clipboard().setText(self.row.get("raw", ""))
+
+    def _copy_json(self):
+        QGuiApplication.clipboard().setText(json.dumps(self.row, ensure_ascii=False, indent=2))
+
+
 class SettingsWindow(QDialog):
     applied = pyqtSignal()
 
@@ -493,6 +649,7 @@ class SettingsWindow(QDialog):
         self._shown_provider = ""
         self.transcriber = FileTranscriber(conf, self)
         self.setWindowTitle(t("Dikte Settings"))
+        self.setWindowIcon(_app_icon())
         self.resize(680, 640)
 
         tabs = self.tabs = QTabWidget(self)
@@ -1346,6 +1503,7 @@ class SettingsWindow(QDialog):
         )
         self.history.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.history.customContextMenuRequested.connect(self._history_menu)
+        self.history.itemDoubleClicked.connect(self._show_history_details)
         delete_key = QShortcut(QKeySequence.StandardKey.Delete, self.history)
         delete_key.setContext(Qt.ShortcutContext.WidgetShortcut)
         delete_key.activated.connect(self._delete_history)
@@ -1576,6 +1734,12 @@ class SettingsWindow(QDialog):
 
         self.history_limit.setValue(max(0, int(conf["history_limit"])))
 
+        # Defer nonessential initialization (disk reads for history/minutes and
+        # external status queries) so the window shell and active tab controls
+        # appear immediately.
+        QTimer.singleShot(0, self._deferred_load)
+
+    def _deferred_load(self):
         for which in self._shortcut_rows:
             self._refresh_shortcut_status(which)
         self._refresh_assistant_status()
@@ -1716,9 +1880,14 @@ class SettingsWindow(QDialog):
         try:
             cfg.trim_history(conf["history_limit"])
         except OSError as exc:
-            print(f"dikte: could not trim the history ({exc})")
+            print(f"dikte: could not trim the history ({exc})", file=sys.stderr)
         self._load_history()  # the trim may just have dropped rows from the list
-        self.applied.emit()
+
+        try:
+            self.applied.emit()
+        except Exception as exc:
+            print(f"dikte: settings saved but apply failed: {exc}", file=sys.stderr)
+
         QMessageBox.information(self, t("Dikte Settings"), t("Saved successfully."))
 
     @staticmethod
@@ -2259,11 +2428,25 @@ class SettingsWindow(QDialog):
             QMessageBox.warning(self, t("History"), t("Failed: {error}", error=exc))
         self._load_history()
 
+    def _show_history_details(self, item=None):
+        if item is None:
+            items = self.history.selectedItems()
+            if not items:
+                return
+            item = items[0]
+        row = item.data(Qt.ItemDataRole.UserRole)
+        if row is not None:
+            dlg = HistoryDetailsDialog(row, self)
+            dlg.exec()
+
     def _history_menu(self, pos):
         item = self.history.itemAt(pos)
         if item is not None and not item.isSelected():
             self.history.setCurrentItem(item)
         menu = QMenu(self)
+        details = menu.addAction(t("Details…"))
+        details.setEnabled(item is not None)
+        menu.addSeparator()
         copy = menu.addAction(t("Copy selected to clipboard"))
         delete = menu.addAction(t("Delete selected"))
         menu.addSeparator()
@@ -2273,7 +2456,9 @@ class SettingsWindow(QDialog):
         delete.setEnabled(has_selection)
         clear.setEnabled(self.history.count() > 0)
         chosen = menu.exec(self.history.viewport().mapToGlobal(pos))
-        if chosen is copy:
+        if chosen is details:
+            self._show_history_details(item)
+        elif chosen is copy:
             self._copy_history()
         elif chosen is delete:
             self._delete_history()
