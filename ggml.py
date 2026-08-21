@@ -656,6 +656,10 @@ class Server:
                         args + ["--host", HOST, "--port", str(port)],
                         stdout=sink, stderr=subprocess.STDOUT,
                         stdin=subprocess.DEVNULL,
+                        # A console build flashes a black window on every
+                        # start; creationflags=0 is accepted everywhere.
+                        creationflags=(subprocess.CREATE_NO_WINDOW
+                                       if sys.platform == "win32" else 0),
                     )
             except OSError as exc:
                 raise LocalError(t("Could not start {name}: {error}",
