@@ -35,6 +35,13 @@ APPLICATIONS_DIR = pathlib.Path.home() / ".local/share/applications"
 DESKTOP_FILE = APPLICATIONS_DIR / DESKTOP_ID
 SHORTCUTS_FILE = pathlib.Path.home() / ".config/kglobalshortcutsrc"
 GNOME_MEDIA_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
+
+
+def _subprocess_kwargs():
+    """Keep Windows from flashing a console for a wrapped subprocess."""
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
 GNOME_BINDING_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
 
 Shortcut = collections.namedtuple("Shortcut", "verb desktop_id name setting fallback")
@@ -682,6 +689,7 @@ def display_accelerator(accelerator):
 def _gsettings(*args, check=True):
     return subprocess.run(
         ["gsettings", *args], capture_output=True, text=True, timeout=10, check=check,
+        **_subprocess_kwargs(),
     )
 
 
@@ -871,6 +879,7 @@ def install_kde_shortcut(shortcut, exec_command, name="Dikte: start/stop recordi
              "--group", "services", "--group", desktop_id,
              "--key", "_launch", shortcut],
             capture_output=True, text=True, timeout=10, check=True,
+            **_subprocess_kwargs(),
         )
     except (subprocess.SubprocessError, OSError) as exc:
         return False, t("Could not write kglobalshortcutsrc: {error}", error=exc)
@@ -896,7 +905,7 @@ def remove_kde_shortcut(desktop_id=DESKTOP_ID):
                 ["kwriteconfig6", "--notify", "--file", "kglobalshortcutsrc",
                  "--group", "services", "--group", desktop_id,
                  "--key", key, "--delete"],
-                capture_output=True, timeout=10,
+                capture_output=True, timeout=10, **_subprocess_kwargs(),
             )
         except (subprocess.SubprocessError, OSError):
             pass

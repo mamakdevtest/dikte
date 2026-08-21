@@ -26,6 +26,13 @@ from i18n import t
 PROVIDERS = ("openrouter", "llmapi", "local", "claude", "codex")
 
 
+def _subprocess_kwargs():
+    """Keep Windows from flashing a console for a wrapped subprocess."""
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 class CleanupError(api.ApiError):
     """What a CLI could not do.
 
@@ -209,7 +216,7 @@ def _output(cmd, timeout, service):
         done = subprocess.run(
             cmd, cwd=os.path.expanduser("~"), stdin=subprocess.DEVNULL,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=timeout,
+            timeout=timeout, **_subprocess_kwargs(),
         )
     except subprocess.TimeoutExpired:
         raise CleanupError(t("{service} did not finish within {seconds} seconds.",

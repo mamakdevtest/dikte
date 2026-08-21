@@ -113,6 +113,13 @@ class PasteError(Exception):
     pass
 
 
+def _subprocess_kwargs():
+    """Keep Windows from flashing a console for a wrapped subprocess."""
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 # --- the key press, one group per system ----------------------------------
 
 def _keys(shortcut):
@@ -154,7 +161,8 @@ def _program_keyboard(program, command, hint=""):
         argv = command(shortcut)
         time.sleep(delay)  # let the selection settle and focus come back
         try:
-            res = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+            res = subprocess.run(argv, capture_output=True, text=True, timeout=10,
+                                 **_subprocess_kwargs())
         except (subprocess.SubprocessError, OSError) as exc:
             raise PasteError(t("Could not run {tool}: {error}",
                                tool=program, error=exc)) from exc
@@ -239,6 +247,7 @@ def _ask_for_permission():
             ["open", ("x-apple.systempreferences:com.apple.preference.security"
                       "?Privacy_Accessibility")],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+            **_subprocess_kwargs(),
         )
     except OSError:
         pass
@@ -509,6 +518,7 @@ def _macos_snapshot():
         result = subprocess.run(
             ["osascript", "-l", "JavaScript", "-e", _MAC_SNAPSHOT_SCRIPT],
             capture_output=True, text=True, timeout=15, env=environment,
+            **_subprocess_kwargs(),
         )
         manifest = result.stdout.strip()
         rows = json.loads(manifest) if result.returncode == 0 else None
@@ -528,6 +538,7 @@ def _macos_restore(snapshot):
             ["osascript", "-l", "JavaScript", "-e", _MAC_RESTORE_SCRIPT],
             input=snapshot.manifest, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, text=True, timeout=15, env=environment,
+            **_subprocess_kwargs(),
         )
     except (OSError, subprocess.SubprocessError):
         pass
@@ -575,7 +586,8 @@ def read_clipboard():
     if not shutil.which(here.read_command[0]):
         return None
     try:
-        res = subprocess.run(here.read_command, capture_output=True, timeout=5)
+        res = subprocess.run(here.read_command, capture_output=True, timeout=5,
+                                 **_subprocess_kwargs())
     except (subprocess.SubprocessError, OSError):
         return None
     return res.stdout if res.returncode == 0 else None
@@ -590,6 +602,7 @@ def _run_copy(payload):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         timeout=10,
+        **_subprocess_kwargs(),
     )
 
 

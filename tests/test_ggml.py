@@ -15,6 +15,7 @@ import tarfile
 import textwrap
 import threading
 import time
+import zipfile
 from unittest import mock
 
 import ggml
@@ -63,6 +64,15 @@ def serving(release, archive):
 
     with mock.patch("urllib.request.urlopen", side_effect=opener) as calls:
         yield calls
+
+
+def wheel(entries):
+    """A .zip laid out the way the Windows releases are: one directory."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w") as zip_:
+        for name, content in entries.items():
+            zip_.writestr(name, content)
+    return buf.getvalue()
 
 
 def tarball(entries):
@@ -206,6 +216,39 @@ class InstallProgram(Local):
         self.assertTrue(os.access(path, os.X_OK))
         self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(path),
                                                     "libwhisper.so")))
+
+    def test_a_zip_release_unpacks_and_the_binary_is_found(self):
+        zipped = wheel({
+            "whisper-bin-win-x64/whisper-server.exe": b"windows server",
+            "whisper-bin-win-x64/libwhisper.dll": b"not really a library",
+        })
+        archive = self.path("data", "bin", "whisper", "whisper-bin-win-x64.zip")
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(zipped)
+        into = archive.parent / "v1.9.1"
+        ggml._extract(archive, into)
+        self.assertTrue((into / "whisper-bin-win-x64" / "whisper-server.exe").is_file())
+        self.assertTrue((into / "whisper-bin-win-x64" / "libwhisper.dll").is_file())
+
+    def test_a_zip_cannot_write_outside_the_directory_it_is_opened_in(self):
+        zipped = wheel({"../../../escaped": b"should not land"})
+        archive = self.path("data", "bin", "whisper", "escape.zip")
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(zipped)
+        into = archive.parent / "v1.9.1"
+        with self.assertRaises(ggml.LocalError):
+            ggml._extract(archive, into)
+        self.assertFalse(self.path("escaped").exists())
+        self.assertFalse((into.parent.parent.parent / "escaped").exists())
+
+    def test_a_zip_extracts_cleanly_even_when_it_has_no_binary(self):
+        zipped = wheel({"whisper-bin-win-x64/README": b"nothing here"})
+        archive = self.path("data", "bin", "whisper", "empty.zip")
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(zipped)
+        into = archive.parent / "v1.9.1"
+        ggml._extract(archive, into)
+        self.assertTrue((into / "whisper-bin-win-x64" / "README").is_file())
 
     def test_the_build_for_this_machine_is_the_one_fetched(self):
         _, urls = self.install("whisper-bin-x64.zip", "whisper-bin-ubuntu-arm64.tar.gz",
@@ -593,6 +636,70 @@ class Servers(Local):
 
     def test_no_pid_file_is_nothing_to_sweep(self):
         self.assertFalse(self.server().sweep())
+
+    def test_windows_considers_a_pid_ours_only_when_its_image_is_in_our_bin(self):
+        # The Windows sweep has no /proc to read; it asks the process for its
+        # image path and keeps the pid only when the path lives underneath our
+        # own bin directory. The Win32 layer is replaced with a stand-in so the
+        # decision runs on any host: the path boundary itself is what is under
+        # test, and it is the same choice a hostile pid would have to beat.
+        server = self.server()
+        self.patch_attr(sys, "platform", "win32")
+        answers = {
+            1001: str(self.path("data", "bin", "whisper", "v1.9.1",
+                                "whisper-server.exe")),
+            2002: r"C:\Program Files\Other\whisper-server.exe",
+            3003: None,
+        }
+        probes = []
+
+        class FakeBuffer:
+            def __init__(self, _):
+                self.value = ""
+
+        class FakeKernel:
+            def __init__(self):
+                self.probes = []
+
+            def OpenProcess(self, *_):
+                return 1
+
+            def QueryFullProcessImageNameW(self, _h, _f, buf, _size):
+                self.probes.append(self._pid)
+                path = answers.get(self._pid)
+                if path is None:
+                    return False
+                buf.value = path
+                return True
+
+            def CloseHandle(self, *_):
+                pass
+
+        class DWORD:
+            def __init__(self, value):
+                self.value = value
+
+        kernel = FakeKernel()
+        fake_ctypes = mock.MagicMock()
+        fake_ctypes.WinDLL = mock.Mock(return_value=kernel)
+        fake_ctypes.create_unicode_buffer = FakeBuffer
+        fake_ctypes.byref = lambda x: x
+        fake_ctypes.wintypes.DWORD = DWORD
+
+        with mock.patch.object(ggml, "BIN_DIR", self.path("data", "bin")), \
+                mock.patch.dict(sys.modules, {"ctypes": fake_ctypes}):
+            # OpenProcess stores the pid the queries are answered from.
+            real_open = kernel.OpenProcess
+
+            def open_with_pid(perms, inherit, pid):
+                kernel._pid = pid
+                return real_open()
+            kernel.OpenProcess = open_with_pid
+
+            self.assertTrue(server._is_ours_windows(1001))
+            self.assertFalse(server._is_ours_windows(2002))
+            self.assertFalse(server._is_ours_windows(3003))
+        self.assertEqual(kernel.probes, [1001, 2002, 3003])
 
     def test_a_start_that_goes_wrong_takes_its_process_with_it(self):
         started = []

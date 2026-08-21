@@ -1698,7 +1698,20 @@ class SettingsWindow(QDialog):
             conf[spec.setting] = box.currentText().strip() or spec.fallback
         conf["evdev_hotkey"] = self.evdev_enabled.isChecked()
         conf["history_limit"] = self.history_limit.value()
-        conf.save()
+        # The write is the one part of Save that can fail for operational
+        # reasons: a read-only settings directory, a full disk, or (on Windows)
+        # an antivirus holding the config file locked. If it does, the exception
+        # must not escape this slot -- PyQt turns an unhandled exception in a
+        # slot into a terminated process, which is how Save used to just "close"
+        # the app. Surface the failure, keep the already-collected settings held
+        # in memory, and report that nothing was saved.
+        try:
+            conf.save()
+        except OSError as exc:
+            QMessageBox.warning(
+                self, t("Dikte Settings"),
+                t("Could not save the settings: {error}", error=exc))
+            return
         # A lowered limit should bite now, not on the next dictation.
         try:
             cfg.trim_history(conf["history_limit"])

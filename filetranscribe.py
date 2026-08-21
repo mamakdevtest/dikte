@@ -40,6 +40,13 @@ MIN_SUBTITLE_SECONDS = 1.5   # how long a cue with no end time of its own stays 
 STAMP_RE = re.compile(r"^\[(?:(\d+):)?(\d{1,2}):(\d{2})\]\s*")
 
 
+def _subprocess_kwargs():
+    """Keep Windows from flashing a console for a wrapped subprocess."""
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 # What a stopped run comes back with, wherever it was stopped: the request that
 # was cut off raises it from api, and the steps in between raise it themselves.
 Cancelled = api.Aborted
@@ -282,7 +289,7 @@ def _ffmpeg(args, out, aborter=None):
     proc = subprocess.Popen(
         ["ffmpeg", "-nostdin", "-y", *args],
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True,
+        text=True, **_subprocess_kwargs(),
     )
     # A two hour film is a minute of ffmpeg, which is a minute of a Stop button
     # doing nothing unless the abort reaches the process itself.

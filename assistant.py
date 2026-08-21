@@ -378,6 +378,13 @@ def _ask_plain_http(name, prompt, conf, on_stage):
 
 # --- running a CLI --------------------------------------------------------
 
+def _subprocess_kwargs():
+    """Keep Windows from flashing a console for a wrapped subprocess."""
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 def _stream(cmd, conf, on_event, should_stop):
     """Run cmd, hand every JSON line it prints to on_event.
 
@@ -389,6 +396,7 @@ def _stream(cmd, conf, on_event, should_stop):
             cmd, cwd=working_dir(conf), stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
+            **_subprocess_kwargs(),
         )
     except OSError as exc:
         raise AssistantError(t("Could not run {binary}: {error}",
