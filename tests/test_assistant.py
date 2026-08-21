@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 
 import assistant
-from tests.support import DikteTest, fake_urlopen, only_these_tools
+from tests.support import DikteTest, FakeCompleted, fake_urlopen, only_these_tools
 
 
 class FakeCli:
@@ -58,6 +58,7 @@ class Provider(DikteTest):
     def test_what_each_one_runs(self):
         self.assertEqual(assistant.executable("claude"), "claude")
         self.assertEqual(assistant.executable("codex"), "codex")
+        self.assertEqual(assistant.executable("antigravity"), "agy")
         self.assertEqual(assistant.executable("openrouter"), "")
 
     def test_what_each_one_is_called(self):
@@ -67,6 +68,9 @@ class Provider(DikteTest):
         self.assertEqual(
             assistant.display_name(self.config(assistant_provider="openrouter")),
             "OpenRouter")
+        self.assertEqual(
+            assistant.display_name(self.config(assistant_provider="antigravity")),
+            "Antigravity")
 
 
 class Effort(unittest.TestCase):
@@ -470,6 +474,99 @@ class AskCodex(DikteTest):
             self.run_ask(events=[{"type": "turn.failed",
                                   "error": {"message": "quota exhausted"}}])
         self.assertIn("quota", str(caught.exception))
+
+
+class AskAntigravity(DikteTest):
+    """A one-shot `agy --print`, answered in plain text on stdout."""
+
+    def run_ask(self, conf=None, **kwargs):
+        conf = conf or self.config(assistant_provider="antigravity")
+        result = FakeCompleted(stdout=kwargs.pop("stdout", "  done  \n"),
+                               returncode=kwargs.pop("code", 0), **kwargs)
+        stages = []
+        with only_these_tools("agy"), \
+                mock.patch.object(subprocess, "run",
+                                  return_value=result) as run:
+            answer = assistant.ask("book it", conf, stages.append, None)
+        return answer, run.call_args.args[0], stages
+
+    def test_the_answer_comes_back_stripped(self):
+        (answer, warning), _, _ = self.run_ask()
+        self.assertEqual(answer, "done")
+        self.assertEqual(warning, "")
+
+    def test_the_command_it_runs(self):
+        _, cmd, _ = self.run_ask()
+        self.assertEqual(cmd[:2], ["agy", "--print"])
+        self.assertEqual(cmd[cmd.index("--model") + 1], "gemini-3.1-pro-high")
+        self.assertEqual(cmd[cmd.index("--output-format") + 1], "text")
+
+    def test_the_instruction_is_kept_apart_from_the_command(self):
+        conf = self.config(assistant_provider="antigravity")
+        _, cmd, _ = self.run_ask(conf)
+        body = cmd[2]
+        self.assertTrue(body.startswith(conf.assistant_prompt()))
+        self.assertIn("\n\n---\n\n", body)
+        self.assertTrue(body.endswith("book it"))
+
+    def test_a_model_of_your_own_is_passed_on_as_typed(self):
+        _, cmd, _ = self.run_ask(self.config(
+            assistant_provider="antigravity",
+            assistant_agy_model=" gemini-3.6-flash-medium "))
+        self.assertEqual(cmd[cmd.index("--model") + 1],
+                         "gemini-3.6-flash-medium")
+
+    def test_no_model_named_means_whatever_antigravity_is_set_to(self):
+        _, cmd, _ = self.run_ask(self.config(assistant_provider="antigravity",
+                                             assistant_agy_model=" "))
+        self.assertNotIn("--model", cmd)
+
+    def test_the_effort_is_only_said_when_agy_has_the_rung(self):
+        _, cmd, _ = self.run_ask(self.config(
+            assistant_provider="antigravity", assistant_reasoning="medium"))
+        self.assertEqual(cmd[cmd.index("--effort") + 1], "medium")
+
+    def test_a_rung_the_slug_already_carries_is_left_unspoken(self):
+        for setting in ("none", "minimal", "xhigh", "max", ""):
+            with self.subTest(setting=setting):
+                _, cmd, _ = self.run_ask(self.config(
+                    assistant_provider="antigravity",
+                    assistant_reasoning=setting))
+                self.assertNotIn("--effort", cmd)
+
+    def test_no_thread_of_another_provider_is_picked_up(self):
+        assistant.write_session("claude", "abc-123")
+        self.run_ask()
+        self.assertEqual(assistant.stored_provider(), "claude")
+        self.assertEqual(assistant.read_session("antigravity", 1800), "")
+
+    def test_a_program_that_is_not_installed_says_where_to_change_it(self):
+        with only_these_tools(), \
+                self.assertRaises(assistant.AssistantError) as caught:
+            assistant.ask("hi", self.config(assistant_provider="antigravity"))
+        self.assertIn("agy", str(caught.exception))
+        self.assertIn("Settings", str(caught.exception))
+
+    def test_a_non_zero_exit_shows_the_last_line_of_the_complaint(self):
+        with self.assertRaises(assistant.AssistantError) as caught:
+            self.run_ask(code=1, stderr="a warning\nout of credit\n")
+        self.assertEqual(str(caught.exception), "out of credit")
+
+    def test_an_answer_of_nothing_is_a_failure(self):
+        with self.assertRaises(assistant.AssistantError) as caught:
+            self.run_ask(stdout="  \n")
+        self.assertIn("Antigravity", str(caught.exception))
+
+    def test_a_run_that_never_ends(self):
+        def run(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, 300)
+
+        conf = self.config(assistant_provider="antigravity")
+        with only_these_tools("agy"), \
+                mock.patch.object(subprocess, "run", side_effect=run):
+            with self.assertRaises(assistant.AssistantError) as caught:
+                assistant.ask("book it", conf)
+        self.assertIn("300", str(caught.exception))
 
 
 class AskOpenRouter(DikteTest):

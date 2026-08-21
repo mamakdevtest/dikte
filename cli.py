@@ -13,6 +13,7 @@ a pipe, and the exit code says which of the three things happened: 0 done,
 """
 
 import argparse
+import getpass
 import json
 import os
 import shutil
@@ -32,6 +33,7 @@ import hotkey
 import ipc
 import meeting
 import paste
+import providers
 
 NOT_RUNNING = 3
 
@@ -617,6 +619,195 @@ def cmd_config_path(opts):
                str(cfg.CONFIG_FILE))
 
 
+# --- providers ---------------------------------------------------------------
+
+def _named_provider(opts, pid):
+    """The registry entry an id names, or a failure saying it names nothing."""
+    who = providers.provider(cfg.Config(), pid)
+    if who is None:
+        return None, fail(opts, f"unknown provider: {pid}", 2)
+    return who, 0
+
+
+def _save_registry(conf, opts):
+    """Keep a registry change, and tell a running instance to read it back."""
+    try:
+        conf.save()
+    except OSError as exc:
+        return fail(opts, exc)
+    _tell_instance_to_reload()
+    return 0
+
+
+def cmd_providers_list(opts):
+    conf = cfg.Config()
+    rows = [{"id": pid, "name": who.name, "kind": who.kind,
+             "transport": who.transport,
+             "base_url": providers.base_url(conf, pid),
+             "keys": len(providers.credentials(conf, pid)),
+             "custom": who.custom}
+            for pid, who in providers.definitions(conf).items()]
+    lines = [f"{row['id']:12} {row['name']:16} {row['kind']:18} "
+             f"{row['base_url'] or '—':35} {row['keys']} key(s)"
+             for row in rows]
+    return out(opts, {"ok": True, "providers": rows}, "\n".join(lines))
+
+
+def _masked_credentials(conf, pid):
+    """Labels and masked secrets only; a key is never written out in full."""
+    active = providers.active_credential(conf, pid)
+    return [{"id": cred["id"], "label": cred["label"],
+             "masked": providers.mask(providers.credential(conf, pid, cred["id"])),
+             "active": cred["id"] == active}
+            for cred in providers.credentials(conf, pid)]
+
+
+def cmd_providers_show(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    conf = cfg.Config()
+    creds = _masked_credentials(conf, opts.id)
+    lines = [f"{who.name} ({who.id})", f"  kind:       {who.kind}",
+             f"  transport:  {who.transport}"]
+    if who.transport == "http":
+        lines.append(f"  base url:   {providers.base_url(conf, opts.id) or '—'}")
+    if creds:
+        lines.append("  keys:")
+        lines += [f"    {'*' if cred['active'] else ' '} {cred['label']}"
+                  f"  {cred['masked']}" for cred in creds]
+    return out(opts, {"ok": True, "id": who.id, "name": who.name,
+                      "kind": who.kind, "transport": who.transport,
+                      "base_url": providers.base_url(conf, opts.id),
+                      "custom": who.custom, "keys": creds},
+               "\n".join(lines))
+
+
+def cmd_providers_add(opts):
+    conf = cfg.Config()
+    pid = providers.add_provider(conf, opts.name, opts.base_url)
+    failure = _save_registry(conf, opts)
+    if failure:
+        return failure
+    return out(opts, {"ok": True, "id": pid, "name": opts.name,
+                      "base_url": opts.base_url},
+               f"Added {opts.name} as {pid}.")
+
+
+def cmd_providers_remove(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    if not who.custom:
+        return fail(opts, "only a provider you added here can be removed", 2)
+    conf = cfg.Config()
+    providers.remove_provider(conf, opts.id)
+    failure = _save_registry(conf, opts)
+    if failure:
+        return failure
+    return out(opts, {"ok": True, "removed": opts.id},
+               f"Removed {who.name}.")
+
+
+def cmd_providers_test(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    conf = cfg.Config()
+    try:
+        message = providers.test_provider(conf, opts.id)
+    except api.ApiError as exc:
+        return fail(opts, str(exc))
+    return out(opts, {"ok": True, "id": opts.id, "message": message},
+               f"✓ {who.name}: {message}")
+
+
+def cmd_providers_models(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    conf = cfg.Config()
+    try:
+        models = providers.fetch_models(
+            conf, opts.id, providers.TRANSCRIPTION
+            if opts.capability == "transcription" else providers.TEXT)
+    except api.ApiError as exc:
+        return fail(opts, str(exc))
+    return out(opts, {"ok": True, "id": opts.id, "models": models},
+               "\n".join(models))
+
+
+def cmd_credentials_list(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    conf = cfg.Config()
+    creds = _masked_credentials(conf, opts.id)
+    lines = [f"{'*' if cred['active'] else ' '} {cred['id']:10} "
+             f"{cred['label']:20} {cred['masked']}" for cred in creds]
+    return out(opts, {"ok": True, "id": opts.id, "keys": creds},
+               "\n".join(lines) or "No keys yet.")
+
+
+def cmd_credentials_add(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    if not who.custom:
+        # A built-in's key lives in its own flat setting, which `config set`
+        # already writes; nothing here would have anywhere to put a second one.
+        return fail(opts, f"{who.name}'s key is set with: "
+                          f"dikte config set {who.id}_api_key", 2)
+    if sys.stdin.isatty():
+        secret = getpass.getpass("API key: ")
+    else:
+        secret = sys.stdin.read().strip()
+    if not secret:
+        return fail(opts, "no key given", 2)
+    conf = cfg.Config()
+    cred_id = providers.add_credential(conf, opts.id, opts.label, secret)
+    failure = _save_registry(conf, opts)
+    if failure:
+        return failure
+    return out(opts, {"ok": True, "id": opts.id, "credential": cred_id,
+                      "label": opts.label},
+               f"Added key {opts.label} ({cred_id}).")
+
+
+def cmd_credentials_remove(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    if not who.custom:
+        return fail(opts, "only a key of a provider you added can be removed", 2)
+    conf = cfg.Config()
+    providers.remove_credential(conf, opts.id, opts.credential)
+    failure = _save_registry(conf, opts)
+    if failure:
+        return failure
+    return out(opts, {"ok": True, "id": opts.id,
+                      "removed": opts.credential},
+               f"Removed key {opts.credential}.")
+
+
+def cmd_credentials_use(opts):
+    who, failure = _named_provider(opts, opts.id)
+    if who is None:
+        return failure
+    if not who.custom:
+        return fail(opts, "a built-in has the one key it always had", 2)
+    conf = cfg.Config()
+    if not any(cred["id"] == opts.credential
+               for cred in providers.credentials(conf, opts.id)):
+        return fail(opts, f"no such key: {opts.credential}", 2)
+    providers.set_active_credential(conf, opts.id, opts.credential)
+    failure = _save_registry(conf, opts)
+    if failure:
+        return failure
+    return out(opts, {"ok": True, "id": opts.id, "active": opts.credential},
+               f"Now using key {opts.credential}.")
+
+
 def cmd_prompt(opts):
     """The prompt a run would really use, defaults and glossary folded in."""
     conf = cfg.Config()
@@ -1012,6 +1203,48 @@ def build_parser():
     resetter.add_argument("--all", action="store_true")
     resetter.set_defaults(func=cmd_config_reset)
     leaf(inner, "path", "where things are stored").set_defaults(func=cmd_config_path)
+
+    # --- the provider registry ---------------------------------------------
+    prov = leaf(subs, "providers", "every provider Dikte can run on")
+    inner = prov.add_subparsers(dest="providers", metavar="")
+    prov.set_defaults(func=_needs_subcommand(prov))
+    leaf(inner, "list", "all of them").set_defaults(func=cmd_providers_list)
+    show = leaf(inner, "show", "one provider in detail")
+    show.add_argument("id")
+    show.set_defaults(func=cmd_providers_show)
+    addp = leaf(inner, "add", "an OpenAI-compatible gateway of your own")
+    addp.add_argument("name")
+    addp.add_argument("base_url")
+    addp.set_defaults(func=cmd_providers_add)
+    delp = leaf(inner, "remove", "one you added")
+    delp.add_argument("id")
+    delp.set_defaults(func=cmd_providers_remove)
+    testp = leaf(inner, "test", "one provider's connection")
+    testp.add_argument("id")
+    testp.set_defaults(func=cmd_providers_test)
+    models = leaf(inner, "models", "the model ids a provider offers")
+    models.add_argument("id")
+    models.add_argument("--capability", choices=("transcription", "text"),
+                        default="text", help="which job the models are for")
+    models.set_defaults(func=cmd_providers_models)
+    creds = leaf(inner, "credentials", "the named keys of a provider")
+    cinner = creds.add_subparsers(dest="credentials", metavar="")
+    creds.set_defaults(func=_needs_subcommand(creds))
+    clist = leaf(cinner, "list", "labels and masked keys")
+    clist.add_argument("id")
+    clist.set_defaults(func=cmd_credentials_list)
+    cadd = leaf(cinner, "add", "a key, read from the terminal or stdin")
+    cadd.add_argument("id")
+    cadd.add_argument("label")
+    cadd.set_defaults(func=cmd_credentials_add)
+    cdel = leaf(cinner, "remove", "one key")
+    cdel.add_argument("id")
+    cdel.add_argument("credential")
+    cdel.set_defaults(func=cmd_credentials_remove)
+    cuse = leaf(cinner, "use", "make one key the active one")
+    cuse.add_argument("id")
+    cuse.add_argument("credential")
+    cuse.set_defaults(func=cmd_credentials_use)
 
     prompt = leaf(subs, "prompt", "the prompt a run would really send")
     prompt.add_argument("which", nargs="?",

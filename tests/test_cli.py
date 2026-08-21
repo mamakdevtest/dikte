@@ -13,10 +13,12 @@ import sys
 import unittest
 from unittest import mock
 
+import api
 import cli
 import config as cfg
 import hotkey
 import ipc
+import providers
 from tests.support import DikteTest, fake_urlopen
 
 
@@ -165,9 +167,9 @@ class Parser(unittest.TestCase):
     def test_every_verb_is_wired_to_something(self):
         for verb in ("record", "toggle", "start", "stop", "cancel", "ask",
                      "session", "transcribe", "meeting", "meetings", "history",
-                     "config", "prompt", "devices", "models", "test-key",
-                     "doctor", "shortcut", "status", "settings", "restart",
-                     "quit", "help"):
+                     "config", "providers", "prompt", "devices", "models",
+                     "test-key", "doctor", "shortcut", "status", "settings",
+                     "restart", "quit", "help"):
             with self.subTest(verb=verb):
                 argv = [verb]
                 if verb == "transcribe":
@@ -203,10 +205,17 @@ class Parser(unittest.TestCase):
                          "cleanup_model")
         self.assertEqual(self.parse("history", "list", "--limit", "5").limit, 5)
         self.assertEqual(self.parse("meetings", "show", "3").which, "3")
+        self.assertEqual(self.parse("providers", "models", "openai",
+                                    "--capability", "transcription").capability,
+                         "transcription")
+        self.assertEqual(self.parse("providers", "credentials", "add",
+                                    "user/abc", "work").label, "work")
 
     def test_a_group_with_no_subcommand_asks_for_one(self):
         with captured():
             self.assertEqual(self.parse("config").func(Options()), 2)
+        with captured():
+            self.assertEqual(self.parse("providers").func(Options()), 2)
 
     def test_the_three_way_flags_start_out_undecided(self):
         """--cleanup and --no-cleanup both given as nothing means the setting."""
@@ -397,6 +406,133 @@ class Providers(DikteTest):
         self.assertEqual(code, 0)
         self.assertEqual(calls[0].full_url, cfg.DEFAULTS["llmapi_base_url"] + "/models")
         self.assertIn("Key works.", out)
+
+
+def custom_provider(name="Mine", secret="sk-hush-hush-1234"):
+    """A stored gateway with one named key, as `providers add` would leave it."""
+    return {"id": "abc123def0", "name": name, "base_url": "https://example.com/v1",
+            "enabled": True, "active": "key0000001",
+            "keys": [{"id": "key0000001", "label": "work", "secret": secret,
+                      "enabled": True}]}
+
+
+class ProvidersRegistry(DikteTest):
+    """The provider registry, from the terminal."""
+
+    def run_cmd(self, func, **values):
+        with captured() as (out, err):
+            code = func(Options(**values))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_every_provider_is_listed(self):
+        code, out, _ = self.run_cmd(cli.cmd_providers_list, json=True)
+        self.assertEqual(code, 0)
+        ids = [row["id"] for row in json.loads(out)["providers"]]
+        self.assertEqual(ids, list(providers.definitions(cfg.Config())))
+
+    def test_one_provider_in_detail_with_its_keys_masked(self):
+        self.write_config({"providers": [custom_provider()]})
+        code, out, _ = self.run_cmd(cli.cmd_providers_show, id="user/abc123def0",
+                                    json=True)
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        self.assertNotIn("sk-hush-hush", out)
+        self.assertTrue(payload["keys"][0]["masked"].endswith("1234"))
+        self.assertTrue(payload["keys"][0]["active"])
+
+    def test_a_provider_nobody_knows(self):
+        for func, kwargs in ((cli.cmd_providers_show, {"id": "nope"}),
+                             (cli.cmd_providers_test, {"id": "nope"}),
+                             (cli.cmd_providers_models, {"id": "nope"}),
+                             (cli.cmd_credentials_list, {"id": "nope"})):
+            with self.subTest(func=func.__name__):
+                code, _, err = self.run_cmd(func, **kwargs)
+                self.assertEqual(code, 2)
+                self.assertIn("unknown provider", err)
+
+    def test_adding_and_removing_a_provider(self):
+        with mock.patch.object(ipc, "send"):
+            code, out, _ = self.run_cmd(cli.cmd_providers_add, name="Mine",
+                                        base_url="https://example.com/v1")
+        self.assertEqual(code, 0)
+        (entry,) = cfg.Config()["providers"]
+        pid = f"user/{entry['id']}"
+        with mock.patch.object(ipc, "send") as send:
+            code, _, _ = self.run_cmd(cli.cmd_providers_remove, id=pid)
+        self.assertEqual(code, 0)
+        send.assert_called_once_with("reload")
+        self.assertEqual(cfg.Config()["providers"], [])
+
+    def test_a_built_in_is_not_removed_from_the_terminal(self):
+        code, _, err = self.run_cmd(cli.cmd_providers_remove, id="openai")
+        self.assertEqual(code, 2)
+        self.assertIn("only a provider you added", err)
+
+    def test_testing_a_provider(self):
+        with mock.patch.object(cli.providers, "test_provider",
+                               return_value="Key works.") as test:
+            code, out, _ = self.run_cmd(cli.cmd_providers_test, id="openai")
+        test.assert_called_once()
+        self.assertEqual(code, 0)
+        self.assertIn("Key works.", out)
+        with mock.patch.object(cli.providers, "test_provider",
+                               side_effect=api.ApiError("no key")):
+            code, _, err = self.run_cmd(cli.cmd_providers_test, id="openai")
+        self.assertEqual(code, 1)
+        self.assertIn("no key", err)
+
+    def test_the_models_of_a_provider(self):
+        with mock.patch.object(cli.providers, "fetch_models",
+                               return_value=["a/model", "b/model"]) as fetch:
+            code, out, _ = self.run_cmd(cli.cmd_providers_models, id="openai",
+                                        capability="text")
+        fetch.assert_called_once_with(mock.ANY, "openai", providers.TEXT)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.split(), ["a/model", "b/model"])
+
+    def test_a_key_added_from_stdin_is_masked_in_the_listing(self):
+        self.write_config({"providers": [custom_provider()]})
+        with mock.patch.object(ipc, "send"), \
+                mock.patch.object(sys, "stdin", io.StringIO("sk-second-key-9876\n")):
+            code, out, _ = self.run_cmd(cli.cmd_credentials_add,
+                                        id="user/abc123def0", label="home",
+                                        json=True)
+        self.assertEqual(code, 0)
+        credential = json.loads(out)["credential"]
+        self.assertNotIn("sk-second-key", out)
+        stored = cfg.Config()["providers"][0]
+        self.assertEqual(len(stored["keys"]), 2)
+        code, out, _ = self.run_cmd(cli.cmd_credentials_list,
+                                    id="user/abc123def0", json=True)
+        self.assertNotIn("sk-hush-hush", out)
+        self.assertNotIn("sk-second-key", out)
+        self.assertEqual(len(json.loads(out)["keys"]), 2)
+
+    def test_making_a_key_the_active_one_and_then_dropping_it(self):
+        self.write_config({"providers": [custom_provider()]})
+        pid = "user/abc123def0"
+        conf = cfg.Config()
+        providers.add_credential(conf, pid, "home", "sk-second-key-9876")
+        conf.save()
+        with mock.patch.object(ipc, "send"):
+            code, _, _ = self.run_cmd(cli.cmd_credentials_use, id=pid,
+                                      credential="key0000001")
+        self.assertEqual(cfg.Config()["providers"][0]["active"], "key0000001")
+        with mock.patch.object(ipc, "send"):
+            code, _, _ = self.run_cmd(cli.cmd_credentials_remove, id=pid,
+                                      credential="key0000001")
+        stored = cfg.Config()["providers"][0]
+        self.assertEqual([k["id"] for k in stored["keys"]],
+                         [k["id"] for k in stored["keys"] if k["id"] != "key0000001"])
+        self.assertNotEqual(stored["active"], "key0000001")
+
+    def test_a_built_in_has_no_named_keys_to_manage(self):
+        code, _, err = self.run_cmd(cli.cmd_credentials_add, id="openai",
+                                    label="work")
+        self.assertEqual(code, 2)
+        code, _, err = self.run_cmd(cli.cmd_credentials_remove, id="openai",
+                                    credential="x")
+        self.assertEqual(code, 2)
 
 
 class Doctor(DikteTest):

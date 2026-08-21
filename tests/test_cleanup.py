@@ -49,6 +49,7 @@ class Provider(DikteTest):
     def test_what_each_one_runs(self):
         self.assertEqual(cleanup.executable("claude"), "claude")
         self.assertEqual(cleanup.executable("codex"), "codex")
+        self.assertEqual(cleanup.executable("antigravity"), "agy")
         self.assertEqual(cleanup.executable("openrouter"), "")
 
     def test_the_model_named_in_the_history_is_the_one_that_did_it(self):
@@ -65,6 +66,14 @@ class Provider(DikteTest):
         self.assertEqual(
             cleanup.model(self.config(cleanup_provider="codex",
                                       cleanup_codex_model="gpt-5.4")), "gpt-5.4")
+        # Antigravity names a slug, and the suggestion when none is typed in.
+        self.assertEqual(
+            cleanup.model(self.config(cleanup_provider="antigravity")),
+            "gemini-3.6-flash-medium")
+        self.assertEqual(
+            cleanup.model(self.config(cleanup_provider="antigravity",
+                                      cleanup_agy_model="gemini-3.1-pro-high")),
+            "gemini-3.1-pro-high")
 
 
 class OpenRouter(DikteTest):
@@ -234,6 +243,65 @@ class Codex(DikteTest):
     def test_an_answer_of_nothing(self):
         with self.assertRaises(cleanup.CleanupError):
             self.run_cleanup(stdout="tokens used 400", last_message="")
+
+
+class Antigravity(DikteTest):
+    def setUp(self):
+        super().setUp()
+        self.conf = self.config(cleanup_provider="antigravity")
+        self.patch_attr(cleanup.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def run_cleanup(self, text="uh, book it", **kwargs):
+        patcher, calls = fake_run(**kwargs)
+        with patcher:
+            answer = cleanup.run(text, self.conf, "the rules")
+        return answer, calls[0]
+
+    def test_the_rules_ride_in_front_of_the_transcript(self):
+        answer, cmd = self.run_cleanup(stdout="Book it.\n")
+        self.assertEqual(answer, "Book it.")
+        self.assertEqual(cmd[:2], ["agy", "--print"])
+        self.assertEqual(cmd[cmd.index("--model") + 1],
+                         "gemini-3.6-flash-medium")
+        self.assertEqual(cmd[cmd.index("--output-format") + 1], "text")
+        self.assertEqual(cmd[2],
+                         "the rules\n\n---\n\n<transcript>\nuh, book it\n</transcript>")
+
+    def test_a_model_of_your_own_is_passed_on_as_typed(self):
+        # A slug that is not in the catalog has to be refused by agy itself,
+        # not quietly swapped for another one.
+        self.conf["cleanup_agy_model"] = "gemini-3.1-pro-high"
+        _, cmd = self.run_cleanup(stdout="Book it.")
+        self.assertEqual(cmd[cmd.index("--model") + 1], "gemini-3.1-pro-high")
+
+    def test_the_effort_is_only_said_when_agy_has_the_rung(self):
+        self.conf["cleanup_reasoning"] = "high"
+        _, cmd = self.run_cleanup(stdout="Book it.")
+        self.assertEqual(cmd[cmd.index("--effort") + 1], "high")
+
+    def test_a_rung_the_slug_already_carries_is_left_unspoken(self):
+        # none/minimal/xhigh/max have no --effort of agy's own: the slug
+        # decides, so nothing is passed on and nothing is remapped.
+        for setting in ("none", "minimal", "xhigh", "max", ""):
+            with self.subTest(setting=setting):
+                self.conf["cleanup_reasoning"] = setting
+                _, cmd = self.run_cleanup(stdout="Book it.")
+                self.assertNotIn("--effort", cmd)
+
+    def test_a_program_that_is_not_installed_says_so(self):
+        self.patch_attr(cleanup.shutil, "which", lambda name: "")
+        with self.assertRaises(cleanup.CleanupError) as caught:
+            self.run_cleanup(stdout="Book it.")
+        self.assertIn("agy", str(caught.exception))
+
+    def test_a_non_zero_exit_shows_the_last_line_of_the_complaint(self):
+        with self.assertRaises(cleanup.CleanupError) as caught:
+            self.run_cleanup(code=1, stderr="a warning\nunknown model\n")
+        self.assertEqual(str(caught.exception), "unknown model")
+
+    def test_an_answer_of_nothing_is_a_failure(self):
+        with self.assertRaises(cleanup.CleanupError):
+            self.run_cleanup(stdout="   \n")
 
 
 if __name__ == "__main__":

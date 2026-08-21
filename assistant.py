@@ -34,7 +34,7 @@ import config as cfg
 from i18n import t
 
 SESSION_FILE = cfg.DATA_DIR / "assistant.json"
-PROVIDERS = ("claude", "codex", "openrouter", "llmapi")
+PROVIDERS = ("claude", "codex", "antigravity", "openrouter", "llmapi")
 
 # How many messages of an OpenRouter conversation are carried forward. The two
 # CLIs keep their own history and need no such number; here every turn is resent
@@ -81,6 +81,11 @@ CLAUDE_EFFORT = {"none": "low", "minimal": "low", "low": "low",
 CODEX_EFFORT = {"none": "low", "minimal": "low", "low": "low",
                 "medium": "medium", "high": "high", "xhigh": "high",
                 "max": "high"}
+# Antigravity bakes its effort into the model slug (…-low, …-high), so a
+# setting that names a rung it has is passed on as --effort and everything
+# else is left unspoken: the slug already decided, and remapping a rung the
+# CLI does have onto one it does not would fight it.
+AGY_EFFORT = {"low": "low", "medium": "medium", "high": "high"}
 
 
 class AssistantError(Exception):
@@ -98,12 +103,13 @@ def provider(conf):
 
 def executable(name):
     """The CLI a provider runs, or "" when it needs none."""
-    return {"claude": "claude", "codex": "codex"}.get(name, "")
+    return {"claude": "claude", "codex": "codex",
+            "antigravity": "agy"}.get(name, "")
 
 
 def display_name(conf):
     """What to call the thing being asked, in the tray and in the corner."""
-    return {"claude": "Claude", "codex": "Codex",
+    return {"claude": "Claude", "codex": "Codex", "antigravity": "Antigravity",
             "llmapi": "LLM API"}.get(provider(conf), "OpenRouter")
 
 
@@ -206,6 +212,13 @@ def ask(prompt, conf, on_stage=None, should_stop=None):
             "{binary} not found. Install it, or pick another provider under "
             "Settings → Agent.", binary=binary,
         ))
+
+    if name == "antigravity":
+        # No session to resume: `agy --print` answers in plain text and keeps
+        # no conversation this side can name, so every command is a one-shot.
+        # The stored one still belongs to whichever provider wrote it, which is
+        # what drops the conversation on a provider switch.
+        return _ask_antigravity(prompt, conf, on_stage)
 
     run = _ask_claude if name == "claude" else _ask_codex
     session = read_session(name, conf["assistant_session_minutes"] * 60)
@@ -337,6 +350,55 @@ def _codex_label(item):
     if item_type == "mcp_tool_call":
         return t("Using {name}…", name=item.get("server") or item.get("tool") or "a tool")
     return t("Using {name}…", name=item_type or "a tool")
+
+
+# --- Antigravity ----------------------------------------------------------
+
+def _ask_antigravity(prompt, conf, on_stage):
+    """One question, one plain-text answer, no thread to pick back up.
+
+    `agy --print` has no system-prompt flag and no stream of events either —
+    the answer is the whole of stdout — so the instruction rides in front of
+    the command the way Codex's does and the run is waited out rather than
+    streamed, the clock being the same watchdog-free subprocess timeout the
+    cleanup job already lives with.
+    """
+    if on_stage:
+        on_stage(t("Thinking…"))
+    body = f"{conf.assistant_prompt()}\n\n---\n\n{prompt}"
+    cmd = [
+        "agy", "--print", body,
+        "--output-format", "text",
+    ]
+    # An empty setting means whatever Antigravity itself is set to, the same
+    # deal Codex gets; anything typed in is passed on exactly as typed.
+    if conf["assistant_agy_model"].strip():
+        cmd += ["--model", conf["assistant_agy_model"].strip()]
+    effort = AGY_EFFORT.get(conf["assistant_reasoning"], "")
+    if effort:
+        cmd += ["--effort", effort]
+    # A live agy run takes minutes; the shared 240-second default would kill
+    # it, so the floor is 300 unless the setting already waits longer.
+    timeout = max(conf["assistant_timeout"], 300)
+
+    try:
+        done = subprocess.run(
+            cmd, cwd=working_dir(conf), stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, **_subprocess_kwargs(),
+        )
+    except subprocess.TimeoutExpired:
+        raise AssistantError(t("It did not finish within {seconds} seconds.",
+                               seconds=timeout)) from None
+    except OSError as exc:
+        raise AssistantError(t("Could not run {binary}: {error}",
+                               binary="agy", error=exc)) from exc
+
+    answer = (done.stdout or "").strip()
+    if done.returncode != 0 or not answer:
+        raise AssistantError(last_line(done.stderr) or t(
+            "{service} answered with nothing.", service="Antigravity"))
+    return answer, ""
 
 
 # --- OpenRouter -----------------------------------------------------------

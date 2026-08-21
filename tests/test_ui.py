@@ -19,6 +19,7 @@ import config as cfg
 import hotkey
 import overlay as overlay_module
 import paste
+import providers
 import settings_ui
 from tests.support import DikteTest, only_these_tools
 
@@ -53,6 +54,7 @@ CHANGED = {
     "cleanup_model": "some/other-model",
     "cleanup_claude_model": "opus",
     "cleanup_codex_model": "gpt-5",
+    "cleanup_agy_model": "gemini-3.5-flash-low",
     "cleanup_reasoning": "high",
     "local_model": "ggml-small.bin",
     "local_gpu": False,
@@ -71,6 +73,7 @@ CHANGED = {
     "assistant_permission_mode": "manual",
     "assistant_codex_model": "gpt-5",
     "assistant_codex_sandbox": "read-only",
+    "assistant_agy_model": "gemini-3.1-pro-medium",
     "assistant_openrouter_model": "some/agent-model",
     "assistant_reasoning": "high",
     "assistant_dir": "/tmp",
@@ -157,7 +160,8 @@ class Settings(DikteTest):
         boxes = {"openrouter": window.cleanup_model_row,
                  "llmapi": window.cleanup_llmapi_model_row,
                  "claude": window.cleanup_claude_model,
-                 "codex": window.cleanup_codex_model}
+                 "codex": window.cleanup_codex_model,
+                 "antigravity": window.cleanup_agy_model_row}
         for provider, box in boxes.items():
             with self.subTest(provider=provider):
                 window._select_data(window.cleanup_provider, provider)
@@ -165,6 +169,75 @@ class Settings(DikteTest):
                          if not other.isHidden()]
                 self.assertEqual(shown, [provider])
                 self.assertFalse(box.isHidden())
+
+    def test_the_agent_box_offers_everyone_assistant_py_dispatches_to(self):
+        window = self.window(cfg.Config())
+        offered = [window.assistant_provider.itemData(i)
+                   for i in range(window.assistant_provider.count())]
+        self.assertIn("antigravity", offered)
+        window._select_data(window.assistant_provider, "antigravity")
+        self.assertFalse(window.agy_box.isHidden())
+        self.assertTrue(window.claude_box.isHidden())
+
+    def test_antigravity_models_fill_both_of_its_boxes(self):
+        """One catalog, fetched once, for the cleanup row and the agent's."""
+        window = self.window(cfg.Config())
+        window.cleanup_agy_model.setCurrentText("kept-slug")
+        window._on_agy_models_loaded(["gemini-x-low", "gemini-x-high"], "")
+        listed = [window.cleanup_agy_model.itemText(i)
+                  for i in range(window.cleanup_agy_model.count())]
+        self.assertEqual(listed, ["gemini-x-low", "gemini-x-high"])
+        self.assertEqual(window.cleanup_agy_model.currentText(), "kept-slug")
+        self.assertEqual(window.assistant_agy_model.count(), 2)
+
+    def test_the_provider_registry_lists_everyone(self):
+        window = self.window(cfg.Config())
+        listed = [window.provider_list.item(row).data(
+                      settings_ui.Qt.ItemDataRole.UserRole)
+                  for row in range(window.provider_list.count())]
+        self.assertEqual(listed, list(providers.definitions(window.conf)))
+
+    def test_a_provider_added_from_the_dialog_is_offered_everywhere(self):
+        window = self.window(cfg.Config())
+        real_dialog = settings_ui.ProviderDialog
+
+        def make(parent=None):
+            dialog = real_dialog(parent)
+            dialog.name.setText("My gateway")
+            dialog.url.setText("https://example.com/v1")
+            dialog.exec = lambda: settings_ui.QDialog.DialogCode.Accepted
+            return dialog
+
+        with mock.patch.object(settings_ui, "ProviderDialog", side_effect=make):
+            window._add_provider()
+        (entry,) = window.conf["providers"]
+        pid = f"user/{entry['id']}"
+        self.assertEqual(entry["name"], "My gateway")
+        self.assertEqual(window.provider_list.count(),
+                         len(providers.definitions(window.conf)))
+        offered = [window.cleanup_provider.itemData(i)
+                   for i in range(window.cleanup_provider.count())]
+        self.assertIn(pid, offered)
+        # And it takes the OpenRouter row, whose fetch button it shares.
+        window._select_data(window.cleanup_provider, pid)
+        self.assertFalse(window.cleanup_model_row.isHidden())
+        self.assertTrue(window.refresh_models.isVisibleTo(window))
+
+    def test_a_provider_removed_here_is_gone_from_the_boxes_too(self):
+        conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
+        window = self.window(conf)
+        row = [r for r in range(window.provider_list.count())
+               if window.provider_list.item(r).data(
+                   settings_ui.Qt.ItemDataRole.UserRole) == pid][0]
+        window.provider_list.setCurrentRow(row)
+        with mock.patch.object(QMessageBox, "question",
+                               return_value=QMessageBox.StandardButton.Yes):
+            window._remove_provider()
+        self.assertEqual(window.conf["providers"], [])
+        offered = [window.cleanup_provider.itemData(i)
+                   for i in range(window.cleanup_provider.count())]
+        self.assertNotIn(pid, offered)
 
     def test_the_settings_the_window_does_not_show_are_left_alone(self):
         """A tab nobody wrote must not reset what the command line set."""
