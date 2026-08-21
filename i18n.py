@@ -698,6 +698,7 @@ TR = {
     "failed": "başarısız",
     "Nothing has been written yet.": "Henüz bir şey yazılmadı.",
     "Done: {title}": "Bitti: {title}",
+    "This one is being written up right now.": "Bunun tutanağı şu anda çıkarılıyor.",
     "Delete this meeting, its minutes and its recording?":
         "Bu toplantı, tutanağı ve ses kaydı silinsin mi?",
     "Details…": "Detaylar…",
@@ -727,4 +728,42 @@ TR = {
     "Properties": "Özellikler",
     "Timestamp": "Zaman Damgası",
     "Close": "Kapat",
+
+    # --- the provider registry ---------------------------------------------
+    "Antigravity": "Antigravity",
+    "Providers": "Sağlayıcılar",
+    "Add provider": "Sağlayıcı ekle",
+    "My gateway": "Ağ geçidim",
+    "Name": "Ad",
+    "Base URL": "Temel URL",
+    "Base URL…": "Temel URL…",
+    "Rename…": "Yeniden adlandır…",
+    "Keys…": "Anahtarlar…",
+    "Add key": "Anahtar ekle",
+    "Key label": "Anahtar etiketi",
+    "Rename key": "Anahtarı yeniden adlandır",
+    "Replace key": "Anahtarı yenile",
+    "Set active": "Etkin yap",
+    "Active": "Etkin",
+    "no key": "anahtar yok",
+    "Remove {name}?": "{name} kaldırılsın mı?",
+    "Runs on {name}.": "{name} üzerinde çalışır.",
+    "Antigravity runs as the account you are signed in with, on the "
+    "computer it is installed on. Its model names are slugs that carry "
+    "the effort, so the shared thinking setting only applies to the "
+    "ones that left it out.":
+        "Antigravity, kurulu olduğu bilgisayarda oturum açtığın hesap olarak "
+        "çalışır. Model adları eforu taşıyan kısa adlardır; ortak düşünme "
+        "ayarı yalnızca eforu belirtilmemiş olanlara uygulanır.",
+    "Local whisper": "Yerel whisper",
+    "Local llama": "Yerel llama",
+    "Default": "Varsayılan",
+    "Unknown provider.": "Bilinmeyen sağlayıcı.",
+    "{service} is not installed.": "{service} kurulu değil.",
+    "Could not run {service}: {error}": "{service} çalıştırılamadı: {error}",
+    "{service} found: {version}": "{service} bulundu: {version}",
+    "Not configured": "Yapılandırılmamış",
+    "Ready: {model}": "Hazır: {model}",
+    "This provider does not list models.": "Bu sağlayıcı model listelemez.",
+    "This provider cannot be tested.": "Bu sağlayıcı test edilemez.",
 }

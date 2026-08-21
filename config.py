@@ -418,6 +418,9 @@ da senin soracağın soruya verilecek bir yanıt yok.
 
 DEFAULTS = {
     "ui_language": "auto",          # auto | tr | en
+    # User-created OpenAI-compatible gateways; the built-ins stay in their
+    # flat <name>_api_key / <name>_base_url settings. See providers.py.
+    "providers": [],
     "openai_api_key": "",
     "openai_base_url": "https://api.openai.com/v1",
     "groq_api_key": "",
@@ -456,6 +459,10 @@ DEFAULTS = {
     "cleanup_llmapi_model": "gpt-4o-mini",  # LLM API keeps its own choice
     "cleanup_claude_model": "haiku",   # Claude Code: an alias, or a full model id
     "cleanup_codex_model": "",         # empty -> whatever Codex is set to
+    # Antigravity names its models in slugs that already carry the effort
+    # (-medium, -high), so there is no separate reasoning setting for it; the
+    # shared one is only spoken as --effort when it names low, medium or high.
+    "cleanup_agy_model": "gemini-3.6-flash-medium",
     "cleanup_reasoning": "",        # empty -> whatever the model does by default
 
     # --- llama.cpp, on this machine -----------------------------------------
@@ -525,6 +532,9 @@ DEFAULTS = {
     "assistant_codex_sandbox": "workspace-write",
     "assistant_openrouter_model": "google/gemini-3.5-flash",
     "assistant_llmapi_model": "gpt-4o-mini",
+    # An Antigravity slug; the effort it carries is the one that runs, per the
+    # note at cleanup_agy_model.
+    "assistant_agy_model": "gemini-3.1-pro-high",
     "assistant_reasoning": "",      # empty -> the model's own default
     "assistant_dir": "",            # empty -> the home directory
     "assistant_prompt": "",         # empty -> language-specific default
@@ -650,6 +660,17 @@ class Config:
         if name == "local":
             return api.Target("local", t("Local whisper"), "", "",
                               self["local_model"])
+        if name.startswith("user/"):
+            # A gateway the user added in Settings. It is never mapped onto
+            # some hosted provider's key: an entry that has gone missing is a
+            # loud dead end rather than a quiet bill somewhere else.
+            import providers  # late: the registry stands on this module
+            who = providers.provider(self, name)
+            return api.Target(name, who.name if who else name,
+                              providers.credential(self, name),
+                              providers.base_url(self, name),
+                              providers.custom_model(
+                                  self, name, providers.TRANSCRIPTION))
         if name not in TRANSCRIBERS:
             # A config written by a fork, or by a version that dropped one. The
             # shipped default is not in the table, so this names the hosted one

@@ -21,9 +21,10 @@ import tempfile
 import api
 import assistant
 import ggml
+import providers
 from i18n import t
 
-PROVIDERS = ("openrouter", "llmapi", "local", "claude", "codex")
+PROVIDERS = ("openrouter", "llmapi", "local", "claude", "codex", "antigravity")
 
 
 def _subprocess_kwargs():
@@ -44,12 +45,17 @@ class CleanupError(api.ApiError):
 
 def provider(conf):
     chosen = conf["cleanup_provider"]
+    # A user/* gateway is a real choice, not an unknown name: it must not be
+    # quietly traded for OpenRouter's key.
+    if chosen.startswith("user/"):
+        return chosen
     return chosen if chosen in PROVIDERS else "openrouter"
 
 
 def executable(name):
     """The CLI a provider runs, or "" when it needs none."""
-    return {"claude": "claude", "codex": "codex"}.get(name, "")
+    return {"claude": "claude", "codex": "codex", "antigravity": "agy"}.get(
+        name, "")
 
 
 def model(conf):
@@ -65,6 +71,16 @@ def model(conf):
         # Codex is left on whatever it is set to unless a model is typed in, so
         # here there is only the name of the thing that did it.
         return conf["cleanup_codex_model"].strip() or "codex"
+    if name == "antigravity":
+        # A slug, and the suggestion rather than nothing: an Antigravity with
+        # no model named would pick its own default, which the history could
+        # not then say.
+        return conf["cleanup_agy_model"].strip() or "gemini-3.6-flash-medium"
+    if name.startswith("user/"):
+        # The gateway's own entry holds its model; an empty one rides to the
+        # request and is refused there rather than borrowing another
+        # provider's choice.
+        return providers.custom_model(conf, name, providers.TEXT)
     return conf["cleanup_model"]
 
 
@@ -75,6 +91,17 @@ def run(text, conf, system_prompt, timeout=180, aborter=None):
     between blocks instead, which is close enough when a block is seconds.
     """
     name = provider(conf)
+    if name.startswith("user/"):
+        # A gateway out of Settings: the same OpenAI-shaped request as the
+        # hosted ones, with the key and the address off its registry entry.
+        who = providers.provider(conf, name)
+        return api.cleanup(
+            text, providers.credential(conf, name), model(conf), system_prompt,
+            reasoning=conf["cleanup_reasoning"],
+            base_url=providers.base_url(conf, name),
+            service=who.name if who else name, timeout=timeout,
+            aborter=aborter,
+        )
     if name == "openrouter":
         return api.cleanup(
             text, conf.openrouter_key(), conf["cleanup_model"], system_prompt,
@@ -93,6 +120,10 @@ def run(text, conf, system_prompt, timeout=180, aborter=None):
         )
     if name == "local":
         return _local(text, conf, system_prompt, timeout, aborter)
+    if name == "antigravity":
+        # A live agy run takes minutes; the shared 180-second default would
+        # kill it, so the floor is 300 unless the caller already waits longer.
+        return _agy(text, conf, system_prompt, max(timeout, 300))
     runner = _claude if name == "claude" else _codex
     return runner(text, conf, system_prompt, timeout)
 
@@ -195,6 +226,31 @@ def _read(path):
             return fh.read().strip()
     except OSError:
         return ""
+
+
+# --- Antigravity ----------------------------------------------------------
+
+def _agy(text, conf, system_prompt, timeout):
+    # `agy --print` takes no system prompt, so the rules ride in front of the
+    # transcript the way Codex's do. Effort lives in the slug (…-medium,
+    # …-high); --effort is said only when the setting names a rung agy has, and
+    # a model typed in is passed on exactly as typed — agy refuses a slug it
+    # does not know, which is the loud failure wanted here.
+    body = f"{system_prompt}\n\n---\n\n{_wrap(text)}"
+    cmd = [
+        "agy", "--print", body,
+        "--model", model(conf),
+        "--output-format", "text",
+    ]
+    effort = assistant.AGY_EFFORT.get(conf["cleanup_reasoning"], "")
+    if effort:
+        cmd += ["--effort", effort]
+
+    answer = _output(cmd, timeout, "Antigravity")
+    if not answer:
+        raise CleanupError(t("{service} answered with nothing.",
+                             service="Antigravity"))
+    return answer
 
 
 # --- running a CLI --------------------------------------------------------
