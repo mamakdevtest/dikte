@@ -16,6 +16,7 @@ from unittest import mock
 
 import assistant
 from tests.support import DikteTest, FakeCompleted, fake_urlopen, only_these_tools
+from tests.test_cleanup import gateway
 
 
 class FakeCli:
@@ -49,6 +50,14 @@ class Provider(DikteTest):
         self.assertEqual(
             assistant.provider(self.config(assistant_provider="ollama")), "claude")
 
+    def test_a_gateway_out_of_settings_is_a_choice_not_an_unknown_name(self):
+        conf = self.config(assistant_provider="user/abc123")
+        self.assertEqual(assistant.provider(conf), "user/abc123")
+        # An entry that has gone missing stays a dead end rather than being
+        # quietly traded for Claude.
+        self.assertEqual(assistant.provider(self.config(
+            assistant_provider="user/gone")), "user/gone")
+
     def test_each_one_is_recognised(self):
         for name in assistant.PROVIDERS:
             with self.subTest(name=name):
@@ -59,18 +68,32 @@ class Provider(DikteTest):
         self.assertEqual(assistant.executable("claude"), "claude")
         self.assertEqual(assistant.executable("codex"), "codex")
         self.assertEqual(assistant.executable("antigravity"), "agy")
-        self.assertEqual(assistant.executable("openrouter"), "")
+        self.assertEqual(assistant.executable("user/abc123"), "")
 
     def test_what_each_one_is_called(self):
         self.assertEqual(assistant.display_name(self.config()), "Claude")
         self.assertEqual(
             assistant.display_name(self.config(assistant_provider="codex")), "Codex")
         self.assertEqual(
-            assistant.display_name(self.config(assistant_provider="openrouter")),
-            "OpenRouter")
-        self.assertEqual(
             assistant.display_name(self.config(assistant_provider="antigravity")),
             "Antigravity")
+        conf = self.config(assistant_provider="user/abc123",
+                           providers=[gateway(name="My gate")])
+        self.assertEqual(assistant.display_name(conf), "My gate")
+
+    def test_the_model_the_history_row_records(self):
+        self.assertEqual(assistant.model(self.config()), "sonnet")
+        self.assertEqual(
+            assistant.model(self.config(assistant_model="opus")), "opus")
+        self.assertEqual(assistant.model(self.config(
+            assistant_provider="codex")), "codex")
+        self.assertEqual(assistant.model(self.config(
+            assistant_provider="codex", assistant_codex_model="gpt-5")), "gpt-5")
+        self.assertEqual(assistant.model(self.config(
+            assistant_provider="antigravity")), "gemini-3.1-pro-high")
+        conf = self.config(assistant_provider="user/abc123",
+                           providers=[gateway(models={"assistant": "some/asker"})])
+        self.assertEqual(assistant.model(conf), "some/asker")
 
 
 class Effort(unittest.TestCase):
@@ -98,7 +121,7 @@ class Effort(unittest.TestCase):
 class Session(DikteTest):
     def test_nothing_stored_yet(self):
         self.assertEqual(assistant.read_session("claude", 1800), "")
-        self.assertEqual(assistant.read_messages("openrouter", 1800), [])
+        self.assertEqual(assistant.read_messages("user/abc123", 1800), [])
         self.assertEqual(assistant.stored_provider(), "")
         self.assertIsNone(assistant.session_age())
 
@@ -123,13 +146,13 @@ class Session(DikteTest):
 
     def test_the_messages_of_the_provider_that_keeps_none(self):
         messages = [{"role": "user", "content": "hi"}]
-        assistant.write_session("openrouter", messages=messages)
-        self.assertEqual(assistant.read_messages("openrouter", 1800), messages)
+        assistant.write_session("user/abc123", messages=messages)
+        self.assertEqual(assistant.read_messages("user/abc123", 1800), messages)
 
     def test_the_history_window_ends_somewhere(self):
         messages = [{"role": "user", "content": str(index)} for index in range(50)]
-        assistant.write_session("openrouter", messages=messages)
-        stored = assistant.read_messages("openrouter", 1800)
+        assistant.write_session("user/abc123", messages=messages)
+        stored = assistant.read_messages("user/abc123", 1800)
         self.assertEqual(len(stored), assistant.MAX_HISTORY)
         self.assertEqual(stored[-1]["content"], "49")
 
@@ -568,65 +591,79 @@ class AskAntigravity(DikteTest):
         self.assertIn("300", str(caught.exception))
 
 
-class AskOpenRouter(DikteTest):
+class AskGateway(DikteTest):
+    """A plain question and answer over a gateway the user added."""
+
+    def conf_with(self, **overrides):
+        values = dict(assistant_provider="user/abc123",
+                      providers=[gateway(models={"assistant": "some/asker"})])
+        values.update(overrides)
+        return self.config(**values)
+
     def test_a_question_and_an_answer(self):
-        conf = self.config(assistant_provider="openrouter",
-                           openrouter_api_key="sk-or-test")
         with fake_urlopen({"choices": [{"message": {"content": "on Thursday"}}]}):
-            answer, warning = assistant.ask("when is it", conf)
+            answer, warning = assistant.ask("when is it", self.conf_with())
         self.assertEqual(answer, "on Thursday")
         self.assertEqual(warning, "")
 
+    def test_the_request_carries_the_entry_s_address_and_model(self):
+        with fake_urlopen({"choices": [{"message": {"content": "on Thursday"}}]}) as calls:
+            assistant.ask("when is it", self.conf_with())
+        self.assertEqual(calls[0].full_url,
+                         "https://gw.example/v1/chat/completions")
+        sent = json.loads(calls[0].data.decode("utf-8"))
+        self.assertEqual(sent["model"], "some/asker")
+        self.assertEqual(calls[0].headers["Authorization"], "Bearer sk-gw-test")
+
     def test_the_conversation_is_ours_to_keep(self):
-        conf = self.config(assistant_provider="openrouter",
-                           openrouter_api_key="sk-or-test")
         with fake_urlopen({"choices": [{"message": {"content": "on Thursday"}}]}):
-            assistant.ask("when is it", conf)
-        stored = assistant.read_messages("openrouter", 1800)
+            assistant.ask("when is it", self.conf_with())
+        stored = assistant.read_messages("user/abc123", 1800)
         self.assertEqual([row["content"] for row in stored],
                          ["when is it", "on Thursday"])
 
     def test_the_next_command_knows_what_that_means(self):
-        conf = self.config(assistant_provider="openrouter",
-                           openrouter_api_key="sk-or-test")
-        assistant.write_session("openrouter", messages=[
+        assistant.write_session("user/abc123", messages=[
             {"role": "user", "content": "when is it"},
             {"role": "assistant", "content": "on Thursday"}])
         with fake_urlopen({"choices": [{"message": {"content": "moved"}}]}) as calls:
-            assistant.ask("move it to Friday", conf)
+            assistant.ask("move it to Friday", self.conf_with())
         sent = json.loads(calls[0].data.decode("utf-8"))["messages"]
         self.assertEqual(len(sent), 4)   # system, the two stored, the new one
 
-    def test_an_api_failure_reads_as_an_assistant_failure(self):
-        conf = self.config(assistant_provider="openrouter")
-        with self.assertRaises(assistant.AssistantError):
+    def test_each_gateway_keeps_its_own_thread(self):
+        conf = self.config(assistant_provider="user/two00", providers=[
+            gateway(entry_id="one11", models={"assistant": "a/asker"}),
+            gateway(entry_id="two00", models={"assistant": "b/asker"}),
+        ])
+        with fake_urlopen({"choices": [{"message": {"content": "on Thursday"}}]}):
             assistant.ask("when is it", conf)
-
-
-class AskLlmapi(DikteTest):
-    """Same plain question and answer as OpenRouter, over the other key."""
-
-    def test_the_request_goes_to_llm_api_and_keeps_its_own_thread(self):
-        conf = self.config(assistant_provider="llmapi", llmapi_api_key="sk-test",
-                           assistant_llmapi_model="some/asker")
-        with fake_urlopen({"choices": [{"message": {"content": "on Thursday"}}]}) as calls:
-            answer, warning = assistant.ask("when is it", conf)
-        self.assertEqual(answer, "on Thursday")
-        self.assertEqual(warning, "")
-        self.assertEqual(calls[0].full_url,
-                         conf["llmapi_base_url"].rstrip("/") + "/chat/completions")
-        sent = json.loads(calls[0].data.decode("utf-8"))
-        self.assertEqual(sent["model"], "some/asker")
-        stored = assistant.read_messages("llmapi", 1800)
+        self.assertEqual(assistant.read_messages("user/one11", 1800), [])
+        stored = assistant.read_messages("user/two00", 1800)
         self.assertEqual([row["content"] for row in stored],
                          ["when is it", "on Thursday"])
-        # The two plain-HTTP providers keep their threads apart.
-        self.assertEqual(assistant.read_messages("openrouter", 1800), [])
 
-    def test_it_is_named_llm_api(self):
-        self.assertEqual(
-            assistant.display_name(self.config(assistant_provider="llmapi")),
-            "LLM API")
+    def test_an_api_failure_reads_as_an_assistant_failure(self):
+        # No key on the entry: the empty-key complaint, raised as the
+        # assistant's own kind of failure.
+        conf = self.conf_with(providers=[gateway(secret="",
+                                                 models={"assistant": "some/asker"})])
+        with self.assertRaises(assistant.AssistantError) as caught:
+            assistant.ask("when is it", conf)
+        self.assertIn("Gateway", str(caught.exception))
+
+    def test_no_model_chosen_says_where_to_choose_one(self):
+        conf = self.conf_with(providers=[gateway(models={})])
+        with self.assertRaises(assistant.AssistantError) as caught:
+            assistant.ask("when is it", conf)
+        self.assertIn("Gateway", str(caught.exception))
+        self.assertIn("Settings", str(caught.exception))
+
+    def test_an_entry_that_is_gone_is_a_dead_end_not_a_detour(self):
+        conf = self.config(assistant_provider="user/gone")
+        with self.assertRaises(assistant.AssistantError) as caught:
+            assistant.ask("when is it", conf)
+        self.assertIn("Unknown provider", str(caught.exception))
 
 
 class Ask(DikteTest):

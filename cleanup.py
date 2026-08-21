@@ -5,7 +5,7 @@ dictation left uncleaned when no model is configured — the callers keep the ra
 transcript either way. A machine with Claude Code, Codex or Antigravity on it
 is already paying for a model though, and the subscription that answers "put
 that in my calendar on Thursday" can just as well take the "eee"s out of a
-sentence. A hosted gateway set up in its day still answers too. The CLIs cost
+sentence. A gateway added in Settings answers too. The CLIs cost
 seconds rather than one, because one opens a whole session to do it, which is
 the trade.
 
@@ -26,10 +26,10 @@ import ggml
 import providers
 from i18n import t
 
-# The retired hosted gateways stay dispatchable: a config still set to one is
-# a user who set it up, and the run must keep reaching it.
-PROVIDERS = ("local", "claude", "codex", "antigravity",
-             "openrouter", "llmapi")
+# The hosted road holds no name of its own: a user/* gateway out of the
+# registry is recognised apart, and Config.load has already turned whatever a
+# config still held of the retired hosted gateways into one of those.
+PROVIDERS = ("local", "claude", "codex", "antigravity")
 
 
 def _subprocess_kwargs():
@@ -68,8 +68,6 @@ def model(conf):
     name = provider(conf)
     if name == "local":
         return conf["local_llm_model"]
-    if name == "llmapi":
-        return conf["cleanup_llmapi_model"]
     if name == "claude":
         return conf["cleanup_claude_model"].strip() or "haiku"
     if name == "codex":
@@ -81,19 +79,18 @@ def model(conf):
         # no model named would pick its own default, which the history could
         # not then say.
         return conf["cleanup_agy_model"].strip() or "gemini-3.6-flash-medium"
-    if name.startswith("user/"):
-        # The gateway's own entry holds its model; an empty one rides to the
-        # request and is refused there rather than borrowing another
-        # provider's choice.
-        return providers.custom_model(conf, name, providers.TEXT)
-    return conf["cleanup_model"]
+    # A user/* gateway, the only name left: its entry holds the model, and an
+    # empty one is the run's to refuse (see _dispatch) rather than another
+    # provider's to borrow.
+    return providers.custom_model(conf, name, providers.TEXT)
 
 
 def run(text, conf, system_prompt, timeout=180, aborter=None):
     """Hand the transcript to whoever is set to clean it up.
 
-    `aborter` is only of use to the two that answer over HTTP; a CLI is stopped
-    between blocks instead, which is close enough when a block is seconds.
+    `aborter` is only of use to the ones that answer over HTTP; a CLI is
+    stopped between blocks instead, which is close enough when a block is
+    seconds.
     """
     return _dispatch(provider(conf), text, conf, system_prompt, timeout,
                      aborter)
@@ -125,31 +122,26 @@ def _dispatch(name, text, conf, system_prompt, timeout, aborter=None):
     the road a test proves is the road the next real cleanup takes.
     """
     if name.startswith("user/"):
-        # A gateway out of Settings: the same OpenAI-shaped request as the
-        # hosted ones, with the key and the address off its registry entry.
+        # A gateway out of Settings: the same OpenAI-shaped request as any
+        # hosted provider, with the key, the address and the service an error
+        # speaks in read off its registry entry. An entry that has gone
+        # missing, or a model nobody chose, is a loud dead end rather than a
+        # quiet bill somewhere else.
         who = providers.provider(conf, name)
+        if who is None:
+            raise api.ApiError(t("Unknown provider."))
+        chosen = model(conf)
+        if not chosen:
+            # An empty box would ride to the gateway and come back as its own
+            # complaint about a nameless model; this one names the fix.
+            raise api.ApiError(t(
+                "{service} has no cleanup model chosen. Pick one in Settings.",
+                service=who.name))
         return api.cleanup(
-            text, providers.credential(conf, name), model(conf), system_prompt,
+            text, providers.credential(conf, name), chosen, system_prompt,
             reasoning=conf["cleanup_reasoning"],
-            base_url=providers.base_url(conf, name),
-            service=who.name if who else name, timeout=timeout,
-            aborter=aborter,
-        )
-    if name == "openrouter":
-        return api.cleanup(
-            text, conf.openrouter_key(), conf["cleanup_model"], system_prompt,
-            reasoning=conf["cleanup_reasoning"],
-            base_url=conf["openrouter_base_url"], timeout=timeout,
-            aborter=aborter,
-        )
-    if name == "llmapi":
-        # The same OpenAI-shaped request, one base URL over. LLM API's catalog
-        # reports its own effort levels, so the thinking setting rides along.
-        return api.cleanup(
-            text, conf.llmapi_key(), conf["cleanup_llmapi_model"], system_prompt,
-            reasoning=conf["cleanup_reasoning"],
-            base_url=conf["llmapi_base_url"], timeout=timeout,
-            provider="llmapi", service="LLM API", aborter=aborter,
+            base_url=providers.base_url(conf, name), provider=name,
+            service=who.name, timeout=timeout, aborter=aborter,
         )
     if name == "local":
         return _local(text, conf, system_prompt, timeout, aborter)
@@ -162,7 +154,7 @@ def _dispatch(name, text, conf, system_prompt, timeout, aborter=None):
 
 
 def _local(text, conf, system_prompt, timeout, aborter=None):
-    """llama.cpp, on this machine, answering the request OpenRouter answers.
+    """llama.cpp, on this machine, answering the request a gateway answers.
 
     No key and no bill, and the address does not exist until the server is up,
     which is what starting it here is for. The timeout is the hosted one raised:
@@ -184,7 +176,7 @@ def _local(text, conf, system_prompt, timeout, aborter=None):
 
 
 def _wrap(text):
-    """The same fence the OpenRouter call puts around it: this is the material,
+    """The same fence the HTTP call puts around it: this is the material,
     not the instruction, however much of it reads like one."""
     return f"<transcript>\n{text}\n</transcript>"
 
@@ -296,8 +288,8 @@ def _output(cmd, timeout, service):
     binary = cmd[0]
     if not shutil.which(binary):
         raise CleanupError(t(
-            "{binary} not found. Install it, or have OpenRouter clean up "
-            "instead, under Settings → API and models.", binary=binary,
+            "{binary} not found. Install it, or pick another cleanup provider "
+            "under Settings → API and models.", binary=binary,
         ))
     try:
         done = subprocess.run(

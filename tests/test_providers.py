@@ -115,24 +115,39 @@ class RetiredGateways(DikteTest):
                     providers.definitions(conf)["groq"].retired)
 
     def test_the_environment_counts_as_a_key(self):
-        with mock.patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}):
-            self.assertIn("openrouter",
-                          providers.definitions(self.config()))
+        with mock.patch.dict("os.environ", {"GROQ_API_KEY": "gsk-env"}):
+            self.assertIn("groq", providers.definitions(self.config()))
 
     def test_one_comes_back_only_for_itself(self):
-        conf = self.config(openrouter_api_key="sk-only-this-one")
+        conf = self.config(groq_api_key="gsk-only-this-one")
         table = providers.definitions(conf)
-        self.assertIn("openrouter", table)
-        for pid in ("openai", "groq", "llmapi"):
-            self.assertNotIn(pid, table)
+        self.assertIn("groq", table)
+        self.assertNotIn("openai", table)
 
     def test_a_cleaned_config_sees_none_of_them(self):
         conf = self.config(openai_api_key="sk-gone")
         conf["openai_api_key"] = ""
-        for pid in ("openai", "groq", "openrouter", "llmapi"):
+        for pid in ("openai", "groq"):
             with self.subTest(pid=pid):
                 self.assertNotIn(pid, providers.definitions(conf))
                 self.assertIsNone(providers.provider(conf, pid))
+
+    def test_openrouter_and_llmapi_are_gone_rather_than_ghosts(self):
+        """Retired one step further than the ghosts: nothing brings either
+        back, because a config that still holds one is turned into a user
+        gateway by config.py before the registry is asked."""
+        for setting in ("transcribe_provider", "cleanup_provider",
+                        "meeting_provider", "assistant_provider"):
+            with self.subTest(setting=setting):
+                conf = self.config(**{setting: "openrouter"})
+                self.assertNotIn("openrouter", providers.definitions(conf))
+                self.assertNotIn("llmapi", providers.definitions(conf))
+                self.assertIsNone(providers.provider(conf, "llmapi"))
+        conf = self.config(openrouter_api_key="sk-left-over",
+                           llmapi_api_key="sk-also-left")
+        table = providers.definitions(conf)
+        self.assertNotIn("openrouter", table)
+        self.assertNotIn("llmapi", table)
 
     def test_a_ghost_keeps_reading_its_flat_settings(self):
         conf = self.config(openai_api_key="sk-old",
@@ -141,26 +156,27 @@ class RetiredGateways(DikteTest):
         self.assertEqual(providers.base_url(conf, "openai"),
                          "https://api.openai.com/v1")
 
-    def test_a_ghost_still_fetches_its_models(self):
-        with fake_urlopen({"data": [{"id": "a/whisper-large"},
-                                    {"id": "openai/gpt-4o"}]}) as calls:
+    def test_a_ghost_fetches_models_through_the_generic_path(self):
+        with fake_urlopen({"data": [{"id": "whisper-1"},
+                                    {"id": "gpt-x"}]}) as calls:
             ids = providers.fetch_models(
-                self.config(openrouter_api_key="sk-old"), "openrouter")
-        self.assertEqual(ids, ["a/whisper-large", "openai/gpt-4o"])
+                self.config(openai_api_key="sk-old"), "openai",
+                capability=providers.TEXT)
+        self.assertEqual(ids, ["gpt-x", "whisper-1"])
         self.assertTrue(calls[0].full_url.startswith(
-            "https://openrouter.ai/api/v1/models"))
+            "https://api.openai.com/v1/models"))
 
     def test_a_ghost_still_answers_the_key_test(self):
-        with fake_urlopen({"data": {"limit": 5, "usage": 1}}):
+        with fake_urlopen({"data": [{"id": "gpt-x"}]}):
             verdict = providers.test_provider(
-                self.config(openrouter_api_key="sk-old"), "openrouter")
-        self.assertIn("Key works", verdict)
+                self.config(openai_api_key="sk-old"), "openai")
+        self.assertEqual(verdict, "Key works.")
 
     def test_an_unreferenced_one_is_an_unknown_provider(self):
         with self.assertRaises(api.ApiError):
             providers.fetch_models(self.config(), "openai")
         with self.assertRaises(api.ApiError):
-            providers.test_provider(self.config(), "openrouter")
+            providers.test_provider(self.config(), "groq")
 
 
 class CredentialResolution(DikteTest):
@@ -303,37 +319,6 @@ class Management(DikteTest):
 
 
 class FetchModels(DikteTest):
-    def test_openrouter_dispatches_to_the_openrouter_catalog(self):
-        with fake_urlopen({"data": [
-                {"id": "openai/gpt-4o"},
-                {"id": "a/whisper-large", "architecture": {"output_modalities":
-                                                    ["transcription"]}}]}) as calls:
-            ids = providers.fetch_models(self.config(openrouter_api_key="k"),
-                                         "openrouter")
-        self.assertEqual(ids, ["a/whisper-large", "openai/gpt-4o"])
-        self.assertTrue(calls[0].full_url.startswith(
-            "https://openrouter.ai/api/v1/models"))
-
-    def test_openrouter_transcription_narrows_the_query(self):
-        with fake_urlopen({"data": []}) as calls:
-            providers.fetch_models(self.config(openrouter_api_key="k"),
-                                   "openrouter",
-                                   capability=providers.TRANSCRIPTION)
-        self.assertIn("output_modalities", calls[0].full_url)
-
-    def test_llmapi_dispatch(self):
-        with fake_urlopen({"data": [
-                {"id": "m-text", "architecture": {"input_modalities": ["text"],
-                                                  "output_modalities":
-                                                      ["text"]}},
-                {"id": "m-image", "architecture": {"input_modalities":
-                                                   ["image"],
-                                                   "output_modalities":
-                                                       ["image"]}}]}):
-            ids = providers.fetch_models(self.config(llmapi_api_key="k"),
-                                         "llmapi")
-        self.assertEqual(ids, ["m-text"])
-
     def test_openai_dispatch_and_empty_key(self):
         # Referenced by a provider setting but keyless: the ghost is there and
         # the complaint is the empty key, not an unknown provider.
@@ -378,18 +363,20 @@ class FetchModels(DikteTest):
         self.assertEqual(providers.fetch_models(self.config(), "deepgram"),
                          ["nova-3", "nova-2", "base", "enhanced"])
 
-    def test_claude_aliases_and_codex_suggestions_without_settings(self):
-        """No Claude or Codex settings to read: the aliases stand on their
-        own, and Codex offers its three suggestions. The home is patched to
-        an empty one, so the machine these run on changes nothing."""
+    def test_claude_aliases_without_settings_and_codex_without_a_cli(self):
+        """No Claude settings to read: the aliases stand on their own. No
+        Codex CLI to ask: the box answers nothing, because the catalog is the
+        CLI's to tell. The home is patched to an empty one, so the machine
+        these run on changes nothing."""
         home = self.path("empty-home")
         home.mkdir()
+        self.patch_attr(providers, "executable", mock.Mock(return_value=None))
         with mock.patch.object(providers.os.path, "expanduser",
                                lambda p, h=str(home): p.replace("~", h, 1)):
             self.assertEqual(providers.fetch_models(self.config(), "claude"),
                              providers.CLAUDE_MODELS)
             self.assertEqual(providers.fetch_models(self.config(), "codex"),
-                             providers.CODEX_MODELS)
+                             [])
 
     def test_antigravity_parses_slugs(self):
         self.patch_attr(providers, "executable",
@@ -512,45 +499,118 @@ class ClaudeModels(ThrowawayHome):
 
 
 class CodexModels(ThrowawayHome):
+    """`codex debug models` is the catalog now, so these fake the CLI and
+    judge what is made of its JSON — never what this machine's Codex says."""
+
     def config_toml(self, text):
         self.home_only((".codex/config.toml", text))
 
-    def test_the_model_codex_runs_leads_the_suggestions(self):
-        self.config_toml('model = "gpt-5.5-codex"\nmodel_provider = "openai"\n')
-        self.assertEqual(providers.codex_models(),
-                         ["gpt-5.5-codex"] + providers.CODEX_MODELS)
-        self.assertEqual(providers.fetch_models(self.config(), "codex"),
-                         ["gpt-5.5-codex"] + providers.CODEX_MODELS)
+    def fake_cli(self, models, returncode=0, stdout=None):
+        """Point the executable at /usr/bin/codex and answer `debug models`."""
+        self.patch_attr(providers, "executable",
+                        mock.Mock(return_value="/usr/bin/codex"))
+        done = FakeCompleted(
+            returncode=returncode,
+            stdout=(stdout if stdout is not None
+                    else json.dumps({"models": models})))
+        patcher = mock.patch.object(providers.subprocess, "run",
+                                    return_value=done)
+        started = patcher.start()
+        self.addCleanup(patcher.stop)
+        return started
 
-    def test_a_suggestion_set_as_current_leads_once(self):
+    def catalog(self):
+        return [
+            {"slug": "gpt-5.6-terra", "visibility": "list", "priority": 3},
+            {"slug": "gpt-5.6-sol", "visibility": "list", "priority": 1},
+            {"slug": "gpt-5.6-luna", "visibility": "list", "priority": 2},
+            {"slug": "gpt-5.5-old", "visibility": "list"},
+            {"slug": "gpt-hidden", "visibility": "hidden", "priority": 0},
+        ]
+
+    def test_the_catalog_without_a_current_model(self):
+        """Listed slugs only, in the CLI's priority order; a slug with no
+        priority keeps its place after the ones that have one."""
+        self.config_toml("")
+        self.fake_cli(self.catalog())
+        self.assertEqual(providers.codex_models(),
+                         ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra",
+                          "gpt-5.5-old"])
+
+    def test_the_current_model_leads_and_is_not_repeated(self):
+        self.config_toml('model = "gpt-5.6-luna"\n')
+        self.fake_cli(self.catalog())
+        self.assertEqual(providers.codex_models(),
+                         ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
+                          "gpt-5.5-old"])
+
+    def test_only_slugs_the_cli_lists_are_offered(self):
+        self.config_toml("")
+        self.fake_cli(self.catalog())
+        self.assertNotIn("gpt-hidden", providers.codex_models())
+
+    def test_the_call_is_debug_models_on_the_executable(self):
         self.config_toml('model = "gpt-5.6-sol"\n')
-        self.assertEqual(providers.codex_models(),
-                         ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra"])
+        run = self.fake_cli(self.catalog())
+        providers.codex_models()
+        self.assertEqual(run.call_args.args[0],
+                         ["/usr/bin/codex", "debug", "models"])
 
-    def test_a_missing_file_leaves_the_suggestions(self):
-        self.home_only()
-        self.assertEqual(providers.codex_models(), providers.CODEX_MODELS)
-        self.assertEqual(providers.fetch_models(self.config(), "codex"),
-                         providers.CODEX_MODELS)
+    def test_a_cli_that_fails_falls_back_to_the_current_model(self):
+        self.config_toml('model = "gpt-5.5-codex"\n')
+        self.fake_cli([], returncode=1)
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+
+    def test_output_the_json_parser_refuses_falls_back_too(self):
+        self.config_toml('model = "gpt-5.5-codex"\n')
+        self.fake_cli([], stdout="codex: not logged in\n")
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+
+    def test_json_that_is_not_the_catalog_falls_back_too(self):
+        self.config_toml('model = "gpt-5.5-codex"\n')
+        self.fake_cli([], stdout=json.dumps({"error": "no account"}))
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+        self.fake_cli([], stdout=json.dumps(["not", "the", "catalog"]))
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
+
+    def test_no_current_model_and_an_unusable_cli_answers_nothing(self):
+        self.config_toml("")
+        self.fake_cli([], returncode=1)
+        self.assertEqual(providers.codex_models(), [])
+
+    def test_no_executable_answers_nothing(self):
+        self.patch_attr(providers, "executable", mock.Mock(return_value=None))
+        self.config_toml('model = "gpt-5.5-codex"\n')
+        self.assertEqual(providers.codex_models(), [])
 
     def test_secrets_stay_out_of_the_model_box(self):
-        """Only the top-level model line is read; keys and tokens elsewhere
-        in the file, whatever they are named, never reach the list."""
+        """Only the top-level model line and the catalog's slugs are read;
+        keys and tokens elsewhere in the file, whatever they are named, never
+        reach the list."""
         self.config_toml('model = "gpt-5.5-codex"\n'
                          'api_key = "sk-live-secret-123"\n'
                          '[env]\nOPENAI_API_KEY = "sk-env-also-secret"\n')
+        self.fake_cli(self.catalog())
         models = providers.codex_models()
         self.assertEqual(models[0], "gpt-5.5-codex")
         for secret in ("sk-live-secret-123", "sk-env-also-secret"):
             self.assertNotIn(secret, models)
 
-    def test_a_file_the_parser_refuses_still_yields_the_model(self):
+    def test_a_config_file_the_parser_refuses_still_yields_the_model(self):
         self.config_toml('model = "gpt-5.5-codex"\nnot <<< toml\n')
-        self.assertEqual(providers.codex_models()[0], "gpt-5.5-codex")
+        self.fake_cli([], returncode=1)
+        self.assertEqual(providers.codex_models(), ["gpt-5.5-codex"])
 
     def test_an_empty_model_line_is_dropped(self):
         self.config_toml('model = ""\n')
-        self.assertEqual(providers.codex_models(), providers.CODEX_MODELS)
+        self.fake_cli([], returncode=1)
+        self.assertEqual(providers.codex_models(), [])
+
+    def test_fetch_models_routes_codex_through_the_same_reader(self):
+        self.config_toml('model = "gpt-5.6-sol"\n')
+        self.fake_cli(self.catalog())
+        self.assertEqual(providers.fetch_models(self.config(), "codex"),
+                         providers.codex_models())
 
 
 class TestProvider(DikteTest):
@@ -566,19 +626,6 @@ class TestProvider(DikteTest):
             verdict = providers.test_provider(
                 self.config(openai_api_key="sk-k"), "openai")
         self.assertEqual(verdict, "Key works.")
-
-    def test_openrouter_verdict(self):
-        with fake_urlopen({"data": {"limit": 5, "usage": 1}}) as calls:
-            verdict = providers.test_provider(
-                self.config(openrouter_api_key="sk-or"), "openrouter")
-        self.assertIn("Key works", verdict)
-        self.assertTrue(calls[0].full_url.endswith("/key"))
-
-    def test_llmapi_verdict(self):
-        with fake_urlopen({"data": [{"id": "a"}, {"id": "b"}]}):
-            verdict = providers.test_provider(
-                self.config(llmapi_api_key="sk-l"), "llmapi")
-        self.assertIn("2", verdict)
 
     def test_deepgram_verdict(self):
         with fake_urlopen({}) as calls:
@@ -716,7 +763,7 @@ class UserGatewayRuntimeTest(DikteTest):
     def test_cleanup_run_sends_the_gateway_key_and_url(self):
         pid = self._gateway()
         self.conf["cleanup_provider"] = pid
-        self.conf["openrouter_api_key"] = "sk-or-should-not-appear"
+        self.conf["openai_api_key"] = "sk-openai-should-not-appear"
         sent = {}
 
         def fake_cleanup(text, key, model, prompt, **kw):

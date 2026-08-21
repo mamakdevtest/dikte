@@ -16,6 +16,7 @@ import cleanup
 import config as cfg
 import meeting
 from tests.support import DikteTest, make_wav, silence, speech, stereo, tone
+from tests.test_cleanup import gateway
 
 
 def seg(start, end, text, speaker):
@@ -221,12 +222,13 @@ class Pipeline(DikteTest):
 
     def setUp(self):
         super().setUp()
-        # Both defaults are the local model now; these tests hold the old
-        # hosted road for the transcript cleanup and the minutes, and the one
-        # test that covers the local minutes road fakes it below.
-        self.conf = self.config(openrouter_api_key="sk-or-test",
-                                cleanup_provider="openrouter",
-                                meeting_provider="openrouter")
+        # The local defaults are kept for the two tests that cover them; the
+        # rest hold the hosted road — a user-added gateway — which the mocked
+        # api.cleanup answers either way.
+        self.conf = self.config(
+            providers=[gateway(models={"text": "some/cleanup",
+                                        "minutes": "some/minutes"})],
+            cleanup_provider="user/abc123", meeting_provider="user/abc123")
         self.base = "20260801-100000"
         self.doc, self.wav = cfg.meeting_paths(self.base)
         self.wav.parent.mkdir(parents=True, exist_ok=True)
@@ -242,7 +244,7 @@ class Pipeline(DikteTest):
 
         def cleanup(text, *args, **kwargs):
             if cleanup_fails:
-                raise api.ApiError("OpenRouter is rate limiting you")
+                raise api.ApiError("the gateway is rate limiting you")
             return minutes
 
         with mock.patch.object(api, "transcribe_segments",
@@ -259,26 +261,41 @@ class Pipeline(DikteTest):
         self.assertEqual(done[0], (self.base, "Kickoff"))
         self.assertIn("Agreed.", self.doc.read_text(encoding="utf-8"))
 
-    def test_llm_api_answers_the_minutes_when_chosen(self):
-        """Same request as OpenRouter: only the key, the model, the base URL
-        and the service an error speaks in are different."""
-        self.conf["meeting_provider"] = "llmapi"
-        self.conf["llmapi_api_key"] = "sk-test"
-        self.conf["meeting_llmapi_model"] = "some/minutes"
+    def test_a_gateway_answers_the_minutes_when_chosen(self):
+        """The registry road: the entry's key, address and minutes model, and
+        its name in an error's mouth."""
         self.conf["meeting_cleanup"] = False
         with mock.patch.object(api, "transcribe_segments",
                                return_value=[(0.0, 1.0, "hello")]), \
                 mock.patch.object(api, "cleanup",
                                   return_value="# Kickoff\n\nAgreed.") as call:
-            worker = meeting.MeetingPipeline(self.conf)
-            worker._work(dict(cfg.read_meetings()[0]))
+            meeting.MeetingPipeline(self.conf)._work(cfg.read_meetings()[0])
         key, model = call.call_args.args[1:3]
-        self.assertEqual((key, model), ("sk-test", "some/minutes"))
+        self.assertEqual((key, model), ("sk-gw-test", "some/minutes"))
         self.assertEqual(call.call_args.kwargs["base_url"],
-                         self.conf["llmapi_base_url"])
-        self.assertEqual(call.call_args.kwargs["provider"], "llmapi")
-        self.assertEqual(call.call_args.kwargs["service"], "LLM API")
+                         "https://gw.example/v1")
+        self.assertEqual(call.call_args.kwargs["provider"], "user/abc123")
+        self.assertEqual(call.call_args.kwargs["service"], "Gateway")
         self.assertEqual(cfg.read_meetings()[0]["model"], "some/minutes")
+
+    def test_a_gateway_with_no_minutes_model_fails_loudly(self):
+        self.conf["providers"] = [gateway(models={"text": "some/cleanup"})]
+        self.conf["meeting_cleanup"] = False
+        with mock.patch.object(api, "transcribe_segments",
+                               return_value=[(0.0, 1.0, "hello")]):
+            worker = meeting.MeetingPipeline(self.conf)
+            failures = []
+            worker.failed.connect(lambda *args: failures.append(args))
+            worker._work(cfg.read_meetings()[0])
+        self.assertIn("Settings", failures[0][1])
+        self.assertEqual(cfg.read_meetings()[0]["status"], "failed")
+
+    def test_a_provider_none_of_the_roads_knows_is_a_dead_end(self):
+        """The CLIs are not offered the job; a name that lands here anyway
+        fails loudly rather than quietly re-routing the meeting."""
+        self.conf["meeting_provider"] = "claude"
+        with self.assertRaises(api.ApiError):
+            meeting.MeetingPipeline(self.conf)._minutes("[00:00] Me: hello")
 
     def test_the_local_model_writes_the_minutes_when_chosen(self):
         """The default: llama.cpp on this machine, the same road a local

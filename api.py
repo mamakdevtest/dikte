@@ -1,14 +1,12 @@
-"""OpenAI, Groq, OpenRouter, LLM API, Deepgram and this machine, stdlib only.
+"""OpenAI, Groq, Deepgram and this machine, stdlib only.
 
-Transcription runs on any of the five: Groq and OpenRouter both mirror OpenAI's
+Transcription runs on any of the three hosted ones: Groq mirrors OpenAI's
 /audio/transcriptions endpoint field for field, and ggml.py starts whisper.cpp
-on that same path, so one multipart request serves all of them and only the key,
-the base URL and the model id change. llama.cpp answers /chat/completions the way
-OpenRouter does, so cleanup here is the same request too.
-
-LLM API (llmapi.ai) speaks the same OpenAI shapes: cleanup and the assistant
-reach its /chat/completions, model discovery its /models, and speech to text
-its /audio/transcriptions, each with nothing changed but the base URL.
+on that same path, so one multipart request serves all of them and only the
+key, the base URL and the model id change. llama.cpp answers /chat/completions
+the way OpenAI does, so cleanup here is the same request too. Any other
+OpenAI-shaped service — a gateway the user added in Settings — joins the same
+way: another base URL, key and service name, nothing else.
 
 Deepgram speaks its own API: raw audio bytes to /v1/listen with `Token` auth,
 not `Bearer`, and a response nested under results.channels[].alternatives[],
@@ -38,8 +36,6 @@ APP_URL = "https://github.com/yusufipk/dikte"
 USER_AGENT = f"dikte/1.0 (+{APP_URL})"
 OPENAI_URL = "https://api.openai.com/v1"
 GROQ_URL = "https://api.groq.com/openai/v1"
-OPENROUTER_URL = "https://openrouter.ai/api/v1"
-LLMAPI_URL = "https://api.llmapi.ai/v1"
 DEEPGRAM_URL = "https://api.deepgram.com/v1"
 
 # The floor for a local request. The timeouts elsewhere are sized for a hosted
@@ -57,11 +53,11 @@ Target = collections.namedtuple("Target", "provider service api_key base_url mod
 def timestamp_model(provider, selected=""):
     """Which model answers with segment times.
 
-    OpenAI keeps them to whisper-1 and OpenRouter namespaces that id. Everything
-    Groq transcribes with is a whisper, so the model already chosen does it and
-    the fallback is only for a provider left on its default. So is everything the
-    local server runs, whatever the file is called, and there asking for another
-    model would name one it has never heard of.
+    OpenAI keeps them to whisper-1. Everything Groq transcribes with is a
+    whisper, so the model already chosen does it and the fallback is only for
+    a provider left on its default. So is everything the local server runs,
+    whatever the file is called, and there asking for another model would name
+    one it has never heard of.
     """
     if provider in ("groq", "local"):
         return selected or "whisper-large-v3-turbo"
@@ -69,7 +65,7 @@ def timestamp_model(provider, selected=""):
         # All of Deepgram's models keep word and utterance times natively, so
         # the one the user picked already does the job.
         return selected or "nova-3"
-    return "openai/whisper-1" if provider == "openrouter" else "whisper-1"
+    return "whisper-1"
 
 
 class ApiError(Exception):
@@ -297,10 +293,6 @@ def _headers(provider, api_key, content_type=None):
         headers["Authorization"] = f"Bearer {api_key}"
     if content_type:
         headers["Content-Type"] = content_type
-    if provider == "openrouter":
-        # What OpenRouter attributes the calls to on its app leaderboard.
-        headers["HTTP-Referer"] = APP_URL
-        headers["X-Title"] = "Dikte"
     return headers
 
 def serving(server):
@@ -370,10 +362,10 @@ def _transcribe_request(target, audio_path, language, prompt, response_format,
     fields = [("model", target.model), ("response_format", response_format)]
     if language and language != "auto":
         fields.append(("language", language))
-    # OpenRouter takes the hint field and throws it away, so spare it the bytes.
-    # The same words still reach the cleanup model as a glossary. whisper.cpp
-    # takes it as the initial prompt, the way OpenAI does.
-    if prompt and target.provider != "openrouter":
+    # The hint rides along to any OpenAI-shaped endpoint that reads it —
+    # whisper.cpp takes it as the initial prompt, the way OpenAI does — and a
+    # gateway that ignores it is no worse off for the bytes.
+    if prompt:
         fields.append(("prompt", prompt))
     if granularity:
         fields.append(("timestamp_granularities[]", granularity))
@@ -526,9 +518,9 @@ def _thinking(payload, provider, reasoning):
 
     An empty level means "whatever the model does on its own", so nothing is
     sent. The two mean opposite things by that, which is why the setting is kept
-    per provider: OpenRouter's cleanup models answer straight away, while a local
-    model that was trained to think will think, and cleanup is punctuation rather
-    than a job worth thinking about.
+    per provider: a hosted gateway's cleanup models answer straight away, while
+    a local model that was trained to think will think, and cleanup is
+    punctuation rather than a job worth thinking about.
     """
     if not reasoning:
         return
@@ -555,8 +547,8 @@ def local_ceiling(text):
 
 
 def cleanup(text, api_key, model, system_prompt, reasoning="",
-            base_url=OPENROUTER_URL, timeout=180, provider="openrouter",
-            service="OpenRouter", aborter=None):
+            base_url="", timeout=180, provider="", service="",
+            aborter=None):
     if not api_key and provider != "local-llm":
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
                          service=service))
@@ -597,14 +589,14 @@ def cleanup(text, api_key, model, system_prompt, reasoning="",
 
 
 def chat(messages, api_key, model, system_prompt, reasoning="",
-         base_url=OPENROUTER_URL, timeout=180, provider="openrouter",
-         service="OpenRouter"):
+         base_url="", timeout=180, provider="", service=""):
     """A conversation, rather than one transcript rewritten.
 
     The messages are the whole history and come back unchanged; the caller keeps
-    them, because there is no session on the other end to resume. The same
-    request reaches anything that answers OpenAI's /chat/completions, which is
-    how LLM API joins in: another base URL and service name, nothing else.
+    them, because there is no session on the other end to resume. The request
+    reaches anything that answers OpenAI's /chat/completions, which is how a
+    user-added gateway joins in: another base URL and service name, nothing
+    else.
     """
     if not api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
@@ -647,46 +639,6 @@ def _get_json(url, headers, timeout=20):
         raise ApiError(t("Could not parse the response: {error}", error=exc)) from exc
 
 
-def openrouter_key_status(api_key):
-    """Check the key against OpenRouter's own /key endpoint."""
-    if not api_key:
-        raise ApiError(t("{service} API key is empty. Add it in Settings.",
-                         service="OpenRouter"))
-    try:
-        data = _get_json(f"{OPENROUTER_URL}/key",
-                         {"Authorization": f"Bearer {api_key}", "User-Agent": USER_AGENT})
-    except ApiError as exc:
-        raise explain(exc, "OpenRouter") from None
-    info = data.get("data") or {}
-    limit, usage = info.get("limit"), info.get("usage")
-    if limit is None:
-        return t("Key works, no spending limit set.")
-    return t("Key works. Used {usage} of {limit}.",
-             usage=round(float(usage or 0), 3), limit=round(float(limit), 3))
-
-
-def openrouter_models(api_key="", transcription=False):
-    """Model ids available on OpenRouter (no key required).
-
-    `transcription` narrows the list to the speech-to-text models, the only ones
-    /audio/transcriptions accepts. The filter is applied again on the result,
-    because a query parameter the API stops honouring would otherwise quietly
-    hand back all several hundred models.
-    """
-    url = f"{OPENROUTER_URL}/models"
-    if transcription:
-        url += "?output_modalities=transcription"
-    headers = {"User-Agent": USER_AGENT}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    models = _get_json(url, headers).get("data", [])
-    if transcription:
-        models = [m for m in models
-                  if "transcription" in (m.get("architecture") or {}).get(
-                      "output_modalities", [])]
-    return sorted(m["id"] for m in models if m.get("id"))
-
-
 def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI", audio=True):
     """The models of anything that speaks OpenAI's /models, Groq included.
 
@@ -712,80 +664,6 @@ def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI", audio=True):
         named = [i for i in ids if "transcribe" in i or "whisper" in i]
         ids = named or ids
     return sorted(ids)
-
-
-def llmapi_models(api_key="", base_url=LLMAPI_URL, text_only=True,
-                  transcription=False):
-    """The model ids on LLM API's /models.
-
-    The catalog is open without a key, so an empty one still hands it back; the
-    request is sent the way a keyed one would be, because a base URL pointed
-    somewhere private may want its key after all. `text_only` keeps just the
-    models that read and write text, on the modalities the catalog itself
-    reports rather than on a guess from the name: speech and picture models
-    stay out of a box that could not use them. One the catalog says nothing
-    about is kept, because the box is editable and the user's word beats the
-    filter's. `transcription` asks for the opposite: only ids
-    /audio/transcriptions accepts, filtered by name the way openai_models()
-    does it, because the catalog's modalities are not reliable enough about
-    which whisper a key may call.
-    """
-    headers = {"User-Agent": USER_AGENT}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    try:
-        data = _get_json(f"{base_url.rstrip('/')}/models", headers)
-    except ApiError as exc:
-        raise explain(exc, "LLM API") from None
-
-    def writes_text(model):
-        arch = model.get("architecture") or {}
-        ins = arch.get("input_modalities") or []
-        outs = arch.get("output_modalities") or []
-        if not ins and not outs:
-            return True
-        return "text" in ins and "text" in outs
-
-    models = [m for m in data.get("data", []) if m.get("id")]
-    if transcription:
-        ids = sorted(m["id"] for m in models)
-        return [i for i in ids if "transcribe" in i or "whisper" in i]
-    if text_only:
-        models = [m for m in models if writes_text(m)]
-    ids = sorted(m["id"] for m in models)
-    recommended = [i for i in LLMAPI_RECOMMENDED if i in ids]
-    return recommended + [i for i in ids if i not in recommended]
-
-
-# Cleanup is a short, frequent job, so the small and fast ones lead the list
-# the settings window fetches; whatever else the catalog holds follows
-# alphabetically. One that drops out of the catalog one day simply stops
-# leading rather than breaking anything.
-LLMAPI_RECOMMENDED = [
-    "gemini-3.5-flash-lite", "claude-haiku-4-5", "gpt-5.4-mini",
-    "gemini-3.6-flash", "gpt-4o-mini",
-]
-
-
-def llmapi_key_status(api_key, base_url=LLMAPI_URL):
-    """Whether LLM API accepts the key, asked of its /models.
-
-    There is no /key endpoint — a request to it answers "The requested model
-    is unavailable", which is not a key verdict at all. /models answers
-    without a key but refuses one it does not know, which is the answer the
-    Test button wants; and the list it hands back says how much the key sees.
-    """
-    if not api_key:
-        raise ApiError(t("{service} API key is empty. Add it in Settings.",
-                         service="LLM API"))
-    try:
-        data = _get_json(
-            f"{base_url.rstrip('/')}/models",
-            {"Authorization": f"Bearer {api_key}", "User-Agent": USER_AGENT})
-    except ApiError as exc:
-        raise explain(exc, "LLM API") from None
-    count = len([m for m in data.get("data", []) if m.get("id")])
-    return t("Key works. {count} models visible.", count=count)
 
 
 # Deepgram has no /models endpoint and its catalog changes a few times a year,

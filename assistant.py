@@ -4,19 +4,22 @@ Three of them, because not everyone has the same one installed:
 
   Claude Code   `claude -p`, the session you would have opened yourself
   Codex         `codex exec`, the same idea from the other shop
-  OpenRouter    a plain chat request, over the key that is already configured
+  Antigravity   `agy --print`, one question, one plain-text answer
 
-The first two are the whole machine: they run commands, read files, and reach
-whatever skills and services you have connected, which is what makes "put that
-in my calendar on Thursday" a thing you can say. OpenRouter cannot touch any of
-that, and is there so that a question still gets an answer on a machine with
-neither CLI installed.
+and a gateway the user added in Settings: a plain chat request, over the key
+its entry holds.
+
+The first three are the whole machine: they run commands, read files, and
+reach whatever skills and services you have connected, which is what makes
+"put that in my calendar on Thursday" a thing you can say. A gateway cannot
+touch any of that, and is there so that a question still gets an answer on a
+machine with none of the CLIs installed.
 
 Whichever it is, the reply is pasted exactly where the transcript would have
 been, and the conversation carries across dictations so that "and move that to
 Friday" knows what "that" is.
 
-The two CLIs are read as they stream rather than waited out. A command that
+The CLIs are read as they stream rather than waited out. A command that
 reaches for the calendar or the web takes long enough that a still indicator is
 indistinguishable from a hang, so every tool they pick up is named in the corner
 while they work.
@@ -31,13 +34,14 @@ import time
 
 import api
 import config as cfg
+import providers
 from i18n import t
 
 SESSION_FILE = cfg.DATA_DIR / "assistant.json"
-PROVIDERS = ("claude", "codex", "antigravity", "openrouter", "llmapi")
+PROVIDERS = ("claude", "codex", "antigravity")
 
-# How many messages of an OpenRouter conversation are carried forward. The two
-# CLIs keep their own history and need no such number; here every turn is resent
+# How many messages of a gateway conversation are carried forward. The CLIs
+# keep their own history and need no such number; here every turn is resent
 # in full, so the window has to end somewhere.
 MAX_HISTORY = 24
 
@@ -95,6 +99,10 @@ class Cancelled(Exception):
 
 def provider(conf):
     chosen = conf["assistant_provider"]
+    # A user/* gateway is a real choice, not an unknown name: it must not be
+    # quietly traded for Claude.
+    if chosen.startswith("user/"):
+        return chosen
     return chosen if chosen in PROVIDERS else "claude"
 
 
@@ -106,8 +114,28 @@ def executable(name):
 
 def display_name(conf):
     """What to call the thing being asked, in the tray and in the corner."""
-    return {"claude": "Claude", "codex": "Codex", "antigravity": "Antigravity",
-            "llmapi": "LLM API"}.get(provider(conf), "OpenRouter")
+    name = provider(conf)
+    if name.startswith("user/"):
+        who = providers.provider(conf, name)
+        # An entry that has gone missing is still named, not dressed up as
+        # somebody else: the ask is about to fail on it anyway.
+        return who.name if who else name
+    return {"claude": "Claude", "codex": "Codex",
+            "antigravity": "Antigravity"}[name]
+
+
+def model(conf):
+    """The model the provider being asked would run, for the history row."""
+    name = provider(conf)
+    if name == "codex":
+        # Empty means whatever Codex itself is set to; the history then has
+        # only the name of the thing that answered.
+        return conf["assistant_codex_model"].strip() or "codex"
+    if name == "antigravity":
+        return conf["assistant_agy_model"].strip() or "antigravity"
+    if name.startswith("user/"):
+        return providers.custom_model(conf, name, "assistant")
+    return conf["assistant_model"]
 
 
 # --- the conversation -----------------------------------------------------
@@ -200,7 +228,7 @@ def ask(prompt, conf, on_stage=None, should_stop=None):
     one, and only the denial explains why it did not do what it was asked to.
     """
     name = provider(conf)
-    if name in ("openrouter", "llmapi"):
+    if name.startswith("user/"):
         return _ask_plain_http(name, prompt, conf, on_stage)
 
     binary = executable(name)
@@ -396,35 +424,39 @@ def _ask_antigravity(prompt, conf, on_stage):
     return answer, ""
 
 
-# --- OpenRouter -----------------------------------------------------------
+# --- a gateway ------------------------------------------------------------
 
 def _ask_plain_http(name, prompt, conf, on_stage):
     """No tools, no files, no calendar: a question and an answer.
 
-    It is the fallback for a machine with neither CLI on it, so it says what it
+    It is the fallback for a machine with no CLI on it, so it says what it
     knows and nothing else. The conversation is ours to keep here, since there
-    is no session on the other end to resume. OpenRouter and LLM API both answer
-    the same /chat/completions, so they share this path and differ only in the
-    key, the model, the base URL and the name an error speaks in.
+    is no session on the other end to resume. The key, the base URL, the model
+    and the name an error speaks in all come off the gateway's registry entry.
     """
     if on_stage:
         on_stage(t("Thinking…"))
-    if name == "llmapi":
-        key, model, base, service = (conf.llmapi_key(),
-                                     conf["assistant_llmapi_model"],
-                                     conf["llmapi_base_url"], "LLM API")
-    else:
-        key, model, base, service = (conf.openrouter_key(),
-                                     conf["assistant_openrouter_model"],
-                                     conf["openrouter_base_url"], "OpenRouter")
+    who = providers.provider(conf, name)
+    if who is None:
+        # An entry that has gone missing is a loud dead end rather than a
+        # quiet question to somebody else's bill.
+        raise AssistantError(t("Unknown provider."))
+    chosen = providers.custom_model(conf, name, "assistant")
+    if not chosen:
+        # The request would otherwise name no model, and the gateway's own
+        # complaint about that names no fix.
+        raise AssistantError(t(
+            "{service} has no model chosen for this. Pick one in Settings.",
+            service=who.name))
     history = read_messages(name, conf["assistant_session_minutes"] * 60)
     messages = history + [{"role": "user", "content": prompt}]
     try:
         answer = api.chat(
-            messages, key, model,
+            messages, providers.credential(conf, name), chosen,
             conf.assistant_prompt(), reasoning=conf["assistant_reasoning"],
-            base_url=base, timeout=conf["assistant_timeout"],
-            provider=name, service=service,
+            base_url=providers.base_url(conf, name),
+            timeout=conf["assistant_timeout"],
+            provider=name, service=who.name,
         )
     except api.ApiError as exc:
         raise AssistantError(str(exc)) from exc

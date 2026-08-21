@@ -225,40 +225,32 @@ class MeetingPipeline(QObject):
         provider = conf["meeting_provider"]
         if provider == "local":
             return cleanup._local(transcript, conf, conf.meeting_prompt(), 600)
-        if provider == "llmapi":
-            return api.cleanup(
-                transcript, conf.llmapi_key(), conf["meeting_llmapi_model"],
-                conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
-                base_url=conf["llmapi_base_url"], timeout=600,
-                provider="llmapi", service="LLM API",
-            )
         who = providers.provider(conf, provider)
         if who is not None and who.transport == "http":
             model = (providers.custom_model(conf, provider, "minutes")
                      if who.custom else conf["meeting_model"])
+            if not model:
+                # An empty box would ride to the gateway and come back as its
+                # own complaint about a nameless model; this one names the fix.
+                raise api.ApiError(t(
+                    "{service} has no minutes model chosen. Pick one in "
+                    "Settings.", service=who.name))
             return api.cleanup(
                 transcript, providers.credential(conf, provider), model,
                 conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
                 base_url=providers.base_url(conf, provider), timeout=600,
                 provider=provider, service=who.name,
             )
-        # A name none of the branches knows: the road the minutes have always
-        # taken, which fails loudly on its empty key rather than quietly
-        # re-routing the meeting to somebody else's bill.
-        return api.cleanup(
-            transcript, conf.openrouter_key(), conf["meeting_model"],
-            conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
-            base_url=conf["openrouter_base_url"], timeout=600,
-            provider="openrouter", service="OpenRouter",
-        )
+        # A name none of the branches knows — a CLI this road was never meant
+        # to run on, or a typo in the file. A loud dead end rather than a
+        # quiet re-route to somebody else's bill.
+        raise api.ApiError(t("Unknown provider."))
 
     def _minutes_model(self):
         """The name the history row records for whoever wrote the minutes."""
         provider = self.conf["meeting_provider"]
         if provider == "local":
             return self.conf["local_llm_model"]
-        if provider == "llmapi":
-            return self.conf["meeting_llmapi_model"]
         who = providers.provider(self.conf, provider)
         if who is not None and who.custom:
             return providers.custom_model(self.conf, provider, "minutes")

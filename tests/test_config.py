@@ -18,6 +18,7 @@ import config as cfg
 import ggml
 import i18n
 import paste
+import providers
 from tests.support import DikteTest
 
 
@@ -124,9 +125,9 @@ class Keys(DikteTest):
             self.assertEqual(cfg.Config().openai_key(), "sk-env")
 
     def test_a_stored_key_beats_the_environment(self):
-        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-env"}):
-            conf = self.config(openrouter_api_key="sk-stored")
-            self.assertEqual(conf.openrouter_key(), "sk-stored")
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "gsk-env"}):
+            conf = self.config(groq_api_key="gsk-stored")
+            self.assertEqual(conf.groq_key(), "gsk-stored")
 
     def test_no_key_anywhere(self):
         self.assertEqual(cfg.Config().openai_key(), "")
@@ -157,16 +158,6 @@ class TranscribeTarget(DikteTest):
         self.assertEqual(target.api_key, "sk-test")
         self.assertEqual(target.base_url, api.OPENAI_URL)
         self.assertEqual(target.model, cfg.DEFAULTS["transcribe_model"])
-
-    def test_openrouter_when_it_is_picked(self):
-        conf = self.config(transcribe_provider="openrouter",
-                           openrouter_api_key="sk-or-test",
-                           openrouter_transcribe_model="openai/whisper-1")
-        target = conf.transcribe_target()
-        self.assertEqual(target.provider, "openrouter")
-        self.assertEqual(target.service, "OpenRouter")
-        self.assertEqual(target.api_key, "sk-or-test")
-        self.assertEqual(target.model, "openai/whisper-1")
 
     def test_groq_when_it_is_picked(self):
         conf = self.config(transcribe_provider="groq", groq_api_key="gsk-test",
@@ -208,6 +199,174 @@ class TranscribeTarget(DikteTest):
         conf = self.config(transcribe_provider="openai",
                            openai_base_url="http://localhost:8080/v1")
         self.assertEqual(conf.transcribe_target().base_url, "http://localhost:8080/v1")
+
+
+class RetiredGatewayMigration(DikteTest):
+    """OpenRouter and LLM API stopped being providers: a config written while
+    they were becomes a user-gateway config on load, and the next save makes
+    that the only copy. The tests write the config.json an older version
+    would have left behind."""
+
+    NO_LEGACY_ENV = {"OPENROUTER_API_KEY": "", "LLMAPI_API_KEY": ""}
+
+    def test_a_stored_openrouter_becomes_a_gateway(self):
+        self.write_config({
+            "openrouter_api_key": "sk-or-old",
+            "openrouter_base_url": "https://openrouter.ai/api/v1",
+            "openrouter_transcribe_model": "openai/whisper-1",
+            "cleanup_provider": "openrouter",
+            "cleanup_model": "google/gemini-3.5-flash-lite",
+            "assistant_provider": "openrouter",
+            "assistant_openrouter_model": "google/gemini-3.5-flash",
+        })
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            conf = cfg.Config()
+        entries = providers.custom_providers(conf)
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry["name"], "OpenRouter")
+        self.assertEqual(entry["base_url"], "https://openrouter.ai/api/v1")
+        self.assertEqual([k["secret"] for k in entry["keys"]], ["sk-or-old"])
+        self.assertEqual(entry["keys"][0]["label"], "Migrated")
+        self.assertEqual(entry["models"], {
+            "transcription": "openai/whisper-1",
+            "text": "google/gemini-3.5-flash-lite",
+            "minutes": "",
+            "assistant": "google/gemini-3.5-flash",
+        })
+        pid = f"user/{entry['id']}"
+        self.assertEqual(conf["cleanup_provider"], pid)
+        self.assertEqual(conf["assistant_provider"], pid)
+        # And the gateway answers through the registry, key and models both.
+        self.assertEqual(providers.credential(conf, pid), "sk-or-old")
+        self.assertEqual(providers.custom_model(conf, pid, "text"),
+                         "google/gemini-3.5-flash-lite")
+        self.assertEqual(providers.base_url(conf, pid),
+                         "https://openrouter.ai/api/v1")
+
+    def test_llmapi_reads_its_own_model_settings(self):
+        self.write_config({
+            "llmapi_api_key": "sk-l-old",
+            "transcribe_provider": "llmapi",
+            "llmapi_transcribe_model": "whisper-1",
+            "meeting_provider": "llmapi",
+            "meeting_llmapi_model": "gpt-4o",
+            "cleanup_llmapi_model": "gpt-4o-mini",
+            "assistant_llmapi_model": "gpt-4o-mini",
+        })
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            conf = cfg.Config()
+        entries = providers.custom_providers(conf)
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry["name"], "LLM API")
+        self.assertEqual(entry["base_url"], "https://api.llmapi.ai/v1")
+        self.assertEqual(entry["models"], {"transcription": "whisper-1",
+                                           "text": "gpt-4o-mini",
+                                           "minutes": "gpt-4o",
+                                           "assistant": "gpt-4o-mini"})
+        pid = f"user/{entry['id']}"
+        self.assertEqual(conf["transcribe_provider"], pid)
+        self.assertEqual(conf["meeting_provider"], pid)
+        # The transcription target the worker would build follows it over.
+        target = conf.transcribe_target()
+        self.assertEqual(target.provider, pid)
+        self.assertEqual(target.api_key, "sk-l-old")
+        self.assertEqual(target.model, "whisper-1")
+
+    def test_the_environment_alone_seeds_the_key(self):
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-env"}):
+            self.write_config({"cleanup_provider": "openrouter"})
+            conf = cfg.Config()
+        entry = providers.custom_providers(conf)[0]
+        self.assertEqual([k["secret"] for k in entry["keys"]], ["sk-env"])
+        self.assertTrue(conf["cleanup_provider"].startswith("user/"))
+
+    def test_a_stored_key_beats_the_environment_for_the_secret(self):
+        self.write_config({"openrouter_api_key": "sk-stored"})
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-env"}):
+            conf = cfg.Config()
+        self.assertEqual(providers.custom_providers(conf)[0]["keys"][0]
+                         ["secret"], "sk-stored")
+
+    def test_a_job_naming_one_without_any_key_migrates_keyless(self):
+        self.write_config({"transcribe_provider": "llmapi"})
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            conf = cfg.Config()
+        entry = providers.custom_providers(conf)[0]
+        self.assertEqual(entry["keys"], [])
+        self.assertEqual(conf["transcribe_provider"], f"user/{entry['id']}")
+
+    def test_no_legacy_signal_means_no_gateway(self):
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            self.write_config({"cleanup_provider": "local",
+                               "cleanup_model": "some/model"})
+            self.assertEqual(providers.custom_providers(cfg.Config()), [])
+            # A legacy key left empty is not a signal either.
+            self.write_config({"openrouter_api_key": "", "llmapi_api_key": "",
+                               "llmapi_base_url": "https://api.llmapi.ai/v1"})
+            self.assertEqual(providers.custom_providers(cfg.Config()), [])
+
+    def test_a_custom_base_url_is_kept(self):
+        self.write_config({"llmapi_api_key": "k",
+                           "llmapi_base_url": "https://proxy.example/v1/"})
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            conf = cfg.Config()
+        self.assertEqual(providers.custom_providers(conf)[0]["base_url"],
+                         "https://proxy.example/v1/")
+
+    def test_an_existing_gateway_on_that_url_is_reused(self):
+        self.write_config({"openrouter_api_key": "sk-or-old"})
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            conf = cfg.Config()
+        pid = providers.add_provider(conf, "Mine",
+                                     "https://openrouter.ai/api/v1/")
+        conf["cleanup_provider"] = pid
+        conf.save()
+        # The environment keeps its key past the save; the reload must not
+        # add a second OpenRouter next to the one already there.
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-env"}):
+            reloaded = cfg.Config()
+        self.assertEqual(len(providers.custom_providers(reloaded)), 2)
+        self.assertEqual(reloaded["cleanup_provider"], pid)
+
+    def test_saving_and_reloading_leaves_one_gateway(self):
+        self.write_config({"openrouter_api_key": "sk-or-old",
+                           "cleanup_provider": "openrouter",
+                           "cleanup_model": "some/model"})
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            first = cfg.Config()
+        pid = first["cleanup_provider"]
+        first.save()
+        # The legacy keys are gone from the file, so nothing fires a second
+        # migration even with the environment still holding a key.
+        stored = self.read_config_file()
+        self.assertNotIn("openrouter_api_key", stored)
+        self.assertNotIn("openrouter_base_url", stored)
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-env"}):
+            second = cfg.Config()
+        self.assertEqual(len(providers.custom_providers(second)), 1)
+        self.assertEqual(second["cleanup_provider"], pid)
+        self.assertEqual(providers.credential(second, pid), "sk-or-old")
+        self.assertEqual(providers.custom_model(second, pid, "text"),
+                         "some/model")
+
+    def test_both_at_once_become_two_gateways(self):
+        self.write_config({"openrouter_api_key": "sk-or", "llmapi_api_key":
+                           "sk-l", "meeting_provider": "llmapi",
+                           "cleanup_provider": "openrouter"})
+        with mock.patch.dict(os.environ, self.NO_LEGACY_ENV):
+            conf = cfg.Config()
+        entries = providers.custom_providers(conf)
+        self.assertEqual({e["name"] for e in entries},
+                         {"OpenRouter", "LLM API"})
+        for entry in entries:
+            if entry["name"] == "LLM API":
+                self.assertEqual(conf["meeting_provider"],
+                                 f"user/{entry['id']}")
+            else:
+                self.assertEqual(conf["cleanup_provider"],
+                                 f"user/{entry['id']}")
 
 
 class CleanupPrompt(DikteTest):
@@ -472,8 +631,24 @@ class Defaults(unittest.TestCase):
                 self.assertEqual(cfg.DEFAULTS[key], "")
 
     def test_the_keys_ship_empty(self):
-        self.assertEqual(cfg.DEFAULTS["openai_api_key"], "")
-        self.assertEqual(cfg.DEFAULTS["openrouter_api_key"], "")
+        for key in ("openai_api_key", "groq_api_key", "deepgram_api_key"):
+            with self.subTest(key=key):
+                self.assertEqual(cfg.DEFAULTS[key], "")
+
+    def test_the_retired_gateways_left_no_settings_behind(self):
+        """OpenRouter and LLM API are user gateways now; their flat settings
+        are gone, and whatever a config still holds of them is migrated
+        rather than read."""
+        for key in ("openrouter_api_key", "openrouter_base_url",
+                    "llmapi_api_key", "llmapi_base_url",
+                    "openrouter_transcribe_model", "llmapi_transcribe_model",
+                    "cleanup_llmapi_model", "meeting_llmapi_model",
+                    "assistant_openrouter_model", "assistant_llmapi_model"):
+            with self.subTest(key=key):
+                self.assertNotIn(key, cfg.DEFAULTS)
+        # The shared editing rows the user gateways back stay.
+        self.assertIn("cleanup_model", cfg.DEFAULTS)
+        self.assertIn("meeting_model", cfg.DEFAULTS)
 
     def test_the_jobs_default_to_this_machine(self):
         """Local first: no key is needed to start, and an unconfigured local
@@ -481,10 +656,6 @@ class Defaults(unittest.TestCase):
         self.assertEqual(cfg.DEFAULTS["transcribe_provider"], "local")
         self.assertEqual(cfg.DEFAULTS["cleanup_provider"], "local")
         self.assertEqual(cfg.DEFAULTS["meeting_provider"], "local")
-        # The hosted gateways keep their storage and env fallbacks for the
-        # configs that still point at them.
-        self.assertEqual(cfg.DEFAULTS["openrouter_base_url"],
-                         "https://openrouter.ai/api/v1")
 
     def test_every_language_specific_prompt_has_both_languages(self):
         for name in ("CLEANUP_PROMPT", "FILE_CLEANUP_PROMPT", "MEETING_PROMPT",
