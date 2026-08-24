@@ -1,0 +1,20 @@
+{
+  "project": "dikte",
+  "mission": "dikte-settings-stability",
+  "ledger_dir": ".claude/mamak-context/2026-08-21/1110-dikte-settings-stability",
+  "branch": "master",
+  "upstream": "origin/master",
+  "vocab": {
+    "sub_savecrash": "Settings Save crash & apply boundary",
+    "sub_startupsettings": "Auto-open settings on normal GUI startup",
+    "sub_settingsperf": "Settings popup performance & deferred init",
+    "sub_winicon": "Windows application and window icon",
+    "sub_audit": "Cross-platform stability audit"
+  },
+  "decisions": {
+    "save_apply_split": "Atomic config save separated from runtime apply error boundary",
+    "startup_settings": "Open Settings on normal GUI launch (empty command / settings verb), keep CLI/verbs intact",
+    "settings_fast_open": "Defer history, minutes, and status refresh after first paint",
+    "win_icon_policy": "Centralized app_icon helper using icons/dikte.ico and icons/dikte.png with AppUserModelID on Windows"
+  }
+}
