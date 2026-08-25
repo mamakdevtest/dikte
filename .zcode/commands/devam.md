@@ -2,26 +2,17 @@
 description: Kayıtlı görevi Ledger'dan geri yükle ve kaldığı yerden devam et
 ---
 
-# /devam — Görevi geri yükle (resume)
+# /devam - Görevi geri yükle (resume)
 
-Context Ledger'dan en son kaydedilen durumu yükle ve kaldığı yerden devam et.
+Sözleşme: `ai/workflows.md` → "Context Ledger contract".
 
-## Adımlar
+1. `.zcode/mamak-context/ACTIVE.json` → aktif görev klasörü; yoksa en yeni
+   görev klasörünü seç ve bunu kullanıcıya belirt.
+2. Sırayla oku: NOW.md → plan → DECISIONS.md → HANDOFF.md.
+3. `git status --short` çalıştır; Ledger ile canlı ağaç farklarını not et;
+   kullanıcının kayıt dışı değişikliklerini koru.
+4. Gerekirse graphify-out/ ile okumayı daralt; çelişkide canlı kod kazanır.
+5. Kısa resume özeti ver: görev, kalınan adım, açık konular, ilk eylem —
+   sonra o eyleme geç.
 
-1. `.zcode/mamak-context/ACTIVE.json` → aktif görev klasörünü bul.
-   - Yoksa: `.zcode/mamak-context/` ve eski `.claude/mamak-context/` altında
-     en yeni görev klasörünü öner, kullanıcıya hangisi olduğunu doğrulamadan
-     varsayılan olarak en yenisini seç ve bunu belirt.
-2. Sırayla oku: `NOW.md` → plan dosyası → `DECISIONS.md` → `HANDOFF.md`.
-3. `git status --short` çalıştır; Ledger'daki durum ile canlı ağaç arasındaki
-   farkları not et. Kullanıcının Ledger'da kayıtlı olmayan değişikliklerini koru.
-4. Gerekirse Graphify verisini (`graphify-out/`) kullanarak ilgili dosyaları
-   daralt, ardından canlı dosyaları oku. Canlı kaynak kazanır.
-5. Kullanıcıya kısa bir resume özeti ver: görev, kalınan adım, açık konular,
-   önerilen ilk eylem. Sonra o ilk eyleme geç.
-
-## Kurallar
-
-- Repo, Ledger'dan daha yetkilidir; çelişkide canlı kod kazanır.
-- Sır içerikli dosyaları okuma/ezme.
-- Resume sonrası ilk anlamlı kilometre taşında `/kaydet` öner.
+Resume sonrası ilk kilometre taşında `/kaydet` öner.

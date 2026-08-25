@@ -3,6 +3,8 @@ __pycache__/
 *.egg-info/
 .venv/
 .zcode
-.cloud/
+.cloud
 graphify-out/
 .claude/settings.json
+.claude/settings.local.json
+.claude/mamak-context/

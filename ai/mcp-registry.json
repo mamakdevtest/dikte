@@ -1,0 +1,42 @@
+{
+  "$schema": "dikte-mcp-registry-v1",
+  "description": "Canonical MCP/tool registry for Dikte. Servers are declared once here; client-specific config (.mcp.json for Claude Code, native config elsewhere) is generated or hand-derived from this file. Credentials are environment-variable references only - never literal values.",
+  "updated": "2026-08-25",
+  "servers": {
+    "graphify": {
+      "status": "active-external-tool",
+      "role": "persistent repository-structure memory (knowledge graph)",
+      "transport": "cli",
+      "command": "graphify",
+      "install": "uv tool install graphifyy",
+      "source": "https://github.com/Graphify-Labs/graphify",
+      "license": "Apache-2.0",
+      "notes": "Primary structural memory. Not exposed as an MCP server here because every agent can invoke the CLI directly; keep it that way unless a client cannot run CLIs."
+    },
+    "context7": {
+      "status": "deferred",
+      "role": "up-to-date library documentation lookup",
+      "transport": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "source": "https://github.com/upstash/context7",
+      "license": "MIT (server code)",
+      "env_refs": {},
+      "decision": "Deferred 2026-08-25: Dikte's stack (PyQt6, stdlib, whisper.cpp) changes slowly; adds an always-available network dependency to a privacy-first local tool. Revisit if docs drift causes repeated mistakes.",
+      "enable_recipe": {
+        "claude_code": "add to .mcp.json: {\"mcpServers\": {\"context7\": {\"type\": \"http\", \"url\": \"https://mcp.context7.com/mcp\"}}}"
+      }
+    },
+    "serena": {
+      "status": "rejected",
+      "role": "LSP-grade semantic code toolkit",
+      "source": "https://github.com/oraios/serena",
+      "license": "MIT",
+      "decision": "Rejected 2026-08-25: codebase navigation/memory overlaps Graphify's responsibility; running two persistent context systems invites conflicts. Reconsider only if precise LSP refactor operations become a proven bottleneck."
+    }
+  },
+  "rules": [
+    "Never place API keys or tokens in this file; use environment references only.",
+    "Do not enable two servers for the same responsibility.",
+    "Inspect install scripts before running them; pin versions where practical."
+  ]
+}

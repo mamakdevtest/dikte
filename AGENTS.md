@@ -1,102 +1,74 @@
-# Dikte — ZCode Çalışma Talimatları
+# Dikte — AI Agent Instructions
 
-Bu dosya ZCode'un workspace talimat dosyasıdır. `promt-v2.md` içindeki Lead
-Orchestrator akışının ZCode (GLM-5.3) için uyarlanmış halidir.
+Universal entry point for any coding agent working in this repository:
+Claude Code, Codex, OpenCode, Gemini CLI, Antigravity, ZCode/GLM,
+ChatGPT-compatible and future agents. This file is vendor-neutral; thin
+per-client adapters exist only where a client cannot read it directly
+(see `ai/README.md` for the verified adapter matrix).
 
-## Proje kimliği
+Dikte is a local-first voice dictation / transcription / cleanup desktop
+app: Python 3.11+ standard library + PyQt6 only; Windows, Linux (KDE
+Wayland first), macOS. Daily-driver quality bar — correctness and
+repeatability beat quick patches.
 
-Dikte: yerel-öncelikli sesli diktya / transkripsiyon / temizleme aracı.
-Python + PyQt6, Windows ve Linux. Günlik gerçek kullanım hedeflidir; doğruluk
-ve tekrarlanabilirlik hızlı yamadan önce gelir.
+## Canonical knowledge map
 
-Ana modüller: `dikte.py` (uygulama), `settings_ui.py` (ayarlar), `config.py`,
-`cli.py`, `hotkey.py`, `worker.py`, `ggml.py` (yerel sunucular), `overlay.py`,
-`i18n.py`. Testler: `tests/` (offscreen Qt mimarisi mevcut).
+| Read | For |
+|---|---|
+| `ai/architecture.md` | Module map, test architecture, platform splits, provider/gateway layer, startup/IPC, i18n, security surfaces |
+| `ai/workflows.md` | Truth hierarchy, quality rules, test & verification contract, Context Ledger contract, git discipline |
+| `ai/agent-taxonomy.md` | Agent/subagent taxonomy with ownership scopes and verification duties |
+| `ai/skills/` | Agent Skills (`dikte-*` project skills + pinned `vendor/` external skills) |
+| `ai/mcp-registry.json` | Canonical MCP/tool registry (what is active/deferred/rejected and why) |
 
-## ZCode orkestrasyon modeli
+Live source always wins over documentation, including this file.
 
-ZCode'da sub-agent'lar Agent aracı ile çalışır. İki yerleşik tip:
+## Non-negotiable rules
 
-- `general-purpose` — kod yazan, test çalıştıran, çok adımlı işler;
-- `Explore` — salt-okunur, geniş tarama / kanıt toplama.
+1. **Secrets**: never print, log, or commit API keys/tokens; masked display
+   is the only sanctioned form; keep the env scrub list in
+   `tests/__init__.py` in sync when providers change.
+2. **Dependencies**: Python stdlib + PyQt6 only. No new third-party imports
+   without an explicit user decision.
+3. **Evidence before claims**: never state success without showing the
+   verifying command's real result. Adding a broad `except Exception` does
+   not fix a crash.
+4. **Honest failure UX**: persisted-vs-applied settings failures are distinct
+   outcomes and must be reported as such.
+5. **GUI thread discipline**: expensive work stays off the Qt GUI thread;
+   widget access stays on it.
+6. **Cross-platform parity**: preserve Linux semantics when fixing Windows
+   behavior and vice versa; terminal CLI behavior stays explicit.
+7. **No drive-by refactors**; smallest coherent diff wins.
+8. **Git**: commit/push only on explicit instruction; never discard user's
+   uncommitted work.
 
-Baş agent (Lead) Graphify/daraltma işini merkezde yapar, işçilere odaklanmış
-bağlam verir. İşçiler başka işçi çalıştıramaz.
+## Test contract
 
-### Sub-agent topolojisi (Agent aracı ile çalıştırılır)
-
-| Agent | ZCode tipi | Sahiplik | Görev |
-|---|---|---|---|
-| Worker A — Save/Apply kök neden | general-purpose | `settings_ui.py`, `config.py`, `dikte.py`, `ggml.py` + testleri | Save çökmesini yeniden üret, kök nedeni bul, save-vs-apply hata sözleşmesini kur |
-| Worker B — Startup / performans / ikon | general-purpose | `dikte.py`, `settings_ui.py`, ikon yardımcısı | Otomatik Settings, ilk-boyama gecikmesi, Windows ikon politikası |
-| Worker C — Platform stabilite denetimi | Explore | salt-okunur | Süreç yaşam döngüsü, Qt callback'leri, hotkey, platform yolları; kanıtlı kısa rapor |
-| Worker D — Taze doğrulayıcı | general-purpose (yazarı DEĞİL) | tüm diff | Bağımsız inceleme, hedefli doğrulama, eksik test raporu |
-
-Kurallar:
-
-- A ve B aynı dosyaya yazacaksa Lead bölüm/alan böler veya yazıları serileştirir.
-- İşçi özetleri Context Ledger'daki `AGENTS.md` dosyasına kısa kaydedilir;
-  tam transkript ana bağlama taşınmaz.
-- Model yetenek probe'u (Claude/ANTHROPIC_* env) ZCode'da geçerli değildir;
-  ZCode Agent aracının kendi modeliyle çalışır.
-
-## Context Ledger
-
-Konum: `.zcode/mamak-context/` (`.claude/mamak-context` eski yerdir; eski
-içerik okunabilir ama yeni kayıtlar buraya yazılır).
-
-Yapı:
-
-```
-.zcode/mamak-context/
-  ACTIVE.json                        → aktif görev klasörünü işaret eder
-  YYYY-MM-DD/HHmm-görev-adı/
-    <tarih-saat>-görev-plan.md
-    NOW.md        → yetkili güncel durum, <=150 satır / ~8KB
-    DECISIONS.md  → karar defteri
-    WORKLOG.md    → zaman sıralı iş günlüğü
-    AGENTS.md     → sub-agent handoff özetleri
-    EVIDENCE.md   → komut çıktıları / kanıtlar
-    COMPACTIONS.md→ sıkıştırma (compaction) özetleri
-    HANDOFF.md    → sonraki oturuma devir
+```sh
+python -m unittest discover --verbose
 ```
 
-Kurallar:
+Offscreen Qt is pinned in `tests/__init__.py`; fixtures live in
+`tests/support.py`. Deterministic tests only — see the `dikte-testing`
+skill before writing tests. After changes: targeted modules → full suite →
+`git diff --check`.
 
-- Sır yok, tam sohbet transkripti yok; NOW.md güncel durumla ezilir.
-- Ledger ve önbellek dosyaları Graphify indeksine katılmaz.
-- Resume sırası: `ACTIVE.json → NOW.md → plan/DECISIONS/HANDOFF`,
-  ancak repoyu yeniden keşfetmeden önce.
+## Task workflow
 
-### Kaydet / kaydetme sözleşmesi
+- Start from live git state; resume via `.zcode/mamak-context/ACTIVE.json`
+  if present (ledger rules in `ai/workflows.md`; ledger stays local and is
+  gitignored — never commit it).
+- Use `graphify-out/` to narrow reading before broad file reads; refresh
+  the graph (`graphify update .`) after source changes — freshness is part
+  of completion.
+- Subagents follow `ai/agent-taxonomy.md`: strict file ownership, workers never
+  spawn workers, fresh verifier reviews the final diff.
 
-- **Kaydet modu** (`/kaydet`): durum Ledger'a kalıcı yazılır (NOW + WORKLOG +
-  gerekirse HANDOFF). Uzun işlemlerden önce, her agent handoff'unda, kök neden
-  bulunduğunda, doğrulama sonrası ve oturum kapanmadan önce çalıştırılır.
-- **Kaydetme modu** (`/kaydetme`): sadece ekrana özet çıkarır, hiçbir Ledger
-  dosyasına yazmaz. Deneme/sohbet amaçlı hızlı durum özetidir.
+## Skills
 
-## Başlangıç kontrol listesi (her görevde)
-
-1. `git status --short`, branch/HEAD, staged/unstaged; kullanıcının önceki
-   değişiklikleri korunur, asla reset/stash/discard edilmez.
-2. `ACTIVE.json` varsa resume akışı uygulanır.
-3. Graphify: `graphify --version`, `graphify-out/graph.json` ve
-   `GRAPH_REPORT.md` geniş ham dosya okumalarından ÖNCE kullanılır.
-   Canlı kaynak her zaman kazanır: repomix → graf → hedef dosyalar → testler.
-4. Bu görev push yetkisi içermez; açık kullanıcı talimatı olmadan push yok.
-
-## Kalite kuralları
-
-- Sırlar (API key, token, Authorization) asla yazdırılmaz/loglanmaz/kaydedilmez.
-- Çökme "düzeldi" denmez sadece dışarıya `except Exception` eklendiği için.
-- Pahalı başlatma Qt GUI thread'ini bloke etmez; widget erişimi GUI thread'inde kalır.
-- Terminal CLI davranışı ve Linux semantiği korunur.
-- Doğrulanmamış hiçbir şey için başarı iddiasında bulunulmaz.
-- Test komutu: canlı depodaki `.github/workflows/tests.yml` doğrulanır;
-  varsayılan aday `python -m unittest discover`.
-
-## Zcode/Graphify tamamlama kapısı
-
-Kaynak değiştikten sonra `graphify update .` çalıştır; grafın taze ve Ledger
-dosyalarıyla kirlenmediğini doğrula. Graf tazeliği görev tamamının parçasıdır.
+Project skills (`ai/skills/dikte-*`) capture Dikte-specific know-how;
+vendored external skills under `ai/skills/vendor/` are pinned in
+`vendor/manifest.json` — refresh through that manifest, inspect diffs.
+Client skill directories (e.g. `.claude/skills/`) are generated by
+`python tools/ai_sync.py` — edit `ai/skills/`, not the generated copies.

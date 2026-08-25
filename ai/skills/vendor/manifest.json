@@ -1,0 +1,24 @@
+{
+  "$schema": "dikte-vendor-skills-v1",
+  "description": "Pinned external Agent Skills vendored verbatim into this repository. Refresh = update the commit below, re-copy the listed skills from the source repo, inspect the diff, run tools/ai_sync.py. Never execute vendored scripts without reading them first.",
+  "source": {
+    "repo": "https://github.com/obra/superpowers",
+    "license": "MIT",
+    "license_path": "LICENSE (MIT License, Copyright (c) 2025 Jesse Vincent)",
+    "pinned_commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+    "pinned_date": "2026-08-25",
+    "format": "agentskills.io SKILL.md (portable)"
+  },
+  "skills": [
+    { "name": "systematic-debugging", "upstream_path": "skills/systematic-debugging", "reason": "4-phase root-cause discipline; matches repo rule: no fix without reproduced cause" },
+    { "name": "verification-before-completion", "upstream_path": "skills/verification-before-completion", "reason": "evidence-before-claims; matches repo completion gate" },
+    { "name": "test-driven-development", "upstream_path": "skills/test-driven-development", "reason": "red-green-refactor with honest-test rules" },
+    { "name": "using-git-worktrees", "upstream_path": "skills/using-git-worktrees", "reason": "isolated workspaces for risky changes" },
+    { "name": "requesting-code-review", "upstream_path": "skills/requesting-code-review", "reason": "structured reviewer dispatch (maps to V1 fresh-verifier)" },
+    { "name": "receiving-code-review", "upstream_path": "skills/receiving-code-review", "reason": "technical rigor over performative agreement" }
+  ],
+  "rejected_from_vendor": [
+    { "name": "using-superpowers / writing-plans / brainstorming / etc.", "reason": "orchestration-style skills that assume the superpowers plugin runtime; Dikte's orchestration lives in ai/agents.md + ai/workflows.md" },
+    { "name": "skill bundles with install hooks/session-start injection", "reason": "plugin install would inject mandatory workflow text into every session; vendoring keeps adoption opt-in per skill" }
+  ]
+}
