@@ -125,10 +125,10 @@
 
 ### Final Verification (Phase B)
 
-- [ ] V1 — Audio/Overlay QA (test_audio, test_overlay_refinement, overlay portions of test_ui, new pause/resume/stop/thinking tests, offscreen paint smoke for all states & waveform volume steps)
-- [ ] V2 — Provider/Model QA (test_providers, relevant test_api/test_assistant, provider/model sections of test_ui — Deepgram visible/persist, Claude/Codex/local readiness, custom preserve, failed fetch preserve, dedup, deterministic order, no GUI block)
-- [ ] V3 — Meeting/Minutes QA (test_meeting, relevant config/UI, new Markdown export — provider change refresh, ordering, manual preserve, .md exact content, retry unaffected)
-- [ ] V4 — Theme/Visual QA (relevant UI tests, runtime Dark→Light→Dark on every settings page, backgrounds/text/borders/arrows/popups/combos/disabled/rows/dialogs/meeting/minutes/overlay preview — no stale opposite-theme color)
-- [ ] V5 — Integration Regression (bounded `python -m unittest` over touched systems; one full discover attempt, timeout not claimed as PASS)
-- [ ] V6 — Graph/Impact Review (if Graphify installed: `graphify update .` once, inspect changed-file impact, report actionable missing tests/callers)
-- [ ] V7 — Git Review (`git status --short`, `git diff --check`, full diff, no secrets, no temp/debug artifacts, no repomix edits)
+- [x] V1 — Audio/Overlay QA (test_audio, test_overlay_refinement, overlay portions of test_ui, new pause/resume/stop/thinking tests, offscreen paint smoke for all states & waveform volume steps)
+- [x] V2 — Provider/Model QA (test_providers, relevant test_api/test_assistant, provider/model sections of test_ui — Deepgram visible/persist, Claude/Codex/local readiness, custom preserve, failed fetch preserve, dedup, deterministic order, no GUI block)
+- [x] V3 — Meeting/Minutes QA (test_meeting, relevant config/UI, new Markdown export — provider change refresh, ordering, manual preserve, .md exact content, retry unaffected)
+- [x] V4 — Theme/Visual QA (relevant UI tests, runtime Dark→Light→Dark on every settings page, backgrounds/text/borders/arrows/popups/combos/disabled/rows/dialogs/meeting/minutes/overlay preview — no stale opposite-theme color)
+- [x] V5 — Integration Regression (bounded `python -m unittest` over touched systems; one full discover attempt, timeout not claimed as PASS)
+- [x] V6 — Graph/Impact Review (if Graphify installed: `graphify update .` once, inspect changed-file impact, report actionable missing tests/callers)
+- [x] V7 — Git Review (`git status --short`, `git diff --check`, full diff, no secrets, no temp/debug artifacts, no repomix edits)

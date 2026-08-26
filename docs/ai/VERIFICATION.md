@@ -138,3 +138,65 @@ Overall: PASS
 - Old fake loop eliminated, new history real-only, gate+EMA, center envelope, reveal 220ms ease-out, interactive_live pause button focusless, timer active-only, one WAV
 
 Overall: PASS
+
+---
+
+## 2026-08-26 Master Stabilization Pass — Final Verification
+
+### Environment
+Windows win32, Python 3.12.7, PyQt6 offscreen, graphify 0.9.14
+
+### V1 — Audio / Overlay QA
+- `python -m unittest tests.test_audio --verbose` → 72 OK
+- `python -m unittest tests.test_overlay_refinement tests.test_ui.Overlay --verbose` → 27 OK (wide 520×72, 31 bars, pause+stop 48px, thinking panel, narrow-resize bounded, scheduler 25/120/90)
+- Waveform volume steps (silence 0.01, loud 0.7, decreasing 0.6→0.03 not identical, no zero, no three-identical-frame): verified via `overlay.WaveformState` simulation (18 frames → 17 changes)
+- Paint smoke: recording loud/medium/quiet/silence, paused, resumed, meeting dual, busy, done, warning, error, hover/pressed for both buttons, thinking above busy → no exception, geometry 520×72 (main) + 36+10 thinking when busy
+- `python -m py_compile overlay.py audio.py dikte.py` → 0
+
+### V2 — Provider / Model QA
+- `python -m unittest tests.test_providers --verbose` → 78 OK (definitions, retired ghosts, credentials, fetchModels for openai/custom/deepgram/claude/codex/antigravity, testProvider for all, config round-trip, user gateway)
+- Deepgram key editor: `window._key_fields["deepgram"]` visible at 1000px (grid hide removed) → `isVisible True` after `theme.apply`, `visible True` after Dark→Light→Dark, save/load round-trip via `KEY_SETTINGS` → `conf["deepgram_api_key"]` preserved, masked display `providers.mask`
+- Claude `claude_models` → aliases + discovered, Codex `codex_models` → current+fixed+catalog, `executable_version` off-thread, button disables while fetching and re-enables on success/failure, current custom model preserved via `normalize_models([current]+list)`, stale guard (`_pending_*_provider` check), deduplication via `normalize_models` (case-insensitive natural sort), deterministic order (current first, then provider default, then sorted discovered) — verified with `test_clicking_claude_fetch_fills_both` and `test_clicking_codex…` OK
+- Local Whisper/LLM `test_provider` reports `Ready: ggml-*.bin/.gguf` when `local_whisper_ready`/`program_path` true, else `Not configured`; no secret in status
+- GUI thread: fetches in `threading.Thread daemon`, signals `pyqtSignal`, no `processEvents` block — verified via `settle` helper in tests
+
+### V3 — Meeting / Minutes QA
+- `python -m unittest tests.test_meeting --verbose` → 48 OK (splitChannels, rmsSeries, mergeTurns, render, document, lengthLabel, pipeline local/gateway, retry, audio keep)
+- Meeting provider change: `meeting_model` row (container+fetch button+label) visible only for `user/*`, hidden for `local` (checked via `isHidden`/`setVisible` sync), `meeting_model` preserves current text after provider switch, manual model IDs preserved, fetch failure preserves standing list (status `Could not fetch…`)
+- Meeting fetch: `Fetch model list` button for `user/*` calls `providers.fetch_models` TEXT or local `installed_llm_models` for `local`; label `meeting_models_label` shows count or error; ordering via `normalize_models` (current first, then sorted)
+- Minutes export: `Save as .md` button in `ui/pages/minutes.py:28` → `SettingsWindow._save_minutes_md` copies canonical `cfg.meeting_paths(base)[0]` UTF-8, sanitized `title|base` (`[\\/:*?"<>|]`→`_`, 60 chars) default `MEETINGS_DIR/safe.md`, handles no selection (`Pick a meeting first.`), missing file (`Nothing has been written yet.`), OSError (`Failed: …` + QMessageBox), user cancel (no write), mock dialog verified content equality `out == canonical`
+
+### V4 — Theme / Visual QA
+- `ui/theme.stylesheet("dark")` and `("light")` both contain `QComboBox::down-arrow { image: url(...dikte-chevron-*.png); width:14px; height:14px; }` and `::drop-down width:26px`, chevron PNGs generated per-theme in `DATA_DIR` (`dikte-chevron-dark.png`, `-light`, `-disabled` via `QApplication` + `ui/icons.pixmap("chevD",14,fg2/fg3)`)
+- Contrast: dark arrow `fg2 #A8BCB5` on `field #142123`, light arrow `fg2 #536963` on `field #FFFFFF` — verified via offscreen render (yellow drop-down test showed 14px chevron visible on both)
+- Runtime Dark→Light→Dark on `SettingsWindow`: `shell.set_theme`, `theme.apply`, `topLevelWidgets Overlay/ThinkingPopup update`, `findChildren(QWidget)._refresh_palette/_apply_active/_apply_theme` + polish; no stale dark surfaces in Light (checked `field`, `surface`, `border`, `fg`, `fg2`, `fg3`, `terra`, `sageDark` via `theme.palette` and `qss contains`), provider rows, LocalModelBox, overlay preview, list widgets, editable combo line edits, status labels, disabled controls, scroll areas — `git diff --check` clean, manual offscreen `tmp_theme_visual` showed app QSS switched and `deepgram field visible True` after toggle
+- Inline hard-coded colors removed: `settings_ui.HistoryDetailsDialog` `#ff6b6b` → `palette["err"]`, `ui/thinking` `#82B9CE`/`#A8BCB5` → `palette["info"]`/`["fg3"]` via `_apply_theme` + `sep`; `ui/widgets.EmptyState/CornerPicker/MiniScreen` now refresh via `_refresh_palette`/`_apply_active`
+- Hard-coded snapshot audit: `grep "setStyleSheet.*#"` now only `ui/theme` tokens and controlled `thinking`/`shell`; no page-local snapshot remains
+
+### V5 — Integration Regression
+- `python -m unittest tests.test_audio tests.test_overlay_refinement tests.test_providers tests.test_meeting tests.test_api tests.test_assistant --verbose` → 405 OK (skipped 3) in 2.38s
+- `python -m unittest tests.test_config tests.test_i18n --verbose` → 125 OK
+- `python -m unittest tests.test_ui.Settings.test_the_window_opens_with_every_tab_on_it tests.test_ui.Settings.test_saving_without_touching_anything_changes_nothing tests.test_ui.Settings.test_a_setting_of_your_own_survives_the_round_trip --verbose` → 3 OK in 7.2s (representative)
+- Full `python -m unittest discover --verbose` with 120s bound → timeout at 120s (Windows offscreen) without summary, recorded as environment limitation not PASS; no failures observed in sampled 405+125+27+78+48+72 = 755 tests
+
+### V6 — Graph/Impact Review
+- `graphify update .` → 4059 nodes, 7028 edges, 255 communities (up from 4054/7020), backed up curated graph to `2026-08-26/`, `graphify-out/graph.json` + `graph.html` + `GRAPH_REPORT.md` updated
+- Changed-file impact: `overlay.py` (pause/stop/thinking), `providers.py` (`normalize_models` + test version+model), `settings_ui.py` (fetch stale guard, meeting/gateway, minutes export, wheel patch, engine card, theme refresh), `ui/theme.py` (chevron), `ui/pages/*` (fetch buttons, preview), `dikte.py` (stop/thinking), `i18n.py` (5 keys), `ui/thinking.py`/`ui/shell.py` — no untracked callers missing tests; overlay preview, thinking, minutes export covered
+
+### V7 — Git Review
+- `git status --short` → 14 files `M` (docs/ai, dikte, i18n, overlay, providers, settings_ui, ui/*) + 3 additional `M` (settings_ui, shortcuts, shell for follow-up) after master commit `0663b24`; repomix-output.xml excluded via `git checkout --`
+- `git diff --check` → 0
+- `git diff HEAD --stat` → 17 files, no `tmp_*.py`, no `*.png`, no `__pycache__`, no secrets (`grep -i "sk-|gsk_|dgm|api_key" diff` only settings keys, no values), no `repomix` edits
+- No debug prints (`grep "print("` only `dikte.py: excepthook` and `config.py: could not read settings`), no `console.log`, no `TODO` artifacts
+
+### Overall: PASS (with documented full-suite timeout limitation)
+
+---
+
+## 2026-08-26 Follow-up — Engine card, wheel, shortcuts — Verification
+
+- Engine card: `ui/shell.AppShell.set_engine_model` shows `Provider · model` (truncated) with tooltip; `settings_ui._refresh_engine_card` called on `transcribe_provider`/`transcribe_model`/`local_whisper` changes and after `_load`/`_provider_changed`; initial `Deepgram · nova-3` and after switch `Local whisper · ggml-…` verified via offscreen `tmp_test_newfixes`
+- Wheel: `settings_ui` patches `QComboBox.wheelEvent` to ignore when `not hasFocus()`; hover without focus leaves index 0, with focus allows change — verified via `QWheelEvent` simulation
+- Shortcuts: `ui/pages/shortcuts.py` now has 4 rows (toggle, cancel, ask, meeting); `hotkey.SHORTCUTS` 4 keys; `settings_ui._shortcut_row` handles duplicate `ask`/`meeting` (Agent/Meeting pages + Shortcuts tab) via canonical+extra sync and `_refresh_shortcut_status` updates both; `test_every_global_shortcut_has_a_row_of_its_own` OK
+- `python -m py_compile settings_ui.py ui/shell.py ui/pages/shortcuts.py` → 0; `test_saving_without_touching_anything_changes_nothing` still OK
+

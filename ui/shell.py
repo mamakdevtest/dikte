@@ -158,8 +158,7 @@ class AppShell(QWidget):
         col.addWidget(foot)
         return sidebar
 
-    @staticmethod
-    def _engine_card(whisper_label):
+    def _engine_card(self, whisper_label):
         card = QWidget()
         card.setObjectName("card")
         col = QVBoxLayout(card)
@@ -173,9 +172,12 @@ class AppShell(QWidget):
         top.addWidget(wave)
         model = QLabel(whisper_label)
         model.setStyleSheet("font-size: 12.5px; font-weight: 600;")
-        top.addWidget(model)
-        top.addStretch(1)
+        model.setWordWrap(False)
+        # keep reference for dynamic updates
+        self._engine_model_label = model
+        top.addWidget(model, 1)
         chip = StatusChip(_t("Local"), "sage", dot="sage")
+        self._engine_chip = chip
         top.addWidget(chip)
         col.addLayout(top)
 
@@ -184,6 +186,7 @@ class AppShell(QWidget):
         status.addWidget(Dot("ok"))
         ready = QLabel(_t("Ready"))
         ready.setStyleSheet("color: %s; font-size: 11.5px;" % theme.palette()["fg2"])
+        self._engine_status_label = ready
         status.addWidget(ready)
         status.addStretch(1)
         ver = Meta("1.0")
@@ -191,6 +194,29 @@ class AppShell(QWidget):
         status.addWidget(ver)
         col.addLayout(status)
         return card
+
+    def set_engine_model(self, provider_label, model_text=""):
+        """Update the engine card to show the selected transcribe provider/model."""
+        try:
+            if hasattr(self, "_engine_model_label") and self._engine_model_label is not None:
+                # Show provider + model, e.g. "Deepgram · nova-3" or "Local whisper · ggml-small.bin"
+                display = provider_label or _t("Local whisper")
+                if model_text:
+                    # Truncate long model names
+                    short = model_text
+                    if len(short) > 28:
+                        short = short[:25] + "…"
+                    display = f"{provider_label} · {short}" if provider_label else short
+                self._engine_model_label.setText(display)
+                self._engine_model_label.setToolTip(f"{provider_label} — {model_text}" if model_text else provider_label)
+            if hasattr(self, "_engine_chip") and self._engine_chip is not None:
+                # Chip shows provider short name
+                # Find label inside chip
+                for child in self._engine_chip.findChildren(QLabel):
+                    child.setText(provider_label or _t("Local"))
+                    break
+        except Exception:
+            pass
 
     # ---- pages -----------------------------------------------------------
 

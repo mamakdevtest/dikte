@@ -114,3 +114,13 @@
 - **i18n** — added `Stop recording`→`Kaydı bitir`, `Save as .md`→`.md olarak kaydet`, `Markdown files`, `Pick a meeting first.`, `Agent is thinking…`→`Ajan düşünüyor…`, `No models found.` and refreshed `thinking`/`minutes` strings; placeholder parity kept.
 
 - **No new deps** — kept PyQt6+stdlib, no QWebEngine, no PyQtGraph, reused existing `providers.*` discovery, existing `api`/`assistant` stage callbacks.
+
+---
+
+## 2026-08-26 Follow-up — Engine card, wheel, shortcuts centralization
+
+- **Engine card** — `ui/shell.py:AppShell` `_engine_card` changed from `@staticmethod` to instance method storing `_engine_model_label`/`_engine_chip`; added `set_engine_model(provider_label, model_text)` showing `Provider · model` (truncated 28) with tooltip. `settings_ui.SettingsWindow._refresh_engine_card()` reads `transcribe_provider`/`transcribe_model`/`local_whisper` and chosen custom model, called after `_load`, on `transcribe_provider.currentIndexChanged`, `transcribe_model.currentTextChanged`, `local_whisper.changed`, and in `_provider_changed`. Sidebar now reflects selected transcribe target instead of static "Whisper Local".
+
+- **Dropdown wheel** — root cause: `QComboBox` changes value on wheel even when hovered without focus, causing accidental model/shortcut changes. Fix: monkey-patched `QComboBox.wheelEvent` at module import in `settings_ui.py` to ignore wheel when `not hasFocus()` (calls `event.ignore()`), otherwise delegates to original. Applies globally to all combos (settings, providers, shortcuts) without subclassing each instance; preserves keyboard and focused wheel behavior.
+
+- **Shortcuts centralization** — `hotkey.SHORTCUTS` already defines 4 verbs (toggle, cancel, ask, meeting) but `ui/pages/shortcuts.py` only showed 2. Added `ask` ("Ask Claude" placeholder `Ctrl+Alt+A`) and `meeting` ("Record a meeting" placeholder `Ctrl+Alt+M`) rows to `shortcuts.py:build`. `settings_ui._shortcut_row` now handles duplicate `which` (ask/meeting appear both in Agent/Meeting pages and Shortcuts tab) by keeping canonical entry and syncing extra row via `currentTextChanged` bidirectional signals; `_shortcut_rows` keeps canonical, `_shortcut_rows_extra` holds extras, `_refresh_shortcut_status` and save iterate canonical (synced). Ensures all shortcuts are editable centrally and also visible in their feature pages without save divergence.

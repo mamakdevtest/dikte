@@ -24,6 +24,18 @@ from PyQt6.QtWidgets import (
     QInputDialog,
 )
 
+# Prevent accidental wheel changes when hovering dropdowns without focus
+try:
+    _orig_combo_wheel = QComboBox.wheelEvent
+    def _combo_wheel_no_accidental(self, event):
+        if not self.hasFocus():
+            event.ignore()
+            return
+        _orig_combo_wheel(self, event)
+    QComboBox.wheelEvent = _combo_wheel_no_accidental
+except Exception:
+    pass
+
 import api
 import assistant
 import audio
@@ -527,6 +539,18 @@ class SettingsWindow(QDialog):
         self._load()
         self.file_timestamps.toggled.connect(self._remember_file_choices)
         self.file_cleanup.toggled.connect(self._remember_file_choices)
+        # Engine card reflects selected transcribe provider/model
+        try:
+            self.transcribe_provider.currentIndexChanged.connect(lambda *_: self._refresh_engine_card())
+            self.transcribe_model.currentTextChanged.connect(lambda *_: self._refresh_engine_card())
+            if hasattr(self, "local_whisper"):
+                self.local_whisper.changed.connect(self._refresh_engine_card)
+        except Exception:
+            pass
+        try:
+            self._refresh_engine_card()
+        except Exception:
+            pass
         if not conf.transcribe_ready():
             self.tabs.setCurrentIndex(self.api_tab_index)
 
@@ -874,11 +898,19 @@ class SettingsWindow(QDialog):
         self.stt_form.setRowVisible(self.local_whisper, local)
         self.stt_form.setRowVisible(self.local_options, local)
         if local:
+            try:
+                self._refresh_engine_card()
+            except Exception:
+                pass
             return
         self.transcribe_model.clear()
         self.transcribe_model.addItems(TRANSCRIBE_MODELS.get(provider, []))
         self.transcribe_model.setCurrentText(self._models.setdefault(provider, ""))
         self.transcribe_status.setText("")
+        try:
+            self._refresh_engine_card()
+        except Exception:
+            pass
 
     def _conf_view(self, pid):
         """What the registry should read: the stored settings, plus the key
@@ -1405,13 +1437,20 @@ class SettingsWindow(QDialog):
         self._refresh_shortcut_status(which)
 
     def _refresh_shortcut_status(self, which):
-        _box, status, missing = self._shortcut_rows[which]
-        current = hotkey.shortcut_status(hotkey.SHORTCUTS[which].desktop_id)
-        status.setText(
-            t("Registered in {desktop}: {shortcut}",
-              desktop=hotkey.desktop_name(), shortcut=current) if current
-            else missing
-        )
+        # Update canonical status
+        try:
+            _box, status, missing = self._shortcut_rows[which]
+            current = hotkey.shortcut_status(hotkey.SHORTCUTS[which].desktop_id)
+            text = (t("Registered in {desktop}: {shortcut}",
+                      desktop=hotkey.desktop_name(), shortcut=current) if current
+                    else missing)
+            status.setText(text)
+            # Also update any extra rows for same which (e.g. duplicate ask/meeting in Shortcuts tab)
+            if hasattr(self, "_shortcut_rows_extra") and which in self._shortcut_rows_extra:
+                for _, extra_status, extra_missing in self._shortcut_rows_extra[which]:
+                    extra_status.setText(text if current else extra_missing)
+        except Exception:
+            pass
 
     def _cleanup_provider_changed(self):
         provider = self.cleanup_provider.currentData() or "local"
@@ -1514,6 +1553,46 @@ class SettingsWindow(QDialog):
             self.assistant_session_status.setText(
                 t("Last used {minutes} min ago.", minutes=int(age // 60))
             )
+
+    def _refresh_engine_card(self):
+        """Update the sidebar engine card to show the selected transcribe provider/model."""
+        try:
+            provider = self.transcribe_provider.currentData() if hasattr(self, "transcribe_provider") else "local"
+            # Resolve provider label
+            try:
+                who = providers.provider(self.conf, provider)
+                label = who.name if who else provider
+            except Exception:
+                label = provider or "local"
+            # Resolve model text
+            model_text = ""
+            try:
+                if provider == "local":
+                    model_text = self.local_whisper.selected() if hasattr(self, "local_whisper") else self.conf.get("local_model", "")
+                elif provider in ("openai", "groq", "deepgram"):
+                    # per-provider model setting
+                    model_key = cfg.TRANSCRIBERS.get(provider).model if provider in cfg.TRANSCRIBERS else ""
+                    model_text = self._models.get(provider, "") or self.conf.get(model_key, "")
+                    # Also try current combo text if visible
+                    if hasattr(self, "transcribe_model") and self.transcribe_model.isVisible():
+                        model_text = self.transcribe_model.currentText().strip() or model_text
+                elif provider.startswith("user/"):
+                    model_text = providers.custom_model(self.conf, provider, "transcription")
+                    if hasattr(self, "transcribe_model") and self.transcribe_model.isVisible():
+                        # If combo visible, use its current text
+                        cur = self.transcribe_model.currentText().strip()
+                        if cur:
+                            model_text = cur
+                else:
+                    # fallback
+                    if hasattr(self, "transcribe_model"):
+                        model_text = self.transcribe_model.currentText().strip()
+            except Exception:
+                pass
+            if hasattr(self, "shell") and hasattr(self.shell, "set_engine_model"):
+                self.shell.set_engine_model(label, model_text)
+        except Exception:
+            pass
 
     def _reset_assistant_session(self):
         assistant.clear_session()
@@ -1871,7 +1950,41 @@ class SettingsWindow(QDialog):
         status = QLabel("")
         status.setWordWrap(True)
         form.addRow(status)
-        self._shortcut_rows[which] = (box, status, missing)
+        # Handle duplicate which (e.g. ask/meeting appear both in their own page and in Shortcuts tab):
+        # keep the first as canonical for save, but sync the second to it.
+        if which in self._shortcut_rows:
+            # Existing canonical row for this shortcut
+            canonical_box, canonical_status, _ = self._shortcut_rows[which]
+            # Sync new box to canonical initially
+            try:
+                box.blockSignals(True)
+                box.setCurrentText(canonical_box.currentText())
+                box.blockSignals(False)
+            except Exception:
+                pass
+            # Bidirectional sync without recursion
+            def _sync_from_canonical(text):
+                if box.currentText() != text:
+                    box.blockSignals(True)
+                    box.setCurrentText(text)
+                    box.blockSignals(False)
+            def _sync_to_canonical(text):
+                if canonical_box.currentText() != text:
+                    canonical_box.blockSignals(True)
+                    canonical_box.setCurrentText(text)
+                    canonical_box.blockSignals(False)
+            try:
+                canonical_box.currentTextChanged.connect(_sync_from_canonical)
+                box.currentTextChanged.connect(_sync_to_canonical)
+            except Exception:
+                pass
+            # Also sync status labels via refresh
+            # Keep canonical in dict, store extra for refresh
+            if not hasattr(self, "_shortcut_rows_extra"):
+                self._shortcut_rows_extra = {}
+            self._shortcut_rows_extra.setdefault(which, []).append((box, status, missing))
+        else:
+            self._shortcut_rows[which] = (box, status, missing)
         return box
 
     @staticmethod

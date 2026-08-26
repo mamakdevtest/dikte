@@ -27,6 +27,16 @@ def build(window):
                   "on a dictation and on a command for the agent alike, "
                   "whichever is running."),
     )
+    window._shortcut_row(
+        form, "ask", t("Ask {name}", name="Claude"),
+        t("No global shortcut installed. The tray menu asks it too."),
+        placeholder="Ctrl+Alt+A",
+    )
+    window._shortcut_row(
+        form, "meeting", t("Record a meeting"),
+        t("No global shortcut installed. The tray menu starts a meeting too."),
+        placeholder="Ctrl+Alt+M",
+    )
     outer.addLayout(form)
 
     window.evdev_enabled = QCheckBox(t(
