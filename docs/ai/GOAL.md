@@ -111,3 +111,33 @@ pause/resume session, transcription, cleanup, provider, and platform behavior.
 - The waveform now keeps 31 gated samples in chronological order from left
   (older) to right (newest), with per-bar interpolation and a restrained
   left-to-right age fade so the motion reads right-to-left.
+
+---
+
+# MASTER EXECUTION — Coordinated Stabilization Pass (2026-08-26)
+
+## Goal
+Complete one coordinated stabilization pass covering waveform correctness, global dropdown arrows, agent provider/model selection with reliable async fetching, provider testing for Deepgram/local Whisper-LLM/Claude-Code/Codex, Deepgram key editor restore, meeting/minutes model discovery/sorting, overlay Pause/Resume + separate Stop Recording with larger hit surfaces and agent-thinking panel above main overlay, light/dark theme consistency, markdown export for minutes, and regression verification — preferring smallest architecturally correct changes using existing PyQt6/stdlib patterns.
+
+## Out-of-scope
+- Webview/Electron/QtWebEngine, new third-party deps, architectural rewrites, editing `repomix-output.xml`/generated assets
+
+## Constraints
+- Python ≥3.11, PyQt6 + stdlib only; no new dep without explicit user decision
+- `providers.py` is source of truth; no second catalog in UI
+- Network/process discovery off GUI thread; preserve editable combos & custom model IDs (suggestions, not allowlists)
+- Secrets masked only; GUI-thread discipline; cross-platform parity; CLI/headless intact
+
+## Acceptance criteria
+- Real mic level drives waveform through gate→normalize→attack/release→interpolate→render without malformed collapse or fake motion; silence stays stable baseline
+- Dropdown chevron visible in both themes, hover/focus contrast ok, disabled still legible, editable combos preserved
+- Agent exposes provider-aware model selector & async fetch per provider, with deduplication/normalization, stale-result protection, preserved custom value
+- Provider Test reports usable runtime/model/version; Deepgram key visible & tested via low-cost request, local whisper/llm readiness, Claude/Codex/antigravity CLI version+model
+- Meeting upgrades to provider-aware TEXT model fetch with deterministic ordering and manual value preservation; local uses installed models, HTTP fetches TEXT; Markdown export copies canonical `.md` document via Save As dialog handling edge cases
+- Overlay retains Pause/Resume, adds Stop Recording (finishes, not discards), group hit ≈1.5×W/1.2×H without clipping, no focus steal, hover/pressed states
+- Agent thinking panel appears immediately above main overlay only when busy/thinking, shows only emitted progress (fallback "Agent is thinking…"), no hidden CoT, no secret leakage
+- Light theme has no stale dark surfaces and vice versa; runtime switch refreshes existing widgets (no snapshot colors)
+- Config round-trip & EN/TR placeholder parity pass
+
+## Definition of Done (master)
+All 10 coordinated fixes plus regression tests and final verification as per `TASKS.md` & `VERIFICATION.md` contracts; `git diff --check` clean, no secrets, no debug artifacts, graph refreshed, transition message sent before Phase B.

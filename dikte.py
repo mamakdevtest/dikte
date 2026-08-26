@@ -120,11 +120,13 @@ class Dikte:
         # up, and drops into the corner when it is alone there.
         self.ask_overlay = Overlay(self.conf["overlay_corner"], below=self.overlay,
                                    dismissable=True, interactive_live=True)
-        # Wire recording pause/resume from overlay pill
+        # Wire recording pause/resume/stop from overlay pill
         self.overlay.pauseRequested.connect(lambda: self.pause_recording())
         self.overlay.resumeRequested.connect(lambda: self.resume_recording())
+        self.overlay.stopRequested.connect(lambda: self.stop_recording())
         self.ask_overlay.pauseRequested.connect(lambda: self.pause_recording())
         self.ask_overlay.resumeRequested.connect(lambda: self.resume_recording())
+        self.ask_overlay.stopRequested.connect(lambda: self.stop_recording())
         # Thinking popup for AI stages (pause/stop) — separate from audio pause
         try:
             from ui.thinking import ThinkingPopup
@@ -150,9 +152,13 @@ class Dikte:
         self.pipeline.finished.connect(self._on_finished)
         self.pipeline.failed.connect(self._on_error)
         self.ask_pipeline.stage.connect(self.ask_overlay.show_busy)
+        self.ask_pipeline.stage.connect(self._on_ask_thinking)
         self.ask_pipeline.finished.connect(self._on_ask_finished)
+        self.ask_pipeline.finished.connect(lambda *a: self.ask_overlay.clear_thinking())
         self.ask_pipeline.failed.connect(self._on_ask_error)
+        self.ask_pipeline.failed.connect(lambda *a: self.ask_overlay.clear_thinking())
         self.ask_pipeline.cancelled.connect(self._on_ask_cancelled)
+        self.ask_pipeline.cancelled.connect(lambda: self.ask_overlay.clear_thinking())
         if getattr(self, "thinking", None) is not None:
             self.ask_pipeline.stage.connect(self.thinking.push_stage)
             self.ask_pipeline.finished.connect(lambda *a: self.thinking.hide_popup())
@@ -657,6 +663,16 @@ class Dikte:
                 return True
         return False
 
+    def stop_recording(self):
+        """Finish the recording normally (not discard) via overlay Stop."""
+        if self.recorder_owner == ASK and self.ask_state in (RECORDING, PAUSED):
+            self.stop_ask()
+            return True
+        if self.recorder_owner == DICTATION and self.state in (RECORDING, PAUSED):
+            self.stop()
+            return True
+        return False
+
     def _current_seconds(self):
         if self.state == RECORDING or self.ask_state == RECORDING:
             return (self._accumulated_ms + self._segment_clock.elapsed()) / 1000.0
@@ -725,6 +741,14 @@ class Dikte:
         else:
             self.ask_pipeline.resume()
             # will resume next stage push
+
+    def _on_ask_thinking(self, stage_text):
+        # Only externally emitted safe progress; fallback to generic if empty
+        text = (stage_text or "").strip()
+        if not text:
+            text = t("Agent is thinking…")
+        # Sanitize: ensure no secret leakage; stage_text is already from assistant's safe labels
+        self.ask_overlay.set_thinking_status(text)
 
     def cancel_ask(self):
         """Call off the agent, whether it is still recording or already working."""

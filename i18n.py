@@ -759,7 +759,13 @@ TR = {
     "Pause": "Duraklat",
     "Resume": "Sürdür",
     "Paused": "Duraklatıldı",
+    "Stop recording": "Kaydı bitir",
     "Dikte: paused": "Dikte: duraklatıldı",
+    "Save as .md": ".md olarak kaydet",
+    "Markdown files": "Markdown dosyaları",
+    "Pick a meeting first.": "Önce bir toplantı seç.",
+    "Agent is thinking…": "Ajan düşünüyor…",
+    "No models found.": "Model bulunamadı.",
     "Small recording dot, live waveform, timer and a compact Pause action.":
         "Küçük kayıt noktası, canlı dalga, sayaç ve kompakt Duraklat eylemi.",
     "Wide recording pill with a right-to-left live waveform, timer and a circular Pause action.":

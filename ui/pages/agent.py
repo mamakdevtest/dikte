@@ -147,7 +147,10 @@ def build(window):
     gateway_form.setContentsMargins(20, 16, 20, 12)
     window.assistant_gateway_model = QComboBox()
     window.assistant_gateway_model.setEditable(True)
-    gateway_form.addRow(t("Model"), window.assistant_gateway_model)
+    window.refresh_assistant_gateway_models = btn(t("Fetch model list"), "secondary", "sm")
+    window.refresh_assistant_gateway_models.clicked.connect(window._load_assistant_gateway_models)
+    gateway_form.addRow(t("Model"), window._row(window.assistant_gateway_model,
+                                               window.refresh_assistant_gateway_models))
     gateway_note = QLabel(t(
         "A plain question and a plain answer, over this gateway's own key. "
         "It runs no commands, opens no files and reaches none of your "

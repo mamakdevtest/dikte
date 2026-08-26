@@ -20,6 +20,24 @@ def _desk_palette():
 
 def _ov_widget(state: str, text: str = "", timer: str = "", dismissable: bool = False, dual: bool = False) -> QWidget:
     """One overlay pill preview matching overlay.html .ov variants."""
+    # Thinking is a composite preview: small panel above busy pill
+    if state == "thinking":
+        # Outer wrapper with thinking pill + busy pill
+        wrapper = QWidget()
+        v = QVBoxLayout(wrapper)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(10)
+        thinking = QLabel(text or "Agent is thinking…")
+        thinking.setFixedHeight(36)
+        thinking.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        c = _desk_palette()
+        thinking.setStyleSheet(
+            f"QLabel {{ background: {c['field']}; border: 1px solid {c['border']}; border-radius: 10px; padding-left: 12px; font-size: 11px; color: {c['fg']}; }}")
+        v.addWidget(thinking)
+        busy = _ov_widget("busy", text="Asking Claude…", dismissable=False)
+        v.addWidget(busy)
+        wrapper.setFixedHeight(72 + 10 + 36)
+        return wrapper
     c = _desk_palette()
     ov = QFrame()
     ov.setObjectName("ovPreview")
@@ -88,6 +106,7 @@ def _ov_widget(state: str, text: str = "", timer: str = "", dismissable: bool = 
             tm.setStyleSheet(f"font-family: 'JetBrains Mono', monospace; font-size: 12px; color: white;")
             layout.addWidget(tm, 0, Qt.AlignmentFlag.AlignVCenter)
         if not dual:
+            # Pause/Resume button
             action = QLabel(ov)
             action.setObjectName("ovAction")
             action.setFixedSize(40, 40)
@@ -97,6 +116,16 @@ def _ov_widget(state: str, text: str = "", timer: str = "", dismissable: bool = 
                 f"QLabel#ovAction {{ background: {c['surface2']}; "
                 f"border: 1px solid {c['sageDark'] if state == 'paused' else c['border']}; border-radius: 20px; }}")
             layout.addWidget(action, 0, Qt.AlignmentFlag.AlignVCenter)
+            # Stop button (separate Stop Recording action, 40px visual, 48px hit in production)
+            stop = QLabel(ov)
+            stop.setObjectName("ovStop")
+            stop.setFixedSize(40, 40)
+            stop.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            # Draw stop as a small square via stylesheet; use icon for consistency
+            stop.setPixmap(app_icon("stop", 14, c["fg"]).pixmap(14, 14))
+            stop.setStyleSheet(
+                f"QLabel#ovStop {{ background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: 20px; }}")
+            layout.addWidget(stop, 0, Qt.AlignmentFlag.AlignVCenter)
     elif state == "busy":
         # spinner arc approx
         arc = QLabel(ov)
@@ -201,12 +230,13 @@ def build(window):
     grid.setVerticalSpacing(14)
 
     states = [
-        ("recording", t("A · Dictation recording"), t("Wide recording pill with a right-to-left live waveform, timer and a circular Pause action."), "recording", "00:42", False, False),
-        ("asking", t("B · Agent command recording"), t("Same band, sage accent. What is recorded is a command."), "asking", "00:07", False, False),
+        ("recording", t("A · Dictation recording"), t("Wide 320×72 pill with waveform, timer and Pause + Stop actions (48px targets, 40px visuals)."), "recording", "00:42", False, False),
+        ("asking", t("B · Agent command recording"), t("Same band, sage accent. What is recorded is a command. Pause + Stop."), "asking", "00:07", False, False),
         ("meeting", t("C · Meeting recording"), t("Two channels visible: your mic below, the other side above. Hides after 12 s."), "meeting", "1:02:41", False, True),
         ("busy", t("D · Busy"), t('Example messages: "Cleaning…", "Asking Claude…", "Writing minutes…".'), "busy", "", False, False),
+        ("thinking", t("T · Agent thinking"), t("Small secondary panel above the main busy pill shows live progress like \"Reading project context…\" — only emitted stages, never hidden reasoning."), "thinking", "Thinking…", False, False),
         ("dismissable", t("I · Dismissable long job"), t("Faint × on the right quiets the notice; work continues and result is still shown."), "busy", "", True, False),
-        ("paused", t("P · Paused"), t("Waveform inactive, timer frozen at 00:18, button becomes Resume. Click Resume to continue same session."), "paused", "00:18", False, False),
+        ("paused", t("P · Paused"), t("Waveform inactive, timer frozen at 00:18, button becomes Resume. Stop remains to finish."), "paused", "00:18", False, False),
         ("done", t("E · Done"), t("Disappears on its own after 2 s; action + short preview."), "done", "", False, False),
         ("warning", t("F · Warning"), t("Text was pasted but cleanup didn't finish. 9 s."), "warning", "", False, False),
         ("error", t("G · Error"), t("Single line with call to action. Detail is in the bubble. 6 s."), "error", "", False, False),

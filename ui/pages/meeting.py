@@ -98,7 +98,14 @@ def build(window):
     window.meeting_model = QComboBox()
     window.meeting_model.setEditable(True)
     window.meeting_model.addItems(MEETING_MODELS)
-    models_form.addRow(t("Model"), window.meeting_model)
+    window.refresh_meeting_models = btn(t("Fetch model list"), "secondary", "sm")
+    window.refresh_meeting_models.clicked.connect(window._load_meeting_models)
+    window.meeting_model_row = window._row(window.meeting_model,
+                                           window.refresh_meeting_models)
+    models_form.addRow(t("Model"), window.meeting_model_row)
+    window.meeting_models_label = QLabel("")
+    window.meeting_models_label.setWordWrap(True)
+    models_form.addRow(window.meeting_models_label)
     window.meeting_reasoning = QComboBox()
     for label, value in REASONING_LEVELS:
         window.meeting_reasoning.addItem(t(label), value)

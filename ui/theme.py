@@ -8,6 +8,8 @@ the theme re-applies it to the whole application.
 """
 
 import os
+import pathlib
+import tempfile
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontDatabase
@@ -111,6 +113,77 @@ def _load_fonts():
                 QFontDatabase.addApplicationFont(os.path.join(extra, fname))
 
 
+_chevron_cache = {}
+
+
+def _chevron_path(theme_name):
+    """Ensure a 14px chevron PNG exists for the theme and return its forward-slash URL."""
+    # Use DATA_DIR when possible, else temp dir; ensure the file is recreated if palette changes.
+    if theme_name in _chevron_cache:
+        path = _chevron_cache[theme_name]
+        if os.path.isfile(path):
+            return path.replace("\\", "/")
+    try:
+        from config import DATA_DIR as _DATA_DIR
+        base_dir = pathlib.Path(_DATA_DIR)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        path = str(base_dir / f"dikte-chevron-{theme_name}.png")
+    except Exception:
+        try:
+            base_dir = pathlib.Path(tempfile.gettempdir()) / "dikte"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            path = str(base_dir / f"dikte-chevron-{theme_name}.png")
+        except Exception:
+            return ""
+    try:
+        # Generate pixmap via icons; requires QApplication
+        app = QApplication.instance()
+        if app is None:
+            return ""
+        from . import icons as _icons
+        c = TOKENS.get(theme_name, DARK)
+        color = c.get("fg2", "#A8BCB5")
+        # For disabled state we use fg3
+        pm = _icons.pixmap("chevD", 14, color)
+        if pm.isNull():
+            return ""
+        pm.save(path, "PNG")
+        _chevron_cache[theme_name] = path
+        return path.replace("\\", "/")
+    except Exception:
+        return ""
+
+
+def _chevron_disabled_path(theme_name):
+    key = f"{theme_name}-disabled"
+    if key in _chevron_cache and os.path.isfile(_chevron_cache[key]):
+        return _chevron_cache[key].replace("\\", "/")
+    try:
+        from config import DATA_DIR as _DATA_DIR
+        base_dir = pathlib.Path(_DATA_DIR)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        path = str(base_dir / f"dikte-chevron-{theme_name}-disabled.png")
+    except Exception:
+        base_dir = pathlib.Path(tempfile.gettempdir()) / "dikte"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        path = str(base_dir / f"dikte-chevron-{theme_name}-disabled.png")
+    try:
+        app = QApplication.instance()
+        if app is None:
+            return ""
+        from . import icons as _icons
+        c = TOKENS.get(theme_name, DARK)
+        color = c.get("fg3", "#7C918A")
+        pm = _icons.pixmap("chevD", 14, color)
+        if pm.isNull():
+            return ""
+        pm.save(path, "PNG")
+        _chevron_cache[key] = path
+        return path.replace("\\", "/")
+    except Exception:
+        return ""
+
+
 def current():
     return _current
 
@@ -169,6 +242,18 @@ def stylesheet(theme=None):
     border_row = _mix(c["border"], c["canvas"], 0.52)
     border_panel = _mix(c["border"], c["surface"], 0.75)
     field_mix = _mix(c["field"], c["surface"], 0.92)
+    # Chevron for QComboBox dropdown — generated per-theme to ensure contrast
+    _theme_name = theme if theme in TOKENS else _current
+    chev = _chevron_path(_theme_name)
+    chev_disabled = _chevron_disabled_path(_theme_name)
+    if chev:
+        chev_rule = f'QComboBox::down-arrow {{ image: url({chev}); width: 14px; height: 14px; }}'
+    else:
+        chev_rule = 'QComboBox::down-arrow { width: 14px; height: 14px; }'
+    if chev_disabled:
+        chev_disabled_rule = f'QComboBox::down-arrow:disabled {{ image: url({chev_disabled}); }}'
+    else:
+        chev_disabled_rule = ''
     return f"""
 * {{ font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
      font-size: 13px; }}
@@ -290,10 +375,13 @@ QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus {{
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{
     background: {c["surface2"]}; color: {c["fg3"]}; }}
 QPlainTextEdit, QTextEdit {{ padding: 8px 10px; }}
-QComboBox::drop-down {{ border: none; width: 22px; }}
+QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding; subcontrol-position: center right; }}
+{chev_rule}
+{chev_disabled_rule}
 QComboBox QAbstractItemView {{ background: {c["surface"]}; color: {c["fg"]};
     border: 1px solid {c["border"]}; selection-background-color: {c["surface2"]};
     selection-color: {c["fg"]}; }}
+QComboBox::down-arrow:disabled {{ opacity: 0.6; }}
 
 /* ---- buttons ----------------------------------------------------------- */
 QPushButton {{ min-height: 32px; padding: 0 13px; border-radius: 6px;

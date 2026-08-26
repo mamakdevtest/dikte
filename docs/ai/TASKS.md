@@ -103,3 +103,32 @@
   narrow resize bounds and fixed action geometry
 - [ ] V3 Full discovery remains environment-limited on Windows/offscreen; see
   `VERIFICATION.md`
+
+---
+
+## MASTER STABILIZATION PASS (2026-08-26) — Manager/Fan-out
+
+### Implementation (Phase A)
+
+- [x] T0 — Lock goal and inspect repository (skills, providers/overlay/audio/UI pages, tests, shared-file ownership) — Owner: Main
+- [x] T1 — Add regression contracts (focused failing tests for waveform, dropdown, provider/model, meeting sort, overlay stop/thinking, theme, markdown export) — Owner: Main + agents (behavior, not pixels)
+- [x] T2 — Fix waveform amplitude/render logic (real level → gate → target → smoothing/interpolation → render, history bounded, no fake motion, reveal/timer/pause correct) — Owner: Agent B (Audio/Overlay) — PARALLEL
+- [x] T3 — Global dropdown chevrons (one QSS/component solution, contrast in both themes, editable/disabled/popup correct) — Owner: Agent D (Theme/Widgets) — PARALLEL
+- [x] T4 — Repair Light/Dark theme parity (audit theme/widgets/shell/pages/dialogs, remove hard-coded snapshots, dynamic QSS & runtime refresh) — Owner: Agent D — can run with T3
+- [x] T5 — Provider/model discovery & Agent model selection (provider-aware async fetch, dedup/normalize, preserve custom, stale-result guard, per-provider boxes) — Owner: Agent C (Providers/Models) — PARALLEL, single owner of `settings_ui.py`/`providers.py`
+- [x] T6 — Provider Test behavior (Deepgram key visible & tested, local Whisper/LLM readiness, Claude/Codex/antigravity version/model, custom HTTP, no secret leak) — Owner: Agent C — depends_on T5
+- [x] T7 — Meeting LLM model discovery & sorting (provider-aware TEXT fetch, fetch button, retain stored/manual value, local vs HTTP, deterministic ordering) — Owner: Agent E + Agent C interface — depends_on T5
+- [x] T8 — Overlay Pause/Resume + Stop Recording (separate stop finishes not discards, signal to state machine, ≈1.5×/1.2× hit group without clipping, no focus steal, preview updated) — Owner: Agent B — depends_on T2
+- [x] T9 — Agent thinking display above overlay (secondary panel immediately above main, only when busy/thinking, follows corner, safe progress only, fallback text, no secret dump) — Owner: Agent B — depends_on T8
+- [x] T10 — Markdown export for minutes (Save as .md via QFileDialog, canonical document, filesystem-safe default name, handles no selection/missing/permission/cancel) — Owner: Agent E — PARALLEL after T1
+- [x] T11 — i18n and config integration (EN/TR for stop/save/thinking/status, placeholder parity, round-trip) — Owner: Main — depends_on T2,T3,T4,T5,T6,T7,T8,T9,T10
+
+### Final Verification (Phase B)
+
+- [ ] V1 — Audio/Overlay QA (test_audio, test_overlay_refinement, overlay portions of test_ui, new pause/resume/stop/thinking tests, offscreen paint smoke for all states & waveform volume steps)
+- [ ] V2 — Provider/Model QA (test_providers, relevant test_api/test_assistant, provider/model sections of test_ui — Deepgram visible/persist, Claude/Codex/local readiness, custom preserve, failed fetch preserve, dedup, deterministic order, no GUI block)
+- [ ] V3 — Meeting/Minutes QA (test_meeting, relevant config/UI, new Markdown export — provider change refresh, ordering, manual preserve, .md exact content, retry unaffected)
+- [ ] V4 — Theme/Visual QA (relevant UI tests, runtime Dark→Light→Dark on every settings page, backgrounds/text/borders/arrows/popups/combos/disabled/rows/dialogs/meeting/minutes/overlay preview — no stale opposite-theme color)
+- [ ] V5 — Integration Regression (bounded `python -m unittest` over touched systems; one full discover attempt, timeout not claimed as PASS)
+- [ ] V6 — Graph/Impact Review (if Graphify installed: `graphify update .` once, inspect changed-file impact, report actionable missing tests/callers)
+- [ ] V7 — Git Review (`git status --short`, `git diff --check`, full diff, no secrets, no temp/debug artifacts, no repomix edits)

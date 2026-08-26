@@ -597,6 +597,30 @@ def agy_models(timeout=20):
     return slugs
 
 
+def normalize_models(discovered, current="", defaults=None):
+    """Deduplicated list with current first, then defaults, then natural sort of discovered.
+
+    Used for generic model lists (HTTP gateways, local) where ordering should be
+    deterministic and case-insensitive. Provider-specific catalogs (Claude/Codex)
+    keep their own ordering and should not use this.
+    """
+    defaults = list(defaults or [])
+    cur = current.strip() if isinstance(current, str) else ""
+    # natural case-insensitive ordering for discovered
+    sorted_discovered = sorted({m for m in discovered if isinstance(m, str) and m.strip()},
+                              key=lambda s: s.lower())
+    # Build head: current, then defaults
+    head = []
+    if cur:
+        head.append(cur)
+    for d in defaults:
+        if d and d not in head:
+            head.append(d)
+    # Append discovered that are not already in head
+    out = _deduped(head + [m for m in sorted_discovered if m not in head])
+    return out
+
+
 def test_provider(conf, pid, timeout=30):
     """One provider's connection verdict, as a line of text or an error."""
     who = provider(conf, pid)
@@ -617,8 +641,28 @@ def test_provider(conf, pid, timeout=30):
             raise api.ApiError(t("{service} is not installed.",
                                  service=who.name))
         version = executable_version(who.id)
-        return t("{service} found: {version}", service=who.name,
+        base = t("{service} found: {version}", service=who.name,
                  version=version or "?")
+        # Add model info where available
+        try:
+            if who.id == "claude":
+                models = claude_models()
+                if models:
+                    base += f" ({models[0]})"
+                elif CLAUDE_MODELS:
+                    base += f" ({CLAUDE_MODELS[0]})"
+            elif who.id == "codex":
+                models = codex_models()
+                if models:
+                    # first is current if set, else first fixed
+                    base += f" ({models[0]})"
+            elif who.id == "antigravity":
+                models = agy_models(timeout=timeout)
+                if models:
+                    base += f" ({models[0]})"
+        except Exception:
+            pass
+        return base
     if who.kind == "local-whisper":
         return (t("Ready: {model}", model=conf["local_model"])
                 if conf.local_whisper_ready() else

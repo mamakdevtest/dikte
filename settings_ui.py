@@ -9,6 +9,7 @@ provider registry, the save/load round trip, the fetches and tests — stays on
 
 import json
 import os
+import re
 import shutil
 import sys
 import threading
@@ -322,7 +323,12 @@ class HistoryDetailsDialog(QDialog):
             lbl = QLabel(str(txt))
             lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             if is_error:
-                lbl.setStyleSheet("color: #ff6b6b;")
+                try:
+                    from ui import theme as _theme
+                    err = _theme.palette().get("err", "#DF8582")
+                except Exception:
+                    err = "#DF8582"
+                lbl.setStyleSheet(f"color: {err};")
             return lbl
 
         row_idx = 0
@@ -427,6 +433,8 @@ class SettingsWindow(QDialog):
     _agy_models_loaded = pyqtSignal(list, str)
     _claude_models_loaded = pyqtSignal(list, str)
     _codex_models_loaded = pyqtSignal(list, str)
+    _meeting_models_loaded = pyqtSignal(list, str)
+    _assistant_gateway_models_loaded = pyqtSignal(list, str)
     _provider_versions_done = pyqtSignal(dict)
     _provider_test_done = pyqtSignal(str, bool, str)
     _model_test_done = pyqtSignal(bool, str)
@@ -449,6 +457,10 @@ class SettingsWindow(QDialog):
         self._custom_row_widgets = []
         self._versions_busy = False
         self._versions_thread = None
+        self._pending_transcribe_provider = ""
+        self._pending_cleanup_provider = ""
+        self._pending_meeting_provider = ""
+        self._pending_gateway_provider = ""
         self.transcriber = FileTranscriber(conf, self)
         self.setWindowTitle(t("Dikte Settings"))
         self.setWindowIcon(_app_icon())
@@ -495,6 +507,8 @@ class SettingsWindow(QDialog):
         self._agy_models_loaded.connect(self._on_agy_models_loaded)
         self._claude_models_loaded.connect(self._on_claude_models_loaded)
         self._codex_models_loaded.connect(self._on_codex_models_loaded)
+        self._meeting_models_loaded.connect(self._on_meeting_models_loaded)
+        self._assistant_gateway_models_loaded.connect(self._on_assistant_gateway_models_loaded)
         self._provider_versions_done.connect(self._on_provider_versions_done)
         self._provider_test_done.connect(self._on_provider_test_done)
         self._model_test_done.connect(self._on_model_test_done)
@@ -878,14 +892,25 @@ class SettingsWindow(QDialog):
     def _load_transcribe_models(self):
         """The model list of whichever provider is selected."""
         provider = self.transcribe_provider.currentData() or "openai"
+        self._pending_transcribe_provider = provider
         self.refresh_transcribe_models.setEnabled(False)
         self.transcribe_status.setText(t("Fetching model list…"))
         conf = self._conf_view(provider)
+        captured = provider
+        current_text = self.transcribe_model.currentText().strip() if hasattr(self, "transcribe_model") else ""
 
         def work():
             try:
-                models = providers.fetch_models(conf, provider,
+                models = providers.fetch_models(conf, captured,
                                                 providers.TRANSCRIPTION)
+                # Deduplicate and preserve current value
+                if current_text and current_text not in models:
+                    models = [current_text] + models
+                # Ensure deterministic natural sorting for generic lists
+                try:
+                    models = providers.normalize_models(models, current_text)
+                except Exception:
+                    pass
                 self._transcribe_models_loaded.emit(models, "")
             except api.ApiError as exc:
                 self._transcribe_models_loaded.emit([], str(exc))
@@ -894,10 +919,24 @@ class SettingsWindow(QDialog):
 
     def _on_transcribe_models_loaded(self, models, error):
         self.refresh_transcribe_models.setEnabled(True)
+        # Stale-result guard: ignore if provider changed since fetch started
+        current_provider = self.transcribe_provider.currentData() or "openai"
+        if current_provider != getattr(self, "_pending_transcribe_provider", current_provider):
+            if error:
+                self.transcribe_status.setText(t("Could not fetch the list: {error}", error=error))
+            return
         if error:
             self.transcribe_status.setText(t("Could not fetch the list: {error}", error=error))
             return
         current = self.transcribe_model.currentText()
+        # Preserve custom value even if not in discovered list
+        if current and current not in models:
+            models = [current] + [m for m in models if m != current]
+        # Deduplicate deterministically
+        try:
+            models = providers.normalize_models(models, current)
+        except Exception:
+            models = list(dict.fromkeys(models))
         self.transcribe_model.clear()
         self.transcribe_model.addItems(models)
         self.transcribe_model.setCurrentText(current)
@@ -907,11 +946,30 @@ class SettingsWindow(QDialog):
         self.refresh_models.setEnabled(False)
         self.models_label.setText(t("Fetching model list…"))
         provider = self.cleanup_provider.currentData() or "local"
+        self._pending_cleanup_provider = provider
         conf = self._conf_view(provider)
+        captured = provider
+        current_text = self.cleanup_model.currentText().strip() if hasattr(self, "cleanup_model") else ""
 
         def work():
             try:
-                models = providers.fetch_models(conf, provider, providers.TEXT)
+                if captured == "local":
+                    # Local LLM models: use installed list, not remote
+                    models = sorted(api.ggml.installed_llm_models())
+                    if current_text and current_text not in models:
+                        models = [current_text] + models
+                    try:
+                        models = providers.normalize_models(models, current_text)
+                    except Exception:
+                        pass
+                else:
+                    models = providers.fetch_models(conf, captured, providers.TEXT)
+                    if current_text and current_text not in models:
+                        models = [current_text] + [m for m in models if m != current_text]
+                    try:
+                        models = providers.normalize_models(models, current_text)
+                    except Exception:
+                        models = list(dict.fromkeys(models))
                 self._models_loaded.emit(models, "")
             except api.ApiError as exc:
                 self._models_loaded.emit([], str(exc))
@@ -1012,10 +1070,17 @@ class SettingsWindow(QDialog):
 
     def _on_models_loaded(self, models, error):
         self.refresh_models.setEnabled(True)
+        # Stale guard: ignore if provider changed
+        cur_provider = self.cleanup_provider.currentData() or "local"
+        pending = getattr(self, "_pending_cleanup_provider", cur_provider)
+        if cur_provider != pending:
+            if error:
+                self.models_label.setText(t("Could not fetch the list: {error}", error=error))
+            return
         if error:
             self.models_label.setText(t("Could not fetch the list: {error}", error=error))
             return
-        provider = self.cleanup_provider.currentData() or "local"
+        provider = cur_provider
         combos = [self.cleanup_model]
         for box, chosen in ((self.meeting_model, self.meeting_provider),
                             (self.assistant_gateway_model,
@@ -1024,9 +1089,148 @@ class SettingsWindow(QDialog):
                 combos.append(box)
         for combo in combos:
             current = combo.currentText()
+            # Preserve custom value and deduplicate
+            normalized = list(models)
+            if current and current not in normalized:
+                normalized = [current] + normalized
+            try:
+                normalized = providers.normalize_models(normalized, current)
+            except Exception:
+                normalized = list(dict.fromkeys(normalized))
+            combo.blockSignals(True)
             combo.clear()
-            combo.addItems(models)
+            combo.addItems(normalized)
             combo.setCurrentText(current)
+            combo.blockSignals(False)
+        self.models_label.setText(t("{count} models loaded.", count=len(models)))
+
+    def _load_meeting_models(self):
+        """Fetch TEXT models for the meeting provider (gateway) or local LLM list."""
+        provider = self.meeting_provider.currentData() or "local"
+        self._pending_meeting_provider = provider
+        if hasattr(self, "refresh_meeting_models"):
+            self.refresh_meeting_models.setEnabled(False)
+        if hasattr(self, "meeting_models_label"):
+            self.meeting_models_label.setText(t("Fetching model list…"))
+        else:
+            self.models_label.setText(t("Fetching model list…"))
+        captured = provider
+        current_text = self.meeting_model.currentText().strip() if hasattr(self, "meeting_model") else ""
+        conf = self._conf_view(captured) if captured.startswith("user/") else self.conf
+
+        def work():
+            try:
+                if captured == "local":
+                    models = sorted(api.ggml.installed_llm_models())
+                elif captured.startswith("user/"):
+                    models = providers.fetch_models(conf, captured, providers.TEXT)
+                else:
+                    # meeting provider local case already handled; fallback to empty
+                    models = []
+                if current_text and current_text not in models:
+                    models = [current_text] + models
+                try:
+                    models = providers.normalize_models(models, current_text)
+                except Exception:
+                    models = list(dict.fromkeys(models))
+                self._meeting_models_loaded.emit(models, "")
+            except api.ApiError as exc:
+                self._meeting_models_loaded.emit([], str(exc))
+            except Exception as exc:
+                self._meeting_models_loaded.emit([], str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_meeting_models_loaded(self, models, error):
+        if hasattr(self, "refresh_meeting_models"):
+            self.refresh_meeting_models.setEnabled(True)
+        # Stale guard
+        cur = self.meeting_provider.currentData() or "local"
+        pending = getattr(self, "_pending_meeting_provider", cur)
+        if cur != pending:
+            if error and hasattr(self, "meeting_models_label"):
+                self.meeting_models_label.setText(t("Could not fetch the list: {error}", error=error))
+            elif error:
+                self.models_label.setText(t("Could not fetch the list: {error}", error=error))
+            return
+        label = self.meeting_models_label if hasattr(self, "meeting_models_label") else self.models_label
+        if error:
+            label.setText(t("Could not fetch the list: {error}", error=error))
+            return
+        if not models:
+            label.setText(t("No models found."))
+            return
+        current = self.meeting_model.currentText()
+        normalized = list(models)
+        if current and current not in normalized:
+            normalized = [current] + normalized
+        try:
+            normalized = providers.normalize_models(normalized, current)
+        except Exception:
+            normalized = list(dict.fromkeys(normalized))
+        self.meeting_model.blockSignals(True)
+        self.meeting_model.clear()
+        self.meeting_model.addItems(normalized)
+        self.meeting_model.setCurrentText(current)
+        self.meeting_model.blockSignals(False)
+        label.setText(t("{count} models loaded.", count=len(models)))
+
+    def _load_assistant_gateway_models(self):
+        """Fetch models for the assistant gateway (user/*) provider."""
+        provider = self.assistant_provider.currentData() or "claude"
+        self._pending_gateway_provider = provider
+        if hasattr(self, "refresh_assistant_gateway_models"):
+            self.refresh_assistant_gateway_models.setEnabled(False)
+        self.models_label.setText(t("Fetching model list…"))
+        captured = provider
+        current_text = self.assistant_gateway_model.currentText().strip() if hasattr(self, "assistant_gateway_model") else ""
+        conf = self._conf_view(captured)
+
+        def work():
+            try:
+                if not captured.startswith("user/"):
+                    self._assistant_gateway_models_loaded.emit([], t("This provider does not list models."))
+                    return
+                models = providers.fetch_models(conf, captured, providers.TEXT)
+                if current_text and current_text not in models:
+                    models = [current_text] + models
+                try:
+                    models = providers.normalize_models(models, current_text)
+                except Exception:
+                    models = list(dict.fromkeys(models))
+                self._assistant_gateway_models_loaded.emit(models, "")
+            except api.ApiError as exc:
+                self._assistant_gateway_models_loaded.emit([], str(exc))
+            except Exception as exc:
+                self._assistant_gateway_models_loaded.emit([], str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_assistant_gateway_models_loaded(self, models, error):
+        if hasattr(self, "refresh_assistant_gateway_models"):
+            self.refresh_assistant_gateway_models.setEnabled(True)
+        cur = self.assistant_provider.currentData() or "claude"
+        pending = getattr(self, "_pending_gateway_provider", cur)
+        if cur != pending:
+            if error:
+                self.models_label.setText(t("Could not fetch the list: {error}", error=error))
+            return
+        if error:
+            self.models_label.setText(t("Could not fetch the list: {error}", error=error))
+            return
+        current = self.assistant_gateway_model.currentText()
+        normalized = list(models)
+        if current and current not in normalized:
+            normalized = [current] + normalized
+        try:
+            normalized = providers.normalize_models(normalized, current)
+        except Exception:
+            normalized = list(dict.fromkeys(normalized))
+        self.assistant_gateway_model.blockSignals(True)
+        self.assistant_gateway_model.clear()
+        self.assistant_gateway_model.addItems(normalized)
+        self.assistant_gateway_model.setCurrentText(current)
+        self.assistant_gateway_model.blockSignals(False)
         self.models_label.setText(t("{count} models loaded.", count=len(models)))
 
     def _cleanup_conf_view(self):
@@ -1257,8 +1461,34 @@ class SettingsWindow(QDialog):
 
     def _meeting_provider_changed(self):
         provider = self.meeting_provider.currentData() or "local"
-        self.meeting_form.setRowVisible(
-            self.meeting_model, provider.startswith("user/"))
+        is_gateway = provider.startswith("user/")
+        # The row widget is the container with combo+fetch; fall back to combo for older builds
+        row_widget = getattr(self, "meeting_model_row", self.meeting_model)
+        try:
+            self.meeting_form.setRowVisible(row_widget, is_gateway)
+        except Exception:
+            try:
+                self.meeting_form.setRowVisible(self.meeting_model, is_gateway)
+            except Exception:
+                pass
+        # Ensure combo itself reflects hidden state for test compatibility (isHidden checks own flag)
+        try:
+            self.meeting_model.setVisible(is_gateway)
+        except Exception:
+            pass
+        # Toggle fetch button visibility as well (row hides it, but keep explicit)
+        if hasattr(self, "refresh_meeting_models"):
+            try:
+                self.refresh_meeting_models.setVisible(is_gateway)
+            except Exception:
+                pass
+        if hasattr(self, "meeting_models_label"):
+            try:
+                self.meeting_models_label.setVisible(is_gateway)
+            except Exception:
+                pass
+        if is_gateway:
+            pass
 
     def _refresh_assistant_status(self):
         provider = self.assistant_provider.currentData() or "claude"
@@ -1361,6 +1591,59 @@ class SettingsWindow(QDialog):
         except OSError as exc:
             QMessageBox.warning(self, t("Minutes"), t("Failed: {error}", error=exc))
         self._load_minutes()
+
+    def _save_minutes_md(self):
+        """Save the selected meeting's canonical Markdown document."""
+        row = self._selected_meeting()
+        if not row:
+            self.minutes_status.setText(t("Pick a meeting first."))
+            return
+        base = row.get("base", "")
+        if not base:
+            self.minutes_status.setText(t("Nothing has been written yet."))
+            return
+        doc_path, _wav = cfg.meeting_paths(base)
+        try:
+            content = doc_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            # If no generated minutes but transcript exists, read whatever is there
+            # The canonical document is the file itself; missing means nothing to export
+            if isinstance(exc, FileNotFoundError):
+                self.minutes_status.setText(t("Nothing has been written yet."))
+            else:
+                self.minutes_status.setText(t("Failed: {error}", error=exc))
+            return
+        if not content.strip():
+            self.minutes_status.setText(t("Nothing has been written yet."))
+            return
+        # Filesystem-safe default filename from title or base
+        import re
+        title = row.get("title") or base
+        # Remove filesystem-unsafe characters, keep alnum, dash, underscore, space
+        safe = re.sub(r'[\\/:*?"<>|]+', "_", title).strip()
+        safe = re.sub(r'\s+', " ", safe).strip()[:60] or base
+        if not safe.lower().endswith(".md"):
+            safe += ".md"
+        # Default directory: meetings dir
+        try:
+            default_dir = str(cfg.MEETINGS_DIR)
+        except Exception:
+            default_dir = os.path.expanduser("~")
+        start = os.path.join(default_dir, safe)
+        path, _ = QFileDialog.getSaveFileName(
+            self, t("Save as .md"), start, f"{t('Markdown files')} (*.md);;{t('All files')} (*)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".md"):
+            path += ".md"
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            self.minutes_status.setText(t("Saved: {path}", path=path))
+        except OSError as exc:
+            self.minutes_status.setText(t("Failed: {error}", error=exc))
+            QMessageBox.warning(self, t("Minutes"), t("Failed: {error}", error=exc))
 
     def _on_minutes_progress(self, _base, message):
         self.minutes_status.setText(message)
@@ -1483,13 +1766,32 @@ class SettingsWindow(QDialog):
             for w in QApplication.topLevelWidgets():
                 if w.__class__.__name__ == "Overlay" and hasattr(w, "update"):
                     w.update()
-                # refresh corner picker / mini if visible
-                if hasattr(w, "corner_picker"):
+                if w.__class__.__name__ == "ThinkingPopup" and hasattr(w, "_apply_theme"):
                     try:
-                        w.corner_picker.update()
+                        w._apply_theme()
                     except Exception:
                         pass
-            # also reapply icons for nav (shell handles)
+            # Refresh inline-styled widgets inside settings window
+            for widget in self.findChildren(QWidget):
+                try:
+                    if hasattr(widget, "_refresh_palette"):
+                        widget._refresh_palette()
+                    if hasattr(widget, "_apply_active"):
+                        widget._apply_active()
+                    if hasattr(widget, "_apply_theme"):
+                        # Avoid recursing into self
+                        if widget is not self:
+                            widget._apply_theme()
+                except Exception:
+                    pass
+            # Ensure all children repolish
+            for widget in self.findChildren(QWidget):
+                try:
+                    widget.style().unpolish(widget)
+                    widget.style().polish(widget)
+                    widget.update()
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1514,14 +1816,9 @@ class SettingsWindow(QDialog):
                 apply_page_margins_for_width(self, w)
             except Exception:
                 pass
-            # Provider grid column hiding at <1080 and single-column at <760
-            if hasattr(self, "provider_grid"):
-                is_compact = w < 1080
-                for r in range(self.provider_grid.rowCount()):
-                    item = self.provider_grid.itemAtPosition(r, 1)
-                    if item is not None and item.widget() is not None:
-                        item.widget().setVisible(not is_compact)
-                # At <760 provider grid becomes single column; ensure column 2 also visible? keep simple
+            # Provider grid: keep key/credential column always visible; responsive stacking
+            # is handled by scroll area and row wrapping, not by hiding the key editor.
+            # The previous <1080 hide hid the Deepgram key field at default 1000px width.
         except Exception:
             pass
 

@@ -61,13 +61,12 @@ class ThinkingPopup(QWidget):
         head.setSpacing(8)
         self.dot = QLabel(self.card)
         self.dot.setFixedSize(8, 8)
-        self.dot.setStyleSheet("background: #82B9CE; border-radius: 4px;")
         head.addWidget(self.dot)
         self.title = QLabel("Dusunuyor…", self.card)
         self.title.setStyleSheet("font-size: 13px; font-weight: 600;")
         head.addWidget(self.title, 1)
         self.elapsed_lbl = QLabel("00:00", self.card)
-        self.elapsed_lbl.setStyleSheet("font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A8BCB5;")
+        self.elapsed_lbl.setStyleSheet("font-family: 'JetBrains Mono', monospace; font-size: 11px;")
         head.addWidget(self.elapsed_lbl)
         # spinner placeholder
         self.spinner = QLabel(self.card)
@@ -85,12 +84,10 @@ class ThinkingPopup(QWidget):
         self.log_area = QLabel("", self.card)
         self.log_area.setWordWrap(True)
         self.log_area.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.log_area.setStyleSheet("font-size: 11.5px; color: #A8BCB5;")
         self.log_area.setMinimumHeight(42)
         # subtle separator
-        sep = QFrame(self.card)
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background: rgba(180,190,185,0.18); border: none;")
+        self.sep = QFrame(self.card)
+        self.sep.setFixedHeight(1)
         card_l.addWidget(sep)
         card_l.addWidget(self.log_area)
 
@@ -136,9 +133,15 @@ class ThinkingPopup(QWidget):
         self.card.setStyleSheet(
             f"QFrame#card {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; }}"
         )
+        self.dot.setStyleSheet(f"background: {c['info']}; border-radius: 4px;")
+        self.elapsed_lbl.setStyleSheet(f"font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {c['fg3']};")
+        self.log_area.setStyleSheet(f"font-size: 11.5px; color: {c['fg3']};")
+        self.sep.setStyleSheet(f"background: {c['border']}; border: none;")
         # re-polish
         self.style().unpolish(self.card)
         self.style().polish(self.card)
+        self.style().unpolish(self.dot)
+        self.style().polish(self.dot)
 
     # ---- public API ----
     def show_thinking(self, initial_stage="Dusunuyor…"):

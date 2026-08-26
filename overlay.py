@@ -30,9 +30,14 @@ _PILL_RADIUS = 24
 _WAVE_LEFT = 78.0
 _WAVE_GAP = 16.0
 _TIMER_WIDTH = 76.0
-_ACTION_SLOT = 72.0
+_ACTION_SLOT = 108.0  # 1.5x the original 72 to host Pause+Stop
 _ACTION_HIT = 48.0
 _ACTION_VISUAL = 40.0
+_STOP_HIT = 48.0
+_STOP_VISUAL = 40.0
+_ACTION_GAP = 8.0
+_THINKING_HEIGHT = 36.0
+_THINKING_GAP = 10.0
 _FRAME_MS = 25
 _QUIET_FRAME_MS = 120
 _BUSY_FRAME_MS = 90
@@ -297,6 +302,8 @@ class Overlay(QWidget):
 
     pauseRequested = pyqtSignal()
     resumeRequested = pyqtSignal()
+    stopRequested = pyqtSignal()
+    thinkingChanged = pyqtSignal(str)
 
     def __init__(self, corner="bottom-left", below=None, dismissable=False, interactive_live=False):
         super().__init__(None)
@@ -331,6 +338,11 @@ class Overlay(QWidget):
         self._timer_text = "0:00"
         self._wave = WaveformState(BARS)
         self._wave2 = WaveformState(BARS)
+        self._thinking_text = ""
+        self._thinking_font_cache = None
+        self._stop_rect = QRectF()
+        self._hover_stop = False
+        self._stop_pressed = False
 
         flags = (
             Qt.WindowType.FramelessWindowHint
@@ -447,6 +459,12 @@ class Overlay(QWidget):
         self.message = message
         self._hover_pause = False
         self._button_pressed = False
+        self._hover_stop = False
+        self._stop_pressed = False
+        # clear thinking when leaving busy
+        if self._thinking_text:
+            self._thinking_text = ""
+            self._layout_cache = None
         # leaving LIVE, ensure reveal is complete
         self._reveal_progress = 1.0
         self._reveal_t0 = 0.0
@@ -500,6 +518,50 @@ class Overlay(QWidget):
     def is_paused(self):
         return self._paused
 
+    # ---- thinking panel ------------------------------------------------
+    def set_thinking_status(self, text: str):
+        """Show the secondary thinking panel above the main pill.
+
+        Only externally emitted progress is shown; never fabricate reasoning.
+        Call with empty string to hide. Follows same corner and does not steal focus.
+        """
+        try:
+            cleaned = (text or "").strip()
+        except Exception:
+            cleaned = ""
+        # Elide very long text and avoid secret leakage: keep first 180 chars
+        if len(cleaned) > 180:
+            cleaned = cleaned[:180].rstrip() + "…"
+        if cleaned == self._thinking_text:
+            return
+        self._thinking_text = cleaned
+        if cleaned:
+            # Ensure overlay is visible if thinking is set while busy
+            if self.state == "busy" or self.state in LIVE:
+                # Keep thinking visible; resize to include panel
+                self._resize_to_content()
+                self._reposition()
+                self.update()
+        else:
+            self._resize_to_content()
+            self._reposition()
+            self.update()
+        self.thinkingChanged.emit(cleaned)
+
+    def clear_thinking(self):
+        self.set_thinking_status("")
+
+    def _thinking_font(self):
+        if self._thinking_font_cache is None:
+            font = QFont(self._label_font())
+            font.setPointSizeF(8.5)
+            self._thinking_font_cache = font
+        return self._thinking_font_cache
+
+    @property
+    def thinking_text(self):
+        return self._thinking_text
+
     def dismiss(self):
         self._hide_timer.stop()
         self._conceal()
@@ -511,17 +573,27 @@ class Overlay(QWidget):
                 pt = QPointF(pos.x(), pos.y())
             except Exception:
                 pt = QPointF(float(pos.x()), float(pos.y()))
-            # use fresh rect (paint may not have run yet)
-            rect = self._pause_button_rect()
-            if not rect.isValid():
-                rect = self._pause_rect
-            if rect.contains(pt):
+            pause_rect = self._pause_button_rect()
+            stop_rect = self._stop_button_rect()
+            if not pause_rect.isValid():
+                pause_rect = self._pause_rect
+            if not stop_rect.isValid():
+                stop_rect = self._stop_rect
+            if pause_rect.contains(pt):
                 self._button_pressed = True
+                self._stop_pressed = False
                 if self._paused or self.state == PAUSED_STATE:
                     self.resumeRequested.emit()
                 else:
                     self.pauseRequested.emit()
-                self.update(rect.toRect())
+                self.update(pause_rect.toRect())
+                event.accept()
+                return
+            if stop_rect.contains(pt):
+                self._stop_pressed = True
+                self._button_pressed = False
+                self.stopRequested.emit()
+                self.update(stop_rect.toRect())
                 event.accept()
                 return
         if self.dismissable and self.state == "busy":
@@ -536,25 +608,38 @@ class Overlay(QWidget):
                 pt = QPointF(pos.x(), pos.y())
             except Exception:
                 pt = QPointF(float(pos.x()), float(pos.y()))
-            rect = self._pause_button_rect()
-            if not rect.isValid():
-                rect = self._pause_rect
-            hover = rect.contains(pt)
-            if hover != self._hover_pause:
-                self._hover_pause = hover
-                self.update(rect.toRect())
+            pause_rect = self._pause_button_rect()
+            stop_rect = self._stop_button_rect()
+            if not pause_rect.isValid():
+                pause_rect = self._pause_rect
+            if not stop_rect.isValid():
+                stop_rect = self._stop_rect
+            hover_pause = pause_rect.contains(pt)
+            hover_stop = stop_rect.contains(pt)
+            if hover_pause != self._hover_pause:
+                self._hover_pause = hover_pause
+                self.update(pause_rect.toRect())
+            if hover_stop != self._hover_stop:
+                self._hover_stop = hover_stop
+                self.update(stop_rect.toRect())
         event.accept()
 
     def mouseReleaseEvent(self, event):
         if self._button_pressed:
             self._button_pressed = False
             self.update(self._pause_button_rect().toRect())
+        if self._stop_pressed:
+            self._stop_pressed = False
+            self.update(self._stop_button_rect().toRect())
         event.accept()
 
     def leaveEvent(self, event):
         if self._hover_pause:
             self._hover_pause = False
             self.update(self._pause_button_rect().toRect())
+        if self._hover_stop:
+            self._hover_stop = False
+            self.update(self._stop_button_rect().toRect())
         super().leaveEvent(event)
 
     @property
@@ -601,30 +686,53 @@ class Overlay(QWidget):
         # Meeting recording has no pause API; do not expose a dead control.
         return self.state in ("recording", "asking", PAUSED_STATE) or self._paused
 
-    def _pause_button_rect(self):
-        return self._action_rect()
+    def _should_show_stop_button(self):
+        # Same condition as pause — Stop is for the same recording session
+        return self._should_show_pause_button()
 
-    def _action_rect(self):
+    def _action_group_rect(self):
         if not self._should_show_pause_button():
             return QRectF()
-        x = self.width() - _ACTION_HIT - 20.0
-        y = (self.height() - _ACTION_HIT) / 2.0
-        return QRectF(x, y, _ACTION_HIT, _ACTION_HIT)
+        group_w = _ACTION_HIT + _ACTION_GAP + _STOP_HIT
+        x = self.width() - group_w - 20.0
+        offset = _THINKING_HEIGHT + _THINKING_GAP if (self._thinking_text and self.state == "busy") else 0
+        y = offset + (HEIGHT - _ACTION_HIT) / 2.0
+        return QRectF(x, y, group_w, _ACTION_HIT)
+
+    def _pause_button_rect(self):
+        if not self._should_show_pause_button():
+            return QRectF()
+        group = self._action_group_rect()
+        return QRectF(group.left(), group.top(), _ACTION_HIT, _ACTION_HIT)
+
+    def _stop_button_rect(self):
+        if not self._should_show_stop_button():
+            return QRectF()
+        group = self._action_group_rect()
+        return QRectF(group.left() + _ACTION_HIT + _ACTION_GAP, group.top(), _STOP_HIT, _STOP_HIT)
+
+    def _action_rect(self):
+        # Backward compat: return pause rect
+        return self._pause_button_rect()
 
     def _layout(self):
         """Return stable logical subregions, rebuilding only after resize/state."""
         show_action = self._should_show_pause_button()
-        key = (self.width(), self.height(), show_action, self.state == "meeting")
+        thinking = bool(self._thinking_text) and self.state == "busy"
+        key = (self.width(), self.height(), show_action, self.state == "meeting", thinking)
         if self._layout_cache is not None and self._layout_cache_key == key:
             return self._layout_cache
 
-        action = self._action_rect() if show_action else QRectF()
+        # Main pill vertical offset when thinking panel is visible
+        offset = _THINKING_HEIGHT + _THINKING_GAP if thinking else 0.0
+        main_h = HEIGHT
+        action = self._action_group_rect() if show_action else QRectF()
         timer_right = self.width() - 20.0 - (_ACTION_SLOT if show_action else 0.0)
-        timer = QRectF(timer_right - _TIMER_WIDTH, 0.0, _TIMER_WIDTH, self.height())
+        timer = QRectF(timer_right - _TIMER_WIDTH, offset, _TIMER_WIDTH, main_h)
         wave_right = timer.left() - _WAVE_GAP
         wave_left = min(_WAVE_LEFT, max(0.0, wave_right))
         available = max(1.0, min(float(self.width()) - wave_left,
-                                  wave_right - wave_left))
+                                   wave_right - wave_left))
         preferred_gap = 3.5
         bar_w = min(5.0, max(3.0,
                              (available - (BARS - 1) * preferred_gap) / BARS))
@@ -636,14 +744,18 @@ class Overlay(QWidget):
         else:
             gap = preferred_gap
         step = bar_w + gap
-        bars = tuple(QRectF(wave_left + i * step, 0.0, bar_w, 0.0)
+        bars = tuple(QRectF(wave_left + i * step, offset, bar_w, 0.0)
                      for i in range(BARS))
         layout = {
-            "indicator": QRectF(18.0, 0.0, 24.0, self.height()),
-            "waveform": QRectF(wave_left, 0.0, available, self.height()),
+            "indicator": QRectF(18.0, offset, 24.0, main_h),
+            "waveform": QRectF(wave_left, offset, available, main_h),
             "timer_rect": timer,
             "action": action,
+            "pause": self._pause_button_rect(),
+            "stop": self._stop_button_rect(),
             "bars": bars,
+            "thinking": QRectF(0.0, 0.0, float(self.width()), _THINKING_HEIGHT) if thinking else QRectF(),
+            "main_top": offset,
         }
         self._layout_cache_key = key
         self._layout_cache = layout
@@ -714,6 +826,9 @@ class Overlay(QWidget):
         self._wave2.set_paused(False)
         self._reveal_progress = 1.0
         self._reveal_t0 = 0.0
+        if self._thinking_text:
+            self._thinking_text = ""
+            self._layout_cache = None
         self.update()
         if self.dismissable:
             self.resize(1, 1)
@@ -732,7 +847,10 @@ class Overlay(QWidget):
             extra = 76 + (18 if self._can_dismiss else 0)
             width = max(MIN_WIDTH,
                         min(MAX_WIDTH, metrics.horizontalAdvance(self.message) + extra))
-        self.resize(int(width), HEIGHT)
+        height = HEIGHT
+        if self._thinking_text and self.state == "busy":
+            height = int(HEIGHT + _THINKING_GAP + _THINKING_HEIGHT)
+        self.resize(int(width), int(height))
 
     def _reposition(self):
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
@@ -818,14 +936,33 @@ class Overlay(QWidget):
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
 
+        # Thinking panel above main pill, if any (only when busy)
+        thinking = bool(self._thinking_text) and self.state == "busy"
+        offset = _THINKING_HEIGHT + _THINKING_GAP if thinking else 0.0
+        if thinking:
+            thinking_rect = QRectF(0.5, 0.5, self.width() - 1, _THINKING_HEIGHT - 1)
+            painter.setPen(QPen(border, 1))
+            painter.setBrush(bg)
+            painter.drawRoundedRect(thinking_rect, 10, 10)
+            # Thinking text
+            painter.setFont(self._thinking_font())
+            c = QColor(cols["TEXT"])
+            c.setAlpha(230)
+            painter.setPen(c)
+            # Elide long text
+            metrics = QFontMetrics(self._thinking_font())
+            text = metrics.elidedText(self._thinking_text, Qt.TextElideMode.ElideRight, int(thinking_rect.width() - 24))
+            painter.drawText(QRectF(thinking_rect.left() + 12, thinking_rect.top(), thinking_rect.width() - 24, thinking_rect.height()),
+                             int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
+
+        # Main pill
+        main_rect = QRectF(0.5, offset + 0.5, self.width() - 1, HEIGHT - 1)
         painter.setPen(QPen(border, 1))
         painter.setBrush(bg)
-        painter.drawRoundedRect(rect, _PILL_RADIUS, _PILL_RADIUS)
+        painter.drawRoundedRect(main_rect, _PILL_RADIUS, _PILL_RADIUS)
 
         accent = state_colors.get(self.state, muted)
-        # paused uses same accent as recording? Use REC muted?
         if self.state == PAUSED_STATE:
             accent = cols["ASK"]
         self._draw_indicator(painter, accent)
@@ -835,6 +972,7 @@ class Overlay(QWidget):
             self._draw_time(painter)
             if self._should_show_pause_button():
                 self._draw_pause_button(painter)
+                self._draw_stop_button(painter)
         else:
             self._draw_message(painter)
             if self._can_dismiss:
@@ -842,7 +980,7 @@ class Overlay(QWidget):
 
     def _draw_indicator(self, painter, accent):
         layout = self._layout()
-        cx, cy = layout["indicator"].center().x(), self.height() / 2
+        cx, cy = layout["indicator"].center().x(), layout["indicator"].center().y()
         painter.setPen(Qt.PenStyle.NoPen)
         if self.state in LIVE or self.state == PAUSED_STATE:
             if self._paused or self.state == PAUSED_STATE:
@@ -925,7 +1063,8 @@ class Overlay(QWidget):
         layout = self._layout()
         bars = layout["bars"]
         bar_w = bars[0].width()
-        mid = self.height() / 2
+        # Use layout's vertical center (accounts for thinking offset)
+        mid = layout["waveform"].center().y()
         # WaveformState exposes a cached immutable tuple; no list is built here.
         display = self._wave.get_display_levels()
         # reveal clipping
@@ -936,7 +1075,9 @@ class Overlay(QWidget):
             painter.save()
             center_x = bars[0].left() + full_w / 2
             half_w = full_w * eased / 2
-            clip = QRectF(center_x - half_w, 0, half_w * 2, self.height())
+            # Clip should be vertically limited to main pill
+            thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+            clip = QRectF(center_x - half_w, thinking_off, half_w * 2, HEIGHT)
             painter.setClipRect(clip)
         # The right edge is the live edge: recent bars are brighter, older
         # bars softly recede to the left without any artificial motion.
@@ -966,7 +1107,7 @@ class Overlay(QWidget):
         layout = self._layout()
         bars = layout["bars"]
         bar_w = bars[0].width()
-        mid = self.height() / 2
+        mid = layout["waveform"].center().y()
         mine_disp = self._wave.get_display_levels()
         theirs_disp = self._wave2.get_display_levels()
         eased = getattr(self, "_reveal_progress", 1.0)
@@ -976,8 +1117,8 @@ class Overlay(QWidget):
             painter.save()
             center_x = bars[0].left() + full_w / 2
             half_w = full_w * eased / 2
-            clip = QRectF(center_x - half_w, 0, half_w * 2, self.height())
-            painter.setClipRect(clip)
+            thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+            clip = QRectF(center_x - half_w, thinking_off, half_w * 2, HEIGHT)
         painter.setPen(Qt.PenStyle.NoPen)
         r = bar_w / 2
         muted = QColor(cols["MUTED"])
@@ -1031,9 +1172,9 @@ class Overlay(QWidget):
     def _draw_pause_button(self, painter):
         rect = self._pause_button_rect()
         self._pause_rect = rect
+        if not rect.isValid():
+            return
         cols = _palette_colors()
-        # Fixed hit target; the smaller visual surface gives the icon room
-        # without allowing Pause/Resume to change the pill's geometry.
         is_paused = self._paused or self.state == PAUSED_STATE
         visual = rect.adjusted(4.0, 4.0, -4.0, -4.0)
         bg = QColor(cols["SURFACE2"] if self._hover_pause else cols["BG"])
@@ -1053,12 +1194,43 @@ class Overlay(QWidget):
         if renderer is not None and renderer.isValid():
             renderer.render(painter, icon_rect)
 
+    def _draw_stop_button(self, painter):
+        rect = self._stop_button_rect()
+        self._stop_rect = rect
+        if not rect.isValid():
+            return
+        cols = _palette_colors()
+        visual = rect.adjusted(4.0, 4.0, -4.0, -4.0)
+        bg = QColor(cols["SURFACE2"] if self._hover_stop else cols["BG"])
+        if self._stop_pressed:
+            bg = QColor(cols["BORDER"])
+        bg.setAlpha(242)
+        border = QColor(cols["TEXT"] if self._hover_stop else cols["BORDER"])
+        painter.setBrush(bg)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(visual)
+        painter.setPen(QPen(border, 1.0 if not self._hover_stop else 1.2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(visual)
+        # Stop icon: square
+        icon_rect = QRectF(visual.center().x() - 7.0, visual.center().y() - 7.0, 14.0, 14.0)
+        # Use rect with slight radius
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(cols["TEXT"]))
+        painter.drawRoundedRect(icon_rect, 2.0, 2.0)
+
     @property
     def _can_dismiss(self):
         return self.dismissable and self.state == "busy"
 
     def _draw_dismiss(self, painter):
-        cx, cy = self.width() - 18.0, self.height() / 2
+        # Use main pill center for y when thinking panel visible
+        try:
+            cy = self._layout()["indicator"].center().y()
+        except Exception:
+            offset = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+            cy = offset + HEIGHT / 2
+        cx = self.width() - 18.0
         pen = QPen(QColor(_palette_colors()["MUTED"]), 1.6)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
@@ -1070,8 +1242,9 @@ class Overlay(QWidget):
         cols = _palette_colors()
         painter.setFont(self._label_font())
         painter.setPen({"error": cols["ERR"], "warning": cols["WARN"]}.get(self.state, cols["TEXT"]))
-        box = QRectF(46, 0, self.width() - 60 - (18 if self._can_dismiss else 0),
-                     self.height())
+        offset = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+        box = QRectF(46, offset, self.width() - 60 - (18 if self._can_dismiss else 0),
+                     HEIGHT)
         metrics = QFontMetrics(self._label_font())
         text = metrics.elidedText(self.message, Qt.TextElideMode.ElideRight, int(box.width()))
         painter.drawText(

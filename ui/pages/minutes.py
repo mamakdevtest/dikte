@@ -40,6 +40,8 @@ def build(window):
     window.minutes_retry = btn(t("Write it up"), "secondary", "sm")
     window.minutes_retry.clicked.connect(window._retry_minutes)
     window.minutes_retry.setEnabled(False)
+    save_md = btn(t("Save as .md"), "secondary", "sm")
+    save_md.clicked.connect(window._save_minutes_md)
     folder = btn(t("Open the folder"), "secondary", "sm")
     folder.clicked.connect(
         lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(cfg.MEETINGS_DIR))))
@@ -50,6 +52,7 @@ def build(window):
     row = QHBoxLayout()
     row.addWidget(copy)
     row.addWidget(window.minutes_retry)
+    row.addWidget(save_md)
     row.addStretch(1)
     row.addWidget(folder)
     row.addWidget(delete)

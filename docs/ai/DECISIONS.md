@@ -88,3 +88,29 @@
   unchanged.
 - **Preview parity** — `ui/pages/overlay.py` uses the same 520×72 geometry,
   31-bar direction, 76 px timer slot and 40 px circular action surface.
+
+---
+
+## 2026-08-26 Master Stabilization Pass
+
+- **Waveform** — verified existing `WaveformState` (gate 0.045→0.015, attack 0.55/release 0.12, frame steps 0.28/0.14, 31-bar chronological history, per-bar interpolation, 220ms reveal) satisfies decreasing-volume smoothness, silence baseline, bounded history, no fake motion. No constant tuning; kept QPainter single-timer architecture; added regression for volume steps and three-identical-frame check.
+
+- **Dropdown chevrons** — root cause: `QComboBox::drop-down {border:none;width:22px}` hid default arrow and `QComboBox::down-arrow` had no `image`. Fix: generate per-theme 14px chevron PNG via `ui/icons` `chevD` in `config.DATA_DIR/dikte-chevron-*.png` (forward-slash URL, no shipped asset dependency), embed `image: url(...)` in `ui/theme.stylesheet()` for enabled/disabled, width 26px drop-down, re-generated on `apply()`. Keeps editable/disabled/popup behavior; contrast via `fg2`/`fg3`.
+
+- **Theme parity** — audited `ui/theme`, `ui/widgets`, `ui/shell`, `ui/pages/*`, `settings_ui`, `overlay`, `ui/thinking`. Removed hard-coded `#ff6b6b` error color (now `palette()["err"]`), fixed `ui/thinking` inline `#82B9CE`/`#A8BCB5` via `_apply_theme()`, kept global QSS as source of truth. Runtime `SettingsWindow._toggle_theme` now reapplies `theme.apply()`, updates `AppShell`, refreshes top-level `Overlay`/`ThinkingPopup` and in-window widgets via `_refresh_palette`/`_apply_active`/`_apply_theme` plus polish. Provider grid hiding at `<1080` removed (was hiding Deepgram key at default 1000px).
+
+- **Providers / Agent model selection** — `providers.py` remains source of truth. Added `normalize_models()` helper (deduplicate, current first, defaults, natural case-insensitive sort) for generic lists; CLI catalogs keep their own ordering (Claude aliases, Codex current+fixed). `SettingsWindow` now has stashed `_pending_*_provider` guards to drop stale async results, disables button while fetching, preserves custom text, uses `normalize_models` for transcribe/meeting/gateway, keeps per-provider boxes visible via `_assistant_provider_changed`/`_meeting_provider_changed`. Meeting page upgraded: `meeting_model_row` container with `Fetch model list` button and `meeting_models_label`; `agent` gateway now has `refresh_assistant_gateway_models`. Local LLM case uses `installed_llm_models` directly; HTTP gateways use `providers.fetch_models` TEXT.
+
+- **Provider Test** — Deepgram key editor restored (grid column not hidden), test uses `api.deepgram_key_status` low-cost silent WAV and never displays raw key. CLI tests now report `version + (model)` (e.g. `Claude Code found: 2.1.0 (sonnet)`) via `claude_models`/`codex_models`/`agy_models` first entry, without breaking existing version substring checks. Local tests keep `conf.local_whisper_ready()` and `program_path`+model checks.
+
+- **Meeting sorting** — meeting provider change preserves stored/manual model, uses `normalize_models` for deterministic ordering; local uses sorted installed LLM models, HTTP uses TEXT catalog; fetch failure preserves standing list; no silent routing of CLI provider into minutes path.
+
+- **Overlay Stop & larger hit** — `Overlay` now has `_STOP_HIT=48`, `_ACTION_GAP=8`, `_ACTION_SLOT=108` (≈1.5×72), group rect hosts Pause (48) + Stop (48) with 8 gap; `_pause_button_rect` and `_stop_button_rect` share group, fixed geometry across pause/resume, hover/pressed per-button. `stopRequested` signal wired in `dikte.py` to `stop_recording()` (finishes, not discard; retains buffer, proceeds to transcription). No focus stealing, layout clipping avoided via `available` recalculation with new slot; preview updated to show both circles.
+
+- **Thinking panel** — `Overlay` adds `_thinking_text` (max 180, elided), `_THINKING_HEIGHT=36` + `_THINKING_GAP=10`, `set_thinking_status(text)`/`clear_thinking()` + `thinkingChanged` signal, `paintEvent` draws small secondary panel above main pill only when `state=="busy"` and text non-empty (follows corner, no focus, long text elided, no raw stderr). `dikte.py` connects `ask_pipeline.stage` → `_on_ask_thinking` (fallback `Agent is thinking…`, sanitized) → `ask_overlay.set_thinking_status`, and clears on finished/failed/cancelled and in `_finish`/`_conceal`. Existing `ThinkingPopup` kept for detailed log, its `_apply_theme` refreshed on toggle.
+
+- **Markdown export** — `ui/pages/minutes.py` adds `Save as .md` button; `SettingsWindow._save_minutes_md` copies canonical `cfg.meeting_paths(base)[0]` UTF-8 document (not viewer text), uses `QFileDialog.getSaveFileName` with filesystem-safe `title|base` sanitized (`[\\/:*?"<>|]`→`_` plus length 60) default in `MEETINGS_DIR`, handles no selection/missing/permission/cancel, appends `.md` if needed, status label via `t()`.
+
+- **i18n** — added `Stop recording`→`Kaydı bitir`, `Save as .md`→`.md olarak kaydet`, `Markdown files`, `Pick a meeting first.`, `Agent is thinking…`→`Ajan düşünüyor…`, `No models found.` and refreshed `thinking`/`minutes` strings; placeholder parity kept.
+
+- **No new deps** — kept PyQt6+stdlib, no QWebEngine, no PyQtGraph, reused existing `providers.*` discovery, existing `api`/`assistant` stage callbacks.
