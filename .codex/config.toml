@@ -1,0 +1,11 @@
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+ANTHROPIC_BASE_URL = "https://api.emirhanmamak.com/v1"
+ANTHROPIC_AUTH_TOKEN = "sk-82a63578b0ac1e9c-d9e388-2be58dae"
+ANTHROPIC_DEFAULT_OPUS_MODEL = "kc/stealth/ox-alpha"
+ANTHROPIC_DEFAULT_SONNET_MODEL = "kc/stealth/ox-alpha"
+ANTHROPIC_DEFAULT_HAIKU_MODEL = "kc/stealth/ox-alpha"
+ANTHROPIC_DEFAULT_FABLE_MODEL = "kc/stealth/ox-alpha"
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"

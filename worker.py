@@ -45,10 +45,26 @@ class Pipeline(QObject):
         self.conf = conf
         self._thread = None
         self._stop = threading.Event()
+        self._pause = threading.Event()
+        self._pause.set()  # not paused
 
     @property
     def busy(self):
         return self._thread is not None and self._thread.is_alive()
+
+    @property
+    def paused(self):
+        return not self._pause.is_set()
+
+    def pause(self):
+        self._pause.clear()
+
+    def resume(self):
+        self._pause.set()
+
+    def _wait_if_paused(self):
+        while not self._pause.is_set() and not self._stop.is_set():
+            time.sleep(0.15)
 
     def run(self, wav_path, duration, rms_values=(), ask=False, paste=None):
         """`paste` overrides the setting for this one run, which is what a
@@ -57,6 +73,7 @@ class Pipeline(QObject):
         if self.busy:
             return
         self._stop.clear()
+        self._pause.set()
         self._thread = threading.Thread(
             target=self._work,
             args=(wav_path, duration, list(rms_values), ask, paste),
@@ -71,6 +88,7 @@ class Pipeline(QObject):
         to be worth interrupting: a transcription is over in seconds, a command
         that went looking through the web is not.
         """
+        self._pause.set()
         self._stop.set()
 
     def _work(self, wav_path, duration, rms_values, ask, paste_override=None):
@@ -91,6 +109,7 @@ class Pipeline(QObject):
                 return
 
         try:
+            self._wait_if_paused()
             self.stage.emit(t("Transcribing…"))
             target = conf.transcribe_target()
             raw = api.transcribe(
@@ -110,6 +129,7 @@ class Pipeline(QObject):
             # Claude reads through “eee” and “hani” without help, so a dictation
             # on its way there is normally sent as it was heard, one API call and
             # a second or two lighter.
+            self._wait_if_paused()
             if (conf["assistant_cleanup"] if ask else conf["cleanup_enabled"]):
                 self.stage.emit(t("Cleaning up…"))
                 try:
@@ -121,15 +141,20 @@ class Pipeline(QObject):
                     warning = str(exc)
                     print(f"dikte: cleanup failed: {exc}", file=sys.stderr)
 
+            self._wait_if_paused()
             question = ""
             if ask:
                 question = text
                 self.stage.emit(t("Asking {name}…", name=i18n.name(
                     assistant.display_name(conf), "dative")))
+                # combine pause+stop check for assistant
+                def should_stop():
+                    self._wait_if_paused()
+                    return self._stop.is_set()
                 text, denied = assistant.ask(
                     question, conf,
-                    on_stage=self.stage.emit,
-                    should_stop=self._stop.is_set,
+                    on_stage=lambda s: (self._wait_if_paused(), self.stage.emit(s))[1],
+                    should_stop=should_stop,
                 )
                 warning = "\n".join(x for x in (warning, denied) if x)
 
@@ -137,6 +162,7 @@ class Pipeline(QObject):
             if paste_override is not None:
                 wants_paste = paste_override
 
+            self._wait_if_paused()
             with _paste_lock:
                 previous = (paste.read_clipboard()
                             if conf["restore_clipboard"] and wants_paste else None)

@@ -1,4 +1,11 @@
-"""Settings window."""
+"""Settings window.
+
+The window is a QDialog hosting the two-column AppShell from ``ui.shell``: a
+sidebar (brand, nav, engine card, theme toggle) drives a hidden-tab QTabWidget
+whose pages are built by the ``ui.pages`` modules. All the behaviour — the
+provider registry, the save/load round trip, the fetches and tests — stays on
+``SettingsWindow``, so the widget attributes the tests reach are unchanged.
+"""
 
 import json
 import os
@@ -31,17 +38,27 @@ import providers
 from filetranscribe import FileTranscriber
 from i18n import t
 
+from ui import theme as _theme
+from ui.local_models import LocalModelBox
+from ui.shell import AppShell, NAV as _NAV
+from ui.pages import (
+    agent as agent_page,
+    audiofile as audiofile_page,
+    cleanup as cleanup_page,
+    general as general_page,
+    history as history_page,
+    meeting as meeting_page,
+    minutes as minutes_page,
+    providers as providers_page,
+    shortcuts as shortcuts_page,
+)
+
 UI_LANGUAGES = [("Automatic (system)", "auto"), ("Turkish", "tr"), ("English", "en")]
 LANGUAGES = [
     ("Detect automatically", "auto"), ("Turkish", "tr"), ("English", "en"),
     ("German", "de"), ("French", "fr"), ("Spanish", "es"), ("Arabic", "ar"),
 ]
 CORNERS = ["bottom-left", "bottom-right", "top-left", "top-right"]
-# The provider boxes offer what the registry holds for the job at hand, this
-# machine first — see the *_choices helpers, which read providers.definitions
-# so a retired gateway a config still references stays on offer and one nobody
-# chose never appears. These are only the starting points for the model boxes;
-# "Fetch model list" replaces them with whatever the provider offers today.
 TRANSCRIBE_MODELS = {
     "openai": ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"],
     "groq": ["whisper-large-v3-turbo", "whisper-large-v3"],
@@ -52,37 +69,24 @@ CLEANUP_MODELS = [
     "google/gemini-2.5-flash-lite", "anthropic/claude-haiku-4.5",
     "openai/gpt-5-mini", "meta-llama/llama-3.3-70b-instruct",
 ]
-# Cleaning up a sentence is the lightest thing either of them will ever be
-# asked, so the small model comes first.
 CLEANUP_CLAUDE_MODELS = ["haiku", "sonnet", "opus", "fable"]
-# Minutes are a harder job than cleanup: an hour of talk has to be read whole
-# and turned into decisions, so the starting points are the larger models.
 MEETING_MODELS = [
     "google/gemini-3.5-flash", "google/gemini-3.1-pro-preview",
     "anthropic/claude-sonnet-5", "openai/gpt-5.4", "x-ai/grok-4.5",
 ]
-# Antigravity names its models in slugs that carry the effort, so these are
-# starting points only; "Fetch model list" replaces them with whatever
-# `agy models` says today, and a slug typed over them works the same way.
 AGY_CLEANUP_MODELS = [
     "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.6-flash-high",
 ]
 AGY_ASSISTANT_MODELS = [
     "gemini-3.1-pro-high", "gemini-3.1-pro-medium", "gemini-3.1-pro-low",
 ]
-# Aliases resolve to the newest model of that name, so they age better than an
-# id does; a full id can be typed in when a particular one is wanted.
 ASSISTANT_MODELS = ["sonnet", "opus", "haiku", "fable"]
-# The fixed family every Codex offers; the Fetch button adds the live catalog.
 CODEX_MODELS = providers.CODEX_FIXED_MODELS
-# What Claude Code may do without being able to ask. It cannot ask: there is no
-# window to answer in, so a mode that would have prompted denies instead.
 PERMISSION_MODES = [
     ("Decide on its own, with the safety checks on", "auto"),
     ("Allow everything", "bypassPermissions"),
     ("Only what needs no permission", "manual"),
 ]
-# Codex confines the commands it runs instead of asking about them.
 CODEX_SANDBOXES = [
     ("Read anything, write in the working directory", "workspace-write"),
     ("Read only", "read-only"),
@@ -93,29 +97,21 @@ MEETING_STATUS = {
     "transcribed": "transcript ready, minutes missing",
     "failed": "failed",
 }
-# How hard the cleanup model may think before it answers, in OpenRouter's own
-# effort levels. A model that ignores the field simply answers as it always did.
 REASONING_LEVELS = [
     ("Model's own default", ""), ("Off", "none"), ("Minimal", "minimal"),
     ("Low", "low"), ("Medium", "medium"), ("High", "high"),
     ("Very high", "xhigh"), ("Maximum", "max"),
 ]
-# Offered for every global shortcut, which keeps them one kind of field rather
-# than four. The boxes stay editable: this is a shortlist of combinations that
-# are usually free, not the set of ones that work.
 SHORTCUTS = [
     "Ctrl+Space", "Ctrl+Alt+Space", "Ctrl+Shift+Space", "Meta+Space",
     "Ctrl+Alt+A", "Ctrl+Alt+D", "Ctrl+Alt+M", "Ctrl+Alt+Q",
     "Meta+A", "Meta+D", "Meta+M",
     "Ctrl+Alt+F1", "Ctrl+Alt+F2", "Ctrl+Alt+F3",
 ]
-# Cmd+Space is Spotlight and Ctrl+Space switches input sources, so a Mac gets
-# its own shortlist. Option is what Alt is called on that keyboard.
 WIN_SHORTCUTS = [
     "Ctrl+Space", "Ctrl+Alt+Space", "Ctrl+Shift+Space",
     "Alt+Space", "Ctrl+Alt+M", "F8", "F9",
 ]
-
 MAC_SHORTCUTS = [
     "Ctrl+Option+Space", "Cmd+Shift+Space", "Ctrl+Shift+Space",
     "Ctrl+Option+A", "Ctrl+Option+D", "Ctrl+Option+M",
@@ -123,348 +119,11 @@ MAC_SHORTCUTS = [
 ]
 AUDIO_FILTER = ("*.mp3 *.wav *.m4a *.ogg *.opus *.flac *.aac *.wma "
                 "*.mp4 *.mkv *.webm *.mov *.avi")
-
-# The flat setting each in-row key field edits: the standing Deepgram entry
-# and the retired gateways, whose ghost rows keep their key where it always
-# was. Shaped like the registry's legacy table, so a field exists exactly
-# when its provider has a row.
 KEY_SETTINGS = {
     "openai": "openai_api_key",
     "groq": "groq_api_key",
     "deepgram": "deepgram_api_key",
 }
-
-
-class LocalModelBox(QGroupBox):
-    """The program, the model, and the two downloads that put them there.
-
-    One class for whisper.cpp and llama.cpp, because the job is the same one
-    twice: say whether the program is here, offer the models somebody publishes,
-    fetch the chosen one, and stay usable while a gigabyte arrives. Nothing is
-    listed in the source; `repos` and `models` are asked at the moment the box is
-    opened, so a model published this morning is in the list this afternoon.
-    """
-
-    _listed = pyqtSignal(list, str)
-    _quants = pyqtSignal(list, str)
-    # qint64 rather than int, which is C++'s 32-bit one: a 2.3 GB model is more
-    # than fits in it, and the count comes out the far side negative.
-    _progress = pyqtSignal("qint64", "qint64")
-    _finished = pyqtSignal(str, str)
-    _installed = pyqtSignal(str, str)
-
-    changed = pyqtSignal()
-
-    def __init__(self, program, title, models, model_path, repos=None, parent=None):
-        super().__init__(title, parent)
-        self.program = program
-        self._models = models          # () -> [hub.Item], or (repo) -> [hub.Item]
-        self._model_path = model_path  # (name) -> Path
-        self._repos = repos            # None, or () -> [repo id]
-        self._downloading = False
-        self._pending = False
-        self._stop = False
-        self._wanted = ""              # the model to select once a list arrives
-
-        form = QFormLayout(self)
-
-        self.program_label = QLabel("")
-        self.program_label.setWordWrap(True)
-        self.install_button = QPushButton(t("Download"))
-        self.install_button.clicked.connect(self._install_program)
-        form.addRow(t("Program"), self._side_by_side(self.program_label,
-                                                     self.install_button))
-
-        if self._repos is not None:
-            self.repo = QComboBox()
-            self.repo.setEditable(True)
-            self.repo.setToolTip(t("A Hugging Face repository of GGUF files. The "
-                                   "list is fetched; any other one can be typed in."))
-            self.repo.currentTextChanged.connect(self._repo_changed)
-            form.addRow(t("Publisher"), self.repo)
-
-        self.model = QComboBox()
-        self.download_button = QPushButton(t("Download"))
-        self.download_button.clicked.connect(self._download)
-        self.delete_button = QPushButton(t("Delete"))
-        self.delete_button.clicked.connect(self._delete)
-        form.addRow(t("Model"), self._side_by_side(self.model,
-                                                   self.download_button,
-                                                   self.delete_button))
-        self.model.currentIndexChanged.connect(self._model_changed)
-
-        self.status = QLabel("")
-        self.status.setWordWrap(True)
-        form.addRow(self.status)
-
-        self._listed.connect(self._on_listed)
-        self._quants.connect(self._on_listed)
-        self._progress.connect(self._on_progress)
-        self._finished.connect(self._on_finished)
-        self._installed.connect(self._on_installed)
-
-    @staticmethod
-    def _fit_popup(combo):
-        """Let the list that drops down be as wide as its longest row.
-
-        A combo box hands its own width to the list under it and elides
-        whatever does not fit, which lands in the middle of the name:
-        `ggml-org/Qwen....7B-Base-GGUF` is not a model anybody can choose
-        between. The box itself stays the width the form gave it.
-        """
-        view = combo.view()
-        view.setTextElideMode(Qt.TextElideMode.ElideNone)
-        metrics = combo.fontMetrics()
-        widest = max((metrics.horizontalAdvance(combo.itemText(row))
-                      for row in range(combo.count())), default=0)
-        # Room for the frame and for a scroll bar, which a long list will have.
-        view.setMinimumWidth(widest + view.verticalScrollBar().sizeHint().width() + 24)
-
-    @staticmethod
-    def _side_by_side(*widgets):
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        for index, widget in enumerate(widgets):
-            layout.addWidget(widget, 1 if index == 0 else 0)
-        holder = QWidget()
-        holder.setLayout(layout)
-        return holder
-
-    # ---- what is here ----------------------------------------------------
-
-    def selected(self):
-        return self.model.currentData() or ""
-
-    def repository(self):
-        return self.repo.currentText().strip() if self._repos is not None else ""
-
-    def load(self, model, repo=""):
-        """Show what is stored. What else is on offer is asked for on the way up.
-
-        Nothing is fetched here: building the settings window is not the same as
-        opening it, and a list nobody is looking at is not worth a request. What
-        is already on this disk is shown straight away either way.
-        """
-        self._wanted = model
-        self._pending = True
-        self._show_program()
-        if self._repos is not None:
-            self.repo.blockSignals(True)
-            self.repo.clear()
-            self.repo.addItems(list(ggml.SUGGESTED_LLM))
-            self.repo.setCurrentText(repo or ggml.SUGGESTED_LLM[0])
-            self.repo.blockSignals(False)
-            self._fit_popup(self.repo)
-        self._fill_models([])
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if self._pending:
-            self._pending = False
-            if self._repos is not None:
-                self._fill_repos(self.repository())
-            self._fetch_models(self.repository())
-
-    def _show_program(self):
-        path = ggml.program_path(self.program)
-        if not path:
-            self.program_label.setText(t("Not installed."))
-            self.install_button.setVisible(True)
-            return
-        self.install_button.setVisible(not ggml.installed_program(self.program)
-                                       and not ggml.system_program(self.program))
-        if ggml.system_program(self.program):
-            # Worth saying which one is running: a distribution package is built
-            # for this machine and may reach the graphics card, while the
-            # released binaries carry processor backends only.
-            self.program_label.setText(t("Installed on the system: {path}", path=path))
-        else:
-            self.program_label.setText(
-                t("Downloaded, version {version}.",
-                  version=ggml.installed_version(self.program) or "?"))
-
-    # ---- the lists -------------------------------------------------------
-
-    def _fill_repos(self, current):
-        def work():
-            self._listed.emit([("repos", ggml.llm_repos())], "")
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _repo_changed(self):
-        if not self._downloading:
-            self._fetch_models(self.repository())
-
-    def _fetch_models(self, repo=""):
-        self.status.setText(t("Fetching the model list…"))
-
-        def work():
-            try:
-                found = self._models(repo) if self._repos is not None else self._models()
-                self._quants.emit([("models", found)], "")
-            except ggml.LocalError as exc:
-                self._quants.emit([], str(exc))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _on_listed(self, payload, error):
-        if error:
-            self.status.setText(error)
-            self._refresh_buttons()
-            return
-        kind, found = payload[0]
-        if kind == "repos":
-            current = self.repo.currentText()
-            self.repo.blockSignals(True)
-            self.repo.clear()
-            self.repo.addItems(found)
-            self.repo.setCurrentText(current)
-            self.repo.blockSignals(False)
-            self._fit_popup(self.repo)
-            return
-        self._fill_models(found)
-
-    def _fill_models(self, items):
-        """One row per model, saying what it weighs and whether it is here."""
-        wanted = self._wanted or self.selected()
-        here = [name for name in (self._model_path(i.name).name for i in items)]
-        self.model.blockSignals(True)
-        self.model.clear()
-        for item, name in zip(items, here):
-            mark = (t("downloaded") if ggml.have_model(self._model_path(item.name))
-                    else ggml.human_size(item.size))
-            self.model.addItem(f"{name}  ({mark})", name)
-            self.model.setItemData(self.model.count() - 1, item, Qt.ItemDataRole.UserRole + 1)
-        # A model that was downloaded and then dropped from the list upstream is
-        # still on this disk and still works, so it stays on offer.
-        for name in self._on_disk():
-            if self.model.findData(name) < 0:
-                self.model.addItem(f"{name}  ({t('downloaded')})", name)
-        # And one that is chosen but not here, because the file was deleted from
-        # underneath or the settings came from another machine, stays chosen:
-        # Save reads this box, and a row missing here would quietly empty the
-        # setting rather than showing that the model needs downloading again.
-        if wanted and self.model.findData(wanted) < 0:
-            self.model.addItem(f"{wanted}  ({t('not downloaded')})", wanted)
-        index = self.model.findData(wanted)
-        self.model.setCurrentIndex(max(index, 0))
-        self.model.blockSignals(False)
-        self._fit_popup(self.model)
-        self._wanted = ""
-        self._model_changed()
-
-    def _on_disk(self):
-        return (ggml.installed_whisper_models() if self.program is ggml.WHISPER
-                else ggml.installed_llm_models())
-
-    # ---- fetching --------------------------------------------------------
-
-    def _install_program(self):
-        self.install_button.setEnabled(False)
-        self.program_label.setText(t("Downloading…"))
-
-        def work():
-            try:
-                ggml.install_program(self.program, on_progress=self._report)
-                self._installed.emit("", "")
-            except ggml.LocalError as exc:
-                self._installed.emit("", str(exc))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _on_installed(self, _, error):
-        self.install_button.setEnabled(True)
-        self._show_program()
-        if error:
-            self.program_label.setText(error)
-        self.changed.emit()
-
-    def _current_item(self):
-        return self.model.currentData(Qt.ItemDataRole.UserRole + 1)
-
-    def _download(self):
-        if self._downloading:
-            self._stop = True
-            return
-        item = self._current_item()
-        if item is None:
-            return
-        self._downloading, self._stop = True, False
-        self._refresh_buttons()
-
-        def work():
-            try:
-                landed = ggml.download(item, self._model_path(item.name),
-                                       on_progress=self._report,
-                                       should_stop=lambda: self._stop)
-                self._finished.emit(item.name if landed else "", "")
-            except ggml.LocalError as exc:
-                self._finished.emit("", str(exc))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _report(self, done, total):
-        self._progress.emit(done, total)
-
-    def _on_progress(self, done, total):
-        share = f" ({done * 100 // total}%)" if total else ""
-        text = t("Downloading: {done} of {total}{share}",
-                 done=ggml.human_size(done), total=ggml.human_size(total or done),
-                 share=share)
-        if self._downloading:
-            self.status.setText(text)
-        else:
-            self.program_label.setText(text)
-
-    def _on_finished(self, name, error):
-        self._downloading = False
-        if error:
-            self.status.setText(error)
-        elif not name:
-            self.status.setText(t("Download stopped."))
-        self._fill_models_from_current()
-        self.changed.emit()
-
-    def _fill_models_from_current(self):
-        """Redraw the rows without asking anybody anything again."""
-        items = [self.model.itemData(i, Qt.ItemDataRole.UserRole + 1)
-                 for i in range(self.model.count())]
-        self._wanted = self.selected()
-        self._fill_models([i for i in items if i is not None])
-
-    def _delete(self):
-        name = self.selected()
-        if not name or not ggml.have_model(self._model_path(name)):
-            return
-        if QMessageBox.question(self, t("Delete model"),
-                                t("Delete {name} from this machine?", name=name)) \
-                != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            ggml.delete_model(self._model_path(name))
-        except ggml.LocalError as exc:
-            self.status.setText(str(exc))
-        self._fill_models_from_current()
-        self.changed.emit()
-
-    def _model_changed(self):
-        self._refresh_buttons()
-        self.changed.emit()
-
-    def _refresh_buttons(self):
-        name = self.selected()
-        here = bool(name) and ggml.have_model(self._model_path(name))
-        self.delete_button.setEnabled(here and not self._downloading)
-        self.download_button.setText(t("Stop") if self._downloading else t("Download"))
-        self.download_button.setEnabled(self._downloading or (bool(name) and not here))
-        if self._downloading:
-            return
-        if not name:
-            self.status.setText(t("Nothing downloaded yet."))
-        elif here:
-            self.status.setText(t("Ready: {name}.", name=name))
-        else:
-            self.status.setText(t("{name} has not been downloaded yet.", name=name))
 
 
 def _app_icon():
@@ -485,12 +144,7 @@ def _app_icon():
 
 
 class _ConfView(cfg.Config):
-    """The settings as the provider registry reads them, typed keys folded in.
-
-    A fetch or a test runs off the interface thread, and the registry asks a
-    config; this hands it one that says what the window shows rather than what
-    was last saved, without touching the real one on the way.
-    """
+    """The settings as the provider registry reads them, typed keys folded in."""
 
     def __init__(self, data):
         self.data = dict(data)  # no load: everything to show is handed in
@@ -520,11 +174,7 @@ class ProviderDialog(QDialog):
 
 
 class ProviderKeysDialog(QDialog):
-    """The named keys of a custom provider: add, rename, replace, choose, drop.
-
-    A built-in's key stays where it always was, in the field of its own row
-    under Providers; only a gateway created here holds named ones.
-    """
+    """The named keys of a custom provider: add, rename, replace, choose, drop."""
 
     def __init__(self, conf, pid, parent=None):
         super().__init__(parent)
@@ -646,7 +296,6 @@ class HistoryDetailsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # 1. Summary metadata grid
         summary_group = QGroupBox(t("Properties"))
         grid = QGridLayout(summary_group)
         grid.setColumnStretch(1, 1)
@@ -714,7 +363,6 @@ class HistoryDetailsDialog(QDialog):
 
         layout.addWidget(summary_group)
 
-        # 2. Text tabs
         tabs = QTabWidget()
 
         self.final_text_box = QPlainTextEdit()
@@ -740,7 +388,6 @@ class HistoryDetailsDialog(QDialog):
 
         layout.addWidget(tabs, 1)
 
-        # 3. Action Buttons
         btn_layout = QHBoxLayout()
         copy_final_btn = QPushButton(t("Copy final text"))
         copy_final_btn.clicked.connect(self._copy_final)
@@ -777,72 +424,71 @@ class SettingsWindow(QDialog):
 
     _models_loaded = pyqtSignal(list, str)
     _transcribe_models_loaded = pyqtSignal(list, str)
-    # Antigravity's own catalog, asked of `agy models` off the interface thread.
     _agy_models_loaded = pyqtSignal(list, str)
-    # The user's own Claude and Codex settings, read the same way.
     _claude_models_loaded = pyqtSignal(list, str)
     _codex_models_loaded = pyqtSignal(list, str)
-    # What a refresh found out about the CLI providers: pid → version line.
     _provider_versions_done = pyqtSignal(dict)
-    # Which provider was tested, whether it worked, and what to write in its
-    # row — the key rows and the rest alike.
     _provider_test_done = pyqtSignal(str, bool, str)
-    # Whether one minimal run through the cleanup provider and model worked,
-    # and what it answered.
     _model_test_done = pyqtSignal(bool, str)
+    _audio_sources_loaded = pyqtSignal(list)
+    _audio_monitors_loaded = pyqtSignal(list)
 
     def __init__(self, conf, meetings=None, parent=None):
         super().__init__(parent)
         self.conf = conf
         self.meetings = meetings
-        # Filled in by _shortcut_row as the tabs are built: which combination
-        # box, status label and "nothing installed" line belong to each of the
-        # global shortcuts. One dictionary is what lets install, remove and the
-        # status line be written once instead of once per key.
+        self._theme = conf.get("ui_theme", "dark") or "dark"
         self._shortcut_rows = {}
-        # Each provider keeps its own transcription model, so switching the
-        # provider back and forth never overwrites the other one's.
         self._models = dict.fromkeys(cfg.TRANSCRIBERS, "")
         self._key_fields = {}
         self._testers = {}
         self._shown_provider = ""
-        # What a provider's last Test said, by registry id, for its row.
         self._provider_tests = {}
-        # The version line of each CLI provider, by registry id; asked once
-        # per refresh off the interface thread, read while the rows update.
         self._provider_versions = {}
-        # The masked credential each custom row shows, by registry id.
         self._provider_creds = {}
-        # The widgets of the user's own rows, rebuilt on every refresh.
         self._custom_row_widgets = []
         self._versions_busy = False
         self._versions_thread = None
         self.transcriber = FileTranscriber(conf, self)
         self.setWindowTitle(t("Dikte Settings"))
         self.setWindowIcon(_app_icon())
-        self.resize(680, 640)
+        self.resize(1000, 700)
+        self.setMinimumSize(720, 560)
 
-        tabs = self.tabs = QTabWidget(self)
-        tabs.addTab(self._general_tab(), t("General"))
-        self.api_tab_index = tabs.addTab(self._api_tab(), t("API and models"))
-        tabs.addTab(self._prompt_tab(), t("Cleanup rules"))
-        tabs.addTab(self._assistant_tab(), t("Agent"))
-        tabs.addTab(self._meeting_tab(), t("Meeting"))
-        tabs.addTab(self._minutes_tab(), t("Minutes"))
-        tabs.addTab(self._file_tab(), t("Audio file"))
-        tabs.addTab(self._shortcut_tab(), t("Shortcuts"))
-        tabs.addTab(self._history_tab(), t("History"))
+        self.shell = AppShell(parent=self)
+        self.tabs = self.shell.tabs
+        self.shell.add_page(t("General"), self._general_tab(), "sliders")
+        self.api_tab_index = self.shell.add_page(t("API and models"), self._api_tab(), "plug")
+        self.shell.add_page(t("Cleanup rules"), self._prompt_tab(), "eraser")
+        self.shell.add_page(t("Agent"), self._assistant_tab(), "terminal")
+        self.shell.add_page(t("Meeting"), self._meeting_tab(), "users")
+        self.shell.add_page(t("Minutes"), self._minutes_tab(), "fileText")
+        self.shell.add_page(t("Audio file"), self._file_tab(), "fileAudio")
+        self.shell.add_page(t("Shortcuts"), self._shortcut_tab(), "keyboard")
+        self.shell.add_page(t("History"), self._history_tab(), "history")
+        # Overlay is 10th tab per prototype (last)
+        try:
+            from ui.pages import overlay as overlay_page
+            self.shell.add_page(t("Overlay/Indicator"), overlay_page.build(self), "pip")
+        except Exception:
+            pass
+        self.shell.theme_toggled.connect(self._toggle_theme)
 
-        # Save keeps the window open, so the window is closed with the titlebar
-        # cross (or Escape) instead. A "Cancel" next to it would be a lie: the
-        # settings are already on disk by then.
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText(t("Save"))
         buttons.accepted.connect(self._save)
 
+        bar = QWidget()
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(20, 10, 20, 12)
+        bl.addStretch(1)
+        bl.addWidget(buttons)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(tabs)
-        layout.addWidget(buttons)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.shell, 1)
+        layout.addWidget(bar)
 
         self._models_loaded.connect(self._on_models_loaded)
         self._transcribe_models_loaded.connect(self._on_transcribe_models_loaded)
@@ -852,6 +498,8 @@ class SettingsWindow(QDialog):
         self._provider_versions_done.connect(self._on_provider_versions_done)
         self._provider_test_done.connect(self._on_provider_test_done)
         self._model_test_done.connect(self._on_model_test_done)
+        self._audio_sources_loaded.connect(self._on_audio_sources_loaded)
+        self._audio_monitors_loaded.connect(self._on_audio_monitors_loaded)
         self.transcriber.progress.connect(self._on_file_progress)
         self.transcriber.finished.connect(self._on_file_finished)
         self.transcriber.failed.connect(self._on_file_failed)
@@ -859,279 +507,46 @@ class SettingsWindow(QDialog):
             self.meetings.progress.connect(self._on_minutes_progress)
             self.meetings.finished.connect(self._on_minutes_finished)
             self.meetings.failed.connect(self._on_minutes_failed)
+
+        _theme.apply(self._theme)
+        self.shell.set_theme(self._theme)
         self._load()
-        # Connected after the load, so that filling the boxes in is not taken
-        # for the user ticking them.
         self.file_timestamps.toggled.connect(self._remember_file_choices)
         self.file_cleanup.toggled.connect(self._remember_file_choices)
-        # On a machine where nothing can transcribe yet, this window was opened
-        # because of that, so open it on the tab that fixes it.
         if not conf.transcribe_ready():
             self.tabs.setCurrentIndex(self.api_tab_index)
 
     # ---- tabs ----------------------------------------------------------
 
     def _general_tab(self):
-        page = QWidget()
-        form = QFormLayout(page)
-
-        self.ui_language = QComboBox()
-        for label, code in UI_LANGUAGES:
-            self.ui_language.addItem(t(label), code)
-        self.ui_language.setToolTip(
-            t("Restart Dikte for the language change to reach every window.")
-        )
-        form.addRow(t("Interface language"), self.ui_language)
-
-        self.mic = QComboBox()
-        self.mic.addItem(t("Default microphone"), "")
-        for name, desc in audio.list_sources():
-            self.mic.addItem(desc, name)
-        form.addRow(t("Microphone"), self.mic)
-
-        self.language = QComboBox()
-        for label, code in LANGUAGES:
-            self.language.addItem(t(label), code)
-        form.addRow(t("Speech language"), self.language)
-
-        self.auto_paste = QCheckBox(t("Paste the text into the focused window"))
-        form.addRow("", self.auto_paste)
-
-        self.paste_shortcut = QComboBox()
-        # A shortlist of the combinations that usually paste, not the set of
-        # them: a stored one this desktop does not offer is kept as it is
-        # rather than quietly replaced by the first item on the list.
-        self.paste_shortcut.setEditable(True)
-        self.paste_shortcut.addItems(paste.desktop().shortcuts)
-        self.paste_shortcut.setToolTip(t(
-            "macOS asks for Accessibility permission the first time this is sent."
-            if paste.desktop() is paste.MACOS else
-            "Terminals usually want ctrl+shift+v. Change this if pasting does nothing."
-        ))
-        form.addRow(t("Paste key"), self.paste_shortcut)
-
-        self.restore_clipboard = QCheckBox(t("Restore the previous clipboard after pasting"))
-        form.addRow("", self.restore_clipboard)
-
-        self.corner = QComboBox()
-        for value in CORNERS:
-            self.corner.addItem(t(value), value)
-        form.addRow(t("Indicator corner"), self.corner)
-
-        self.max_seconds = QSpinBox()
-        self.max_seconds.setRange(10, 3600)
-        self.max_seconds.setSuffix(t(" s"))
-        form.addRow(t("Longest recording"), self.max_seconds)
-
-        self.skip_silent = QCheckBox(t("Skip silent recordings (don't call the API)"))
-        form.addRow("", self.skip_silent)
-
-        self.silence_db = QSpinBox()
-        self.silence_db.setRange(-80, -20)
-        self.silence_db.setSuffix(" dB")
-        self.silence_db.setToolTip(t(
-            "Speech also has to rise {margin} dB above the recording's own noise "
-            "floor, so this absolute floor rarely needs touching. Lower it if quiet "
-            "speech gets dropped; raise it if noise still gets through.",
-            margin=10,
-        ))
-        form.addRow(t("Silence threshold"), self.silence_db)
-
-        self.filter_hallucinations = QCheckBox(
-            t("Discard stock phrases models invent for near-silent audio")
-        )
-        self.filter_hallucinations.setToolTip(
-            t("Whisper answers silence with things like “Thanks for watching”.")
-        )
-        form.addRow("", self.filter_hallucinations)
-
-        self.keep_audio = QCheckBox(
-            t("Keep audio files ({path})", path=str(cfg.RECORDINGS_DIR))
-        )
-        form.addRow("", self.keep_audio)
-        return page
+        return general_page.build(self)
 
     def _api_tab(self):
-        page = QWidget()
-        outer = QVBoxLayout(page)
+        return providers_page.build(self)
 
-        # The registry first: every provider and every key in one place, the
-        # user's own gateways included, before the rows each job picks its
-        # provider in.
-        outer.addWidget(self._providers_group())
+    def _prompt_tab(self):
+        return cleanup_page.build(self)
 
-        stt = QGroupBox(t("Speech to text"))
-        stt_form = QFormLayout(stt)
-        self.transcribe_provider = QComboBox()
-        for label, value in self._transcribe_choices():
-            self.transcribe_provider.addItem(label, value)
-        stt_form.addRow(t("Provider"), self.transcribe_provider)
+    def _assistant_tab(self):
+        return agent_page.build(self)
 
-        # A hosted provider takes any model id that is typed at it; the local
-        # one offers what has been published. One row each, and only the rows of
-        # whoever is chosen are on screen.
-        self.stt_form = stt_form
-        self.transcribe_model = QComboBox()
-        self.transcribe_model.setEditable(True)
-        self.refresh_transcribe_models = QPushButton(t("Fetch model list"))
-        self.refresh_transcribe_models.clicked.connect(self._load_transcribe_models)
-        self.transcribe_model_row = self._row(self.transcribe_model,
-                                              self.refresh_transcribe_models)
-        stt_form.addRow(t("Model"), self.transcribe_model_row)
-        # A spanning row: in the narrow field column a wrapped label gets a
-        # height that fits one line, and the rest of the text is cut off.
-        self.transcribe_status = QLabel("")
-        self.transcribe_status.setWordWrap(True)
-        stt_form.addRow(self.transcribe_status)
+    def _meeting_tab(self):
+        return meeting_page.build(self)
 
-        self.local_whisper = LocalModelBox(
-            ggml.WHISPER, t("On this machine"),
-            ggml.whisper_models, ggml.whisper_model_path)
-        stt_form.addRow(self.local_whisper)
+    def _minutes_tab(self):
+        return minutes_page.build(self)
 
-        self.local_gpu = QCheckBox(t("Use the graphics card"))
-        self.local_gpu.setToolTip(
-            t("whisper.cpp reaches the card through CUDA, ROCm or Vulkan when the "
-              "build it is running was made with one. A build without any of them "
-              "runs on the processor whatever this says."))
-        self.local_preload = QCheckBox(t("Load the model when Dikte starts"))
-        self.local_preload.setToolTip(
-            t("A large model takes a second or two to load. Loading it up front "
-              "spends that once instead of on the first dictation, at the cost of "
-              "the memory it sits in."))
-        self.local_threads = QSpinBox()
-        self.local_threads.setRange(0, 64)
-        self.local_threads.setSpecialValueText(t("Automatic"))
-        self.local_options = QWidget()
-        options_form = QFormLayout(self.local_options)
-        options_form.setContentsMargins(0, 0, 0, 0)
-        options_form.addRow("", self.local_gpu)
-        options_form.addRow("", self.local_preload)
-        options_form.addRow(t("Threads"), self.local_threads)
-        stt_form.addRow(self.local_options)
+    def _file_tab(self):
+        return audiofile_page.build(self)
 
-        self.transcribe_provider.currentIndexChanged.connect(self._provider_changed)
-        outer.addWidget(stt)
+    def _shortcut_tab(self):
+        return shortcuts_page.build(self)
 
-        orr = QGroupBox(t("Transcript cleanup"))
-        orr_form = self.cleanup_form = QFormLayout(orr)
-        self.cleanup_enabled = QCheckBox(t("Clean the transcript with a model"))
-        orr_form.addRow("", self.cleanup_enabled)
-
-        self.cleanup_provider = QComboBox()
-        for label, value in self._cleanup_choices():
-            self.cleanup_provider.addItem(label, value)
-        self.cleanup_provider.setToolTip(t(
-            "llama.cpp runs here, on a model downloaded below; nothing to pay, "
-            "nothing to install beyond it. Claude Code, Codex and Antigravity "
-            "clean up on the subscription you already have, without a second "
-            "key, and take a few seconds longer because each one opens a "
-            "session to do it."
-        ))
-        self.cleanup_provider.currentIndexChanged.connect(self._cleanup_provider_changed)
-        orr_form.addRow(t("Runs on"), self.cleanup_provider)
-
-        self.cleanup_model = QComboBox()
-        self.cleanup_model.setEditable(True)
-        self.cleanup_model.addItems(CLEANUP_MODELS)
-        self.refresh_models = QPushButton(t("Fetch model list"))
-        self.refresh_models.clicked.connect(self._load_models)
-        self.cleanup_model_row = self._row(self.cleanup_model, self.refresh_models)
-        orr_form.addRow(t("Model"), self.cleanup_model_row)
-
-        # One row per provider rather than one box that means a different thing
-        # in each: a gateway's own model id and a Claude alias do not belong in
-        # the same field, and only the row of whoever is chosen is on screen.
-        self.cleanup_claude_model = QComboBox()
-        self.cleanup_claude_model.setEditable(True)
-        self.cleanup_claude_model.addItems(CLEANUP_CLAUDE_MODELS)
-        self.refresh_claude_models = QPushButton(t("Fetch model list"))
-        self.refresh_claude_models.clicked.connect(self._load_claude_models)
-        self.cleanup_claude_model_row = self._row(self.cleanup_claude_model,
-                                                  self.refresh_claude_models)
-        orr_form.addRow(t("Model"), self.cleanup_claude_model_row)
-
-        self.cleanup_codex_model = QComboBox()
-        self.cleanup_codex_model.setEditable(True)
-        self.cleanup_codex_model.addItems([t("Codex's own default")] + CODEX_MODELS)
-        self.refresh_codex_models = QPushButton(t("Fetch model list"))
-        self.refresh_codex_models.clicked.connect(self._load_codex_models)
-        self.cleanup_codex_model_row = self._row(self.cleanup_codex_model,
-                                                 self.refresh_codex_models)
-        orr_form.addRow(t("Model"), self.cleanup_codex_model_row)
-
-        # Antigravity is the one CLI that lists its own whole catalog; Claude
-        # and Codex fetch the smaller answer, what the user's own settings
-        # name, over the aliases and standing suggestions above.
-        self.cleanup_agy_model = QComboBox()
-        self.cleanup_agy_model.setEditable(True)
-        self.cleanup_agy_model.addItems(AGY_CLEANUP_MODELS)
-        self.refresh_agy_models = QPushButton(t("Fetch model list"))
-        self.refresh_agy_models.clicked.connect(self._load_agy_models)
-        self.cleanup_agy_model_row = self._row(self.cleanup_agy_model,
-                                               self.refresh_agy_models)
-        orr_form.addRow(t("Model"), self.cleanup_agy_model_row)
-
-        self.cleanup_reasoning = QComboBox()
-        for label, value in REASONING_LEVELS:
-            self.cleanup_reasoning.addItem(t(label), value)
-        self.cleanup_reasoning.setToolTip(
-            t("How long a thinking model may reason before it answers. Cleanup is "
-              "a light job, so more thinking mostly costs time and tokens. Models "
-              "that cannot think ignore this.")
-        )
-        orr_form.addRow(t("Thinking"), self.cleanup_reasoning)
-
-        # A quiet second check beside the model rows: not the key, the whole
-        # road — one minimal run through the provider and model chosen above,
-        # so what arrives is proven rather than presumed.
-        self.cleanup_test = QPushButton(t("Test"))
-        self.cleanup_test.setToolTip(t(
-            "Sends one test sentence to the cleanup model and shows its reply. "
-            "Proves the key, the address and the model id together."))
-        self.cleanup_test.clicked.connect(self._test_cleanup_model)
-        self.cleanup_test_status = QLabel("")
-        self.cleanup_test_status.setWordWrap(True)
-        orr_form.addRow(self._row(self.cleanup_test), self.cleanup_test_status)
-
-        self.models_label = QLabel("")
-        self.models_label.setWordWrap(True)
-        orr_form.addRow(self.models_label)
-
-        self.local_llm = LocalModelBox(
-            ggml.LLAMA, t("On this machine"),
-            ggml.llm_quants, ggml.llm_model_path, repos=ggml.llm_repos)
-        orr_form.addRow(self.local_llm)
-
-        self.local_llm_gpu = QCheckBox(t("Use the graphics card"))
-        self.local_llm_preload = QCheckBox(t("Load the model when Dikte starts"))
-        self.local_llm_preload.setToolTip(
-            t("An LLM is slower to load than a whisper model and sits in more "
-              "memory. Off means it is loaded on the first cleanup instead."))
-        self.local_llm_reasoning = QComboBox()
-        for label, value in REASONING_LEVELS:
-            self.local_llm_reasoning.addItem(t(label), value)
-        self.local_llm_reasoning.setToolTip(
-            t("A model trained to think will think unless it is told not to, and "
-              "spending 300 tokens of reasoning on a comma is 300 tokens of "
-              "waiting. Off is what cleanup wants."))
-        self.local_llm_options = QWidget()
-        llm_form = QFormLayout(self.local_llm_options)
-
-        llm_form.setContentsMargins(0, 0, 0, 0)
-        llm_form.addRow("", self.local_llm_gpu)
-        llm_form.addRow("", self.local_llm_preload)
-        llm_form.addRow(t("Thinking"), self.local_llm_reasoning)
-        orr_form.addRow(self.local_llm_options)
-
-        outer.addWidget(orr)
-        outer.addStretch(1)
-        return page
+    def _history_tab(self):
+        return history_page.build(self)
 
     # ---- the provider registry -------------------------------------------
 
-    # What each built-in's key field says while it is empty: where the key
-    # falls back to when nothing is typed.
     KEY_PLACEHOLDERS = {
         "openai": "sk-… (falls back to OPENAI_API_KEY)",
         "groq": "gsk_… (falls back to GROQ_API_KEY)",
@@ -1139,17 +554,10 @@ class SettingsWindow(QDialog):
     }
 
     def _providers_group(self):
-        """Every provider in one place, one row each: its name, the key or
-        credential it holds, what the last check said, and what can be done
-        with it. A built-in's one key lives in its own row; a provider
-        created here is a gateway of the user's own, offered wherever an
-        OpenAI-compatible one fits."""
+        """Every provider in one place, one row each."""
         box = QGroupBox(t("Providers"))
         layout = QVBoxLayout(box)
-        # The built-ins always exist, so their rows — and the key fields and
-        # Test answers inside them — are made once here and only updated. The
-        # user's own gateways come and go, so theirs are rebuilt by every
-        # refresh, under the built-ins, in the registry's order.
+        layout.setContentsMargins(20, 16, 20, 12)
         self.provider_grid = QGridLayout()
         self.provider_grid.setColumnStretch(1, 1)
         self.provider_grid.setColumnStretch(2, 1)
@@ -1165,28 +573,19 @@ class SettingsWindow(QDialog):
 
     def _built_in_rows(self):
         """A row per built-in the registry offers, in its order; how many were
-        drawn.
-
-        A retired gateway joins only while the config still references it, so
-        its key field exists exactly then — a fresh config gets no row for a
-        gateway nobody chose, and no field for a key nobody has."""
+        drawn."""
         row = 0
         for pid, who in providers.definitions(self.conf).items():
             if who.custom:
                 continue
             name = QLabel(who.name)
             self.provider_grid.addWidget(name, row, 0)
-            # Every row's Test asks the registry's own verdict, so a ghost
-            # gateway's key is probed the same way a standing one's is.
             button = QPushButton(t("Test"))
             button.clicked.connect(
                 lambda *_, pid=pid: self._test_provider(pid))
             answer = QLabel("")
             answer.setWordWrap(True)
             if pid in self.KEY_PLACEHOLDERS:
-                # The field, the button and the answer line are the ones
-                # save and load have always gone through; this row only
-                # moves them out of the box they used to sit in.
                 name.setToolTip(providers.base_url(self.conf, pid))
                 field = QLineEdit()
                 field.setEchoMode(QLineEdit.EchoMode.Password)
@@ -1197,8 +596,6 @@ class SettingsWindow(QDialog):
                 self._key_fields[pid] = field
                 self._testers[pid] = (button, answer)
             else:
-                # A local or CLI provider holds no key; its row's middle is
-                # the line that says what it is running, or not running.
                 self.provider_grid.addWidget(answer, row, 1, 1, 2)
                 self.provider_grid.addWidget(button, row, 3)
                 self._testers[pid] = (button, answer)
@@ -1207,8 +604,7 @@ class SettingsWindow(QDialog):
 
     def _rebuild_custom_rows(self, defs):
         """The user's own gateways, row by row, from whatever the registry
-        holds now: the mask of whichever key is active, and the buttons that
-        manage exactly that provider."""
+        holds now."""
         for widget in self._custom_row_widgets:
             self.provider_grid.removeWidget(widget)
             widget.hide()
@@ -1261,7 +657,7 @@ class SettingsWindow(QDialog):
         self._rebuild_custom_rows(defs)
         self._update_local_rows()
         self._update_cli_rows(defs)
-        self._fetch_cli_versions(defs)
+        # CLI version fetch is deferred off the GUI thread via _deferred_load
         self._fill_providers(self.transcribe_provider, self._transcribe_choices())
         self._fill_providers(self.cleanup_provider, self._cleanup_choices())
         self._fill_providers(self.meeting_provider, self._meeting_choices())
@@ -1296,12 +692,7 @@ class SettingsWindow(QDialog):
                     else t("{service} is not installed.", service=who.name))
 
     def _fetch_cli_versions(self, defs):
-        """Ask the CLI providers for their version lines, once per refresh.
-
-        `claude --version` is a program launch, so it belongs off the
-        interface thread like every other answer that can take seconds, and
-        it is asked here rather than while drawing so a repaint costs
-        nothing."""
+        """Ask the CLI providers for their version lines, once per refresh."""
         if self._versions_busy:
             return
         pids = [pid for pid, who in defs.items() if who.transport == "cli"]
@@ -1323,8 +714,7 @@ class SettingsWindow(QDialog):
 
     def _transcribe_choices(self):
         """(label, value) for speech to text: whoever the registry says can
-        hear, this machine first. A fresh config offers the local whisper.cpp
-        and Deepgram; a retired gateway joins when the config references it."""
+        hear, this machine first."""
         out = []
         for pid, who in providers.definitions(self.conf).items():
             if providers.TRANSCRIPTION not in who.capabilities:
@@ -1334,11 +724,7 @@ class SettingsWindow(QDialog):
         return out
 
     def _cleanup_choices(self):
-        """(label, value) for cleanup: everyone cleanup.py can dispatch to.
-
-        The registry's llama entry is `local-llm`, but the setting — and
-        cleanup.provider() — have always said `local` for it, so the row keeps
-        the value the rest of the program resolves."""
+        """(label, value) for cleanup: everyone cleanup.py can dispatch to."""
         out = []
         for pid, who in providers.definitions(self.conf).items():
             if pid == "local-llm":
@@ -1349,10 +735,7 @@ class SettingsWindow(QDialog):
 
     def _meeting_choices(self):
         """(label, value) for the minutes: the local model, the user's own
-        gateways, nothing else. The retired hosted ones are gone from the
-        registry — a config that still named one was migrated to a gateway —
-        and the CLIs stay out: a minutes run is one long request, not a
-        session."""
+        gateways, nothing else."""
         out = [(t("This machine (llama.cpp)"), "local")]
         for pid, who in providers.definitions(self.conf).items():
             if who.custom:
@@ -1436,8 +819,7 @@ class SettingsWindow(QDialog):
         self._persist_providers()
 
     def _test_provider(self, pid):
-        """A row's own verdict, off the interface thread like the key tests:
-        a CLI's version line can take as long as a network request."""
+        """A row's own verdict, off the interface thread like the key tests."""
         if not providers.provider(self.conf, pid):
             return
         conf = self._conf_view(pid)
@@ -1457,980 +839,11 @@ class SettingsWindow(QDialog):
     def _on_provider_test_done(self, pid, ok, message):
         line = ("✓ " if ok else "✗ ") + message
         self._provider_tests[pid] = line
-        # The row can be gone by the time the answer lands: its provider was
-        # removed while the test was running.
         entry = self._testers.get(pid)
         if entry is not None:
             button, answer = entry
             button.setEnabled(True)
             answer.setText(line)
-
-    def _prompt_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-
-        # Two jobs, two sets of rules: dictation is rewritten for reading, an
-        # audio file becomes subtitles that have to stay in sync with the voice.
-        inner = QTabWidget()
-        self.cleanup_prompt = self._prompt_page(
-            inner, t("Dictation"),
-            t("System instruction given to the cleanup model. This is where you "
-              "decide how much it may touch your words."),
-            cfg.default_cleanup_prompt,
-        )
-        self.file_cleanup_prompt = self._prompt_page(
-            inner, t("Audio file"),
-            t("Used instead when an audio or video file is cleaned up. It is "
-              "written for subtitles: lines stay where they are, nothing is "
-              "shortened, and misheard words are repaired from the context."),
-            cfg.default_file_cleanup_prompt,
-        )
-        layout.addWidget(inner, 1)
-
-        hint = QLabel(t("Names and terms you say often (optional). They go to the "
-                        "transcription model as a hint, and to the cleanup model as a "
-                        "glossary, so it can repair the ones that still come out wrong."))
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-        self.transcribe_prompt = QPlainTextEdit()
-        self.transcribe_prompt.setMaximumHeight(90)
-        layout.addWidget(self.transcribe_prompt)
-        return page
-
-    def _assistant_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        intro = QLabel(t(
-            "This shortcut records the same way dictation does, but the "
-            "transcript is not what gets pasted. It goes to an agent as a "
-            "command, and what comes back is pasted instead: the answer to a "
-            "question, or a sentence saying what was done. Claude Code and "
-            "Codex run as the session you would have opened yourself, with your "
-            "skills, your connected services and your account."
-        ))
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-
-        self.assistant_found = QLabel("")
-        self.assistant_found.setWordWrap(True)
-        layout.addWidget(self.assistant_found)
-
-        how = QGroupBox(t("How it runs"))
-        how_form = self.how_form = QFormLayout(how)
-        self._shortcut_row(
-            how_form, "ask", t("Shortcut"),
-            t("No global shortcut installed. The tray menu asks it too."),
-        )
-
-        self.assistant_provider = QComboBox()
-        for label, value in self._assistant_choices():
-            self.assistant_provider.addItem(label, value)
-        self.assistant_provider.currentIndexChanged.connect(
-            self._assistant_provider_changed
-        )
-        how_form.addRow(t("Runs on"), self.assistant_provider)
-
-        self.assistant_dir = QLineEdit()
-        self.assistant_dir.setPlaceholderText(os.path.expanduser("~"))
-        browse = QPushButton(t("Choose…"))
-        browse.clicked.connect(self._choose_assistant_dir)
-        how_form.addRow(t("Working directory"),
-                        self._row(self.assistant_dir, browse))
-        dir_note = QLabel(t(
-            "The directory the command runs in, which decides which project's "
-            "instructions and files it can see. Your own skills and services "
-            "are there whichever one it is."
-        ))
-        dir_note.setWordWrap(True)
-        how_form.addRow(dir_note)
-
-        # One scale for all three: how hard to think is one thing to want, and
-        # each provider is handed the nearest rung it actually has.
-        self.assistant_reasoning = QComboBox()
-        for label, value in REASONING_LEVELS:
-            self.assistant_reasoning.addItem(t(label), value)
-        self.assistant_reasoning.setToolTip(t(
-            "More thinking is slower, and you are standing in front of the "
-            "screen while it happens. Worth it for a job that has to be worked "
-            "out rather than looked up."
-        ))
-        how_form.addRow(t("Thinking"), self.assistant_reasoning)
-
-        self.assistant_timeout = QSpinBox()
-        self.assistant_timeout.setRange(15, 3600)
-        self.assistant_timeout.setSuffix(t(" s"))
-        self.assistant_timeout.setToolTip(t(
-            "A command still running after this is given up on. The tray menu "
-            "can stop one earlier."
-        ))
-        how_form.addRow(t("Give up after"), self.assistant_timeout)
-        layout.addWidget(how)
-
-        # One box per provider, only the chosen one on screen: they have nothing
-        # in common past the model, and three sets of half-relevant fields would
-        # be worse than none.
-        self.claude_box = QGroupBox(t("Claude Code"))
-        claude_form = QFormLayout(self.claude_box)
-        self.assistant_model = QComboBox()
-        self.assistant_model.setEditable(True)
-        self.assistant_model.addItems(ASSISTANT_MODELS)
-        self.assistant_model.setToolTip(t(
-            "A name like “sonnet” always means the newest model of that line. "
-            "Opus thinks harder and answers slower, which is felt here more "
-            "than anywhere else: you are standing in front of the screen."
-        ))
-        self.refresh_assistant_claude_models = QPushButton(t("Fetch model list"))
-        self.refresh_assistant_claude_models.clicked.connect(self._load_claude_models)
-        claude_form.addRow(t("Model"), self._row(
-            self.assistant_model, self.refresh_assistant_claude_models))
-        self.assistant_permission = QComboBox()
-        for label, value in PERMISSION_MODES:
-            self.assistant_permission.addItem(t(label), value)
-        claude_form.addRow(t("Permissions"), self.assistant_permission)
-        layout.addWidget(self.claude_box)
-
-        self.codex_box = QGroupBox(t("Codex"))
-        codex_form = QFormLayout(self.codex_box)
-        self.assistant_codex_model = QComboBox()
-        self.assistant_codex_model.setEditable(True)
-        self.assistant_codex_model.addItem(t("Codex's own default"), "")
-        for name in CODEX_MODELS:
-            self.assistant_codex_model.addItem(name, name)
-        self.refresh_assistant_codex_models = QPushButton(t("Fetch model list"))
-        self.refresh_assistant_codex_models.clicked.connect(self._load_codex_models)
-        codex_form.addRow(t("Model"), self._row(
-            self.assistant_codex_model, self.refresh_assistant_codex_models))
-        self.assistant_codex_sandbox = QComboBox()
-        for label, value in CODEX_SANDBOXES:
-            self.assistant_codex_sandbox.addItem(t(label), value)
-        codex_form.addRow(t("Sandbox"), self.assistant_codex_sandbox)
-        layout.addWidget(self.codex_box)
-
-        self.agy_box = QGroupBox(t("Antigravity"))
-        agy_form = QFormLayout(self.agy_box)
-        self.assistant_agy_model = QComboBox()
-        self.assistant_agy_model.setEditable(True)
-        self.assistant_agy_model.addItems(AGY_ASSISTANT_MODELS)
-        self.refresh_assistant_agy_models = QPushButton(t("Fetch model list"))
-        self.refresh_assistant_agy_models.clicked.connect(self._load_agy_models)
-        agy_form.addRow(t("Model"), self._row(self.assistant_agy_model,
-                                              self.refresh_assistant_agy_models))
-        agy_note = QLabel(t(
-            "Antigravity runs as the account you are signed in with, on the "
-            "computer it is installed on. Its model names are slugs that carry "
-            "the effort, so the shared thinking setting only applies to the "
-            "ones that left it out."))
-        agy_note.setWordWrap(True)
-        agy_form.addRow(agy_note)
-        layout.addWidget(self.agy_box)
-
-        # A gateway of the user's own answers over the same plain chat the
-        # hosted ones used to; the box's title becomes the gateway's name.
-        self.gateway_box = QGroupBox("")
-        gateway_form = QFormLayout(self.gateway_box)
-        self.assistant_gateway_model = QComboBox()
-        self.assistant_gateway_model.setEditable(True)
-        gateway_form.addRow(t("Model"), self.assistant_gateway_model)
-        gateway_note = QLabel(t(
-            "A plain question and a plain answer, over this gateway's own key. "
-            "It runs no commands, opens no files and reaches none of your "
-            "services, so it can tell you what the capital of Peru is but not "
-            "what is in your calendar. Working directory and permissions above "
-            "mean nothing here."
-        ))
-        gateway_note.setWordWrap(True)
-        gateway_form.addRow(gateway_note)
-        layout.addWidget(self.gateway_box)
-
-        thread = QGroupBox(t("The conversation"))
-        thread_form = QFormLayout(thread)
-        self.assistant_session_minutes = QSpinBox()
-        self.assistant_session_minutes.setRange(0, 1440)
-        self.assistant_session_minutes.setSuffix(t(" min"))
-        self.assistant_session_minutes.setSpecialValueText(t("every command on its own"))
-        thread_form.addRow(t("Carry on for"), self.assistant_session_minutes)
-        thread_note = QLabel(t(
-            "Commands within this long of each other are one conversation, so "
-            "“and move that to Thursday” knows what “that” is. After it, the "
-            "next command starts fresh."
-        ))
-        thread_note.setWordWrap(True)
-        thread_form.addRow(thread_note)
-        reset = QPushButton(t("Start a new conversation now"))
-        reset.clicked.connect(self._reset_assistant_session)
-        self.assistant_session_status = QLabel("")
-        self.assistant_session_status.setWordWrap(True)
-        thread_form.addRow(self._row(reset), self.assistant_session_status)
-        layout.addWidget(thread)
-
-        answer = QGroupBox(t("The answer"))
-        answer_form = QFormLayout(answer)
-        self.assistant_paste = QCheckBox(t("Paste it into the focused window"))
-        self.assistant_paste.setToolTip(t(
-            "It is copied to the clipboard either way."
-        ))
-        answer_form.addRow("", self.assistant_paste)
-        self.assistant_cleanup = QCheckBox(t("Clean the transcript up before sending it"))
-        self.assistant_cleanup.setToolTip(t(
-            "Off by default: Claude reads through “erm” and “you know” without "
-            "help, and cleanup costs an API call and a second or two."
-        ))
-        answer_form.addRow("", self.assistant_cleanup)
-        layout.addWidget(answer)
-
-        prompt_label = QLabel(t(
-            "Told to the agent alongside every command, on top of whatever your "
-            "own configuration already says."
-        ))
-        prompt_label.setWordWrap(True)
-        layout.addWidget(prompt_label)
-        self.assistant_prompt = QPlainTextEdit()
-        self.assistant_prompt.setMinimumHeight(180)
-        layout.addWidget(self.assistant_prompt, 1)
-        reset_prompt = QPushButton(t("Reset to default"))
-        reset_prompt.clicked.connect(
-            lambda: self.assistant_prompt.setPlainText(cfg.default_assistant_prompt())
-        )
-        layout.addWidget(reset_prompt, 0, Qt.AlignmentFlag.AlignRight)
-
-        area = QScrollArea()
-        area.setWidgetResizable(True)
-        area.setFrameShape(QScrollArea.Shape.NoFrame)
-        area.setWidget(page)
-        return area
-
-    def _meeting_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        intro = QLabel(t(
-            "A meeting is recorded from two devices at once: your microphone and "
-            "whatever comes out of your speakers. Nothing has to guess who was "
-            "speaking, because the two never share a channel."
-        ))
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-
-        sources = QGroupBox(t("Sound"))
-        sources_form = QFormLayout(sources)
-        self.meeting_mic = QComboBox()
-        self.meeting_mic.addItem(t("Same as dictation"), "")
-        for name, desc in audio.list_sources():
-            self.meeting_mic.addItem(desc, name)
-        sources_form.addRow(t("Microphone"), self.meeting_mic)
-
-        self.meeting_system = QComboBox()
-        self.meeting_system.addItem(t("Current output"), "")
-        for name, desc in audio.list_monitors():
-            self.meeting_system.addItem(desc, name)
-        sources_form.addRow(t("The other participants"), self.meeting_system)
-
-        if audio.sound() is audio.COREAUDIO:
-            mac_note = QLabel(t(
-                "macOS does not offer what the speakers are playing as something "
-                "to record. Install BlackHole or Loopback, send the meeting's "
-                "sound through it, and pick it above."
-            ))
-            mac_note.setWordWrap(True)
-            sources_form.addRow(mac_note)
-
-        note = QLabel(t(
-            "Wear headphones if you can. Through speakers your microphone hears "
-            "the other side as well, and although a line that lands on both "
-            "channels at once is dropped again, the repair is never as clean as "
-            "not needing it."
-        ))
-        note.setWordWrap(True)
-        sources_form.addRow(note)
-        layout.addWidget(sources)
-
-        people = QGroupBox(t("Who is talking"))
-        people_form = QFormLayout(people)
-        self.meeting_self_name = QLineEdit()
-        self.meeting_self_name.setPlaceholderText(t("Me"))
-        people_form.addRow(t("You"), self.meeting_self_name)
-        self.meeting_other_name = QLineEdit()
-        self.meeting_other_name.setPlaceholderText(t("Other side"))
-        people_form.addRow(t("The other end"), self.meeting_other_name)
-        self.meeting_participants = QPlainTextEdit()
-        self.meeting_participants.setMaximumHeight(70)
-        self.meeting_participants.setPlaceholderText(t("One name per line"))
-        people_form.addRow(t("Expected"), self.meeting_participants)
-        people_note = QLabel(t(
-            "Everyone on the far end shares one label: they reach you as a single "
-            "mixed signal. The names go to the transcription model so they come "
-            "out spelled right, and to the minutes, which may use one for a line "
-            "only when the conversation itself makes clear who was speaking."
-        ))
-        people_note.setWordWrap(True)
-        people_form.addRow(people_note)
-        layout.addWidget(people)
-
-        models = QGroupBox(t("Minutes"))
-        models_form = self.meeting_form = QFormLayout(models)
-        self.meeting_provider = QComboBox()
-        # The local model and the hosted gateways all write the minutes over
-        # one request, so the choice is a matter of which key and which bill,
-        # nothing else.
-        for label, value in self._meeting_choices():
-            self.meeting_provider.addItem(label, value)
-        self.meeting_provider.currentIndexChanged.connect(
-            self._meeting_provider_changed)
-        models_form.addRow(t("Runs on"), self.meeting_provider)
-        self.meeting_model = QComboBox()
-        self.meeting_model.setEditable(True)
-        self.meeting_model.addItems(MEETING_MODELS)
-        models_form.addRow(t("Model"), self.meeting_model)
-        self.meeting_reasoning = QComboBox()
-        for label, value in REASONING_LEVELS:
-            self.meeting_reasoning.addItem(t(label), value)
-        self.meeting_reasoning.setToolTip(t(
-            "Unlike cleanup, this one is worth some thinking: it has to hold a "
-            "whole meeting in its head and work out what was actually decided."
-        ))
-        models_form.addRow(t("Thinking"), self.meeting_reasoning)
-        self.meeting_language = QComboBox()
-        self.meeting_language.addItem(t("Same as dictation"), "")
-        for label, code in LANGUAGES:
-            self.meeting_language.addItem(t(label), code)
-        models_form.addRow(t("Speech language"), self.meeting_language)
-        self.meeting_cleanup = QCheckBox(t("Clean the transcript up first"))
-        self.meeting_cleanup.setToolTip(t(
-            "Runs the cleanup model over the transcript before the minutes are "
-            "written, keeping the timestamps and the speaker labels."
-        ))
-        models_form.addRow("", self.meeting_cleanup)
-        layout.addWidget(models)
-
-        recording = QGroupBox(t("Recording"))
-        recording_form = QFormLayout(recording)
-        self.meeting_max_minutes = QSpinBox()
-        self.meeting_max_minutes.setRange(5, 600)
-        self.meeting_max_minutes.setSuffix(t(" min"))
-        recording_form.addRow(t("Longest meeting"), self.meeting_max_minutes)
-        self.meeting_keep_audio = QCheckBox(
-            t("Keep the recording after the minutes are written")
-        )
-        self.meeting_keep_audio.setToolTip(t(
-            "A run that fails keeps its recording either way, so it can be tried "
-            "again from the Minutes tab. This is about the ones that worked."
-        ))
-        recording_form.addRow("", self.meeting_keep_audio)
-
-        self._shortcut_row(
-            recording_form, "meeting", t("Shortcut"),
-            t("No global shortcut installed. The tray menu starts a meeting too."),
-        )
-        layout.addWidget(recording)
-
-        prompt_label = QLabel(t("System instruction given to the minutes model."))
-        prompt_label.setWordWrap(True)
-        layout.addWidget(prompt_label)
-        self.meeting_prompt = QPlainTextEdit()
-        self.meeting_prompt.setMinimumHeight(200)
-        layout.addWidget(self.meeting_prompt, 1)
-        reset = QPushButton(t("Reset to default"))
-        reset.clicked.connect(
-            lambda: self.meeting_prompt.setPlainText(cfg.default_meeting_prompt())
-        )
-        layout.addWidget(reset, 0, Qt.AlignmentFlag.AlignRight)
-
-        # Everything above is more than one screenful; let it scroll rather than
-        # squeezing the prompt box down to nothing.
-        area = QScrollArea()
-        area.setWidgetResizable(True)
-        area.setFrameShape(QScrollArea.Shape.NoFrame)
-        area.setWidget(page)
-        return area
-
-    def _minutes_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-
-        self.minutes_list = QListWidget()
-        self.minutes_list.setWordWrap(True)
-        self.minutes_list.setMaximumHeight(170)
-        self.minutes_list.currentItemChanged.connect(self._show_minutes)
-        layout.addWidget(self.minutes_list)
-
-        self.minutes_status = QLabel("")
-        self.minutes_status.setWordWrap(True)
-        layout.addWidget(self.minutes_status)
-
-        self.minutes_view = QPlainTextEdit()
-        self.minutes_view.setReadOnly(True)
-        self.minutes_view.setPlaceholderText(t("Pick a meeting to read it."))
-        layout.addWidget(self.minutes_view, 1)
-
-        copy = QPushButton(t("Copy"))
-        copy.clicked.connect(
-            lambda: QGuiApplication.clipboard().setText(self.minutes_view.toPlainText())
-        )
-        self.minutes_retry = QPushButton(t("Write it up"))
-        self.minutes_retry.clicked.connect(self._retry_minutes)
-        self.minutes_retry.setEnabled(False)
-        folder = QPushButton(t("Open the folder"))
-        folder.clicked.connect(
-            lambda: QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(cfg.MEETINGS_DIR))
-            )
-        )
-        delete = QPushButton(t("Delete selected"))
-        delete.clicked.connect(self._delete_minutes)
-        reload_ = QPushButton(t("Reload"))
-        reload_.clicked.connect(self._load_minutes)
-        row = QHBoxLayout()
-        row.addWidget(copy)
-        row.addWidget(self.minutes_retry)
-        row.addStretch(1)
-        row.addWidget(folder)
-        row.addWidget(delete)
-        row.addWidget(reload_)
-        layout.addLayout(row)
-        return page
-
-    def _file_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        intro = QLabel(t("Transcribe an existing audio or video file with the same models."))
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-
-        pick = QPushButton(t("Choose file…"))
-        pick.clicked.connect(self._choose_file)
-        self.file_label = QLabel(t("No file selected"))
-        self.file_label.setWordWrap(True)
-        row = QHBoxLayout()
-        row.addWidget(pick)
-        row.addWidget(self.file_label, 1)
-        layout.addLayout(row)
-
-        self.file_timestamps = QCheckBox(t("Add timestamps"))
-        self.file_timestamps.setToolTip(
-            t("Prefixes every segment with [mm:ss]. Uses whisper-1 on whichever "
-              "provider you picked, the only model that returns segment times.")
-        )
-        layout.addWidget(self.file_timestamps)
-
-        self.file_cleanup = QCheckBox(t("Run the cleanup model afterwards"))
-        self.file_cleanup.setToolTip(
-            t("With its own rules, under Cleanup rules: written for subtitles, so "
-              "the lines keep their place and nothing is shortened.")
-        )
-        layout.addWidget(self.file_cleanup)
-
-        self.file_run = QPushButton(t("Transcribe"))
-        self.file_run.clicked.connect(self._run_file)
-        self.file_stop = QPushButton(t("Stop"))
-        self.file_stop.clicked.connect(self._stop_file)
-        self.file_stop.setEnabled(False)
-        run_row = QHBoxLayout()
-        run_row.addWidget(self.file_run)
-        run_row.addWidget(self.file_stop)
-        run_row.addStretch(1)
-        layout.addLayout(run_row)
-
-        self.file_status = QLabel("")
-        self.file_status.setWordWrap(True)
-        layout.addWidget(self.file_status)
-
-        self.file_output = QPlainTextEdit()
-        self.file_output.setPlaceholderText("…")
-        layout.addWidget(self.file_output, 1)
-
-        copy = QPushButton(t("Copy"))
-        copy.clicked.connect(
-            lambda: QGuiApplication.clipboard().setText(self.file_output.toPlainText())
-        )
-        save = QPushButton(t("Save as .txt"))
-        save.clicked.connect(self._save_transcript)
-        self.file_save_srt = QPushButton(t("Save as .srt"))
-        self.file_save_srt.setToolTip(
-            t("Subtitles, timed from the segments. Needs the timestamps option.")
-        )
-        self.file_save_srt.setEnabled(False)
-        self.file_save_srt.clicked.connect(self._save_subtitles)
-        out_row = QHBoxLayout()
-        out_row.addWidget(copy)
-        out_row.addWidget(save)
-        out_row.addWidget(self.file_save_srt)
-        out_row.addStretch(1)
-        layout.addLayout(out_row)
-        return page
-
-    def _shortcut_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        # Both keys in one form, the way the Meeting and Agent tabs already lay
-        # theirs out. Two forms would give each row a label column of its own,
-        # and two combination boxes starting at different places read as two
-        # unrelated settings rather than the pair they are.
-        form = QFormLayout()
-        self._shortcut_row(
-            form, "toggle", t("Start and stop"),
-            t("No global shortcut installed."), placeholder="Ctrl+Space",
-        )
-        # Stopping is what sends the recording off to be transcribed, and that
-        # is the step there is no taking back. By the time the tray menu is
-        # open the sentence you did not mean to dictate is already on its way.
-        self._shortcut_row(
-            form, "cancel", t("Discard the recording"),
-            t("No global shortcut installed. The tray menu discards it too."),
-            tooltip=t("Throws the recording away without transcribing it. Works "
-                      "on a dictation and on a command for the agent alike, "
-                      "whichever is running."),
-        )
-        layout.addLayout(form)
-
-        self.evdev_enabled = QCheckBox(t(
-            "Use the built-in listener (/dev/input), for when the {desktop} "
-            "shortcut is not active yet", desktop=hotkey.desktop_name()
-        ))
-        self.evdev_enabled.setToolTip(t(
-            "Works immediately, no session restart. The only difference: the key "
-            "combination also reaches the focused application."
-        ))
-        layout.addWidget(self.evdev_enabled)
-        # Nothing to wait for where nothing is installed: there the listener is
-        # the mechanism, always on, and not a choice to offer.
-        self.evdev_enabled.setVisible(hotkey.installs_shortcuts())
-
-        if hotkey.shortcut_needs_restart():
-            explanation = t(
-                "KWin only reads shortcut settings at startup. After 'Install' the "
-                "shortcut shows up under System Settings → Shortcuts, but it will "
-                "not fire until you log out and back in. Until then, use the "
-                "built-in listener."
-            )
-        elif hotkey.installs_shortcuts():
-            explanation = t("The shortcut starts working as soon as it is installed.")
-        else:
-            explanation = t(
-                "Dikte asks macOS for these combinations itself, while it is "
-                "running. Nothing is installed, and no other application receives "
-                "them in the meantime."
-            )
-        note = QLabel(explanation)
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        layout.addStretch(1)
-        return page
-
-    def _history_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        self.history = QListWidget()
-        self.history.setWordWrap(True)
-        self.history.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        self.history.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.history.customContextMenuRequested.connect(self._history_menu)
-        self.history.itemDoubleClicked.connect(self._show_history_details)
-        delete_key = QShortcut(QKeySequence.StandardKey.Delete, self.history)
-        delete_key.setContext(Qt.ShortcutContext.WidgetShortcut)
-        delete_key.activated.connect(self._delete_history)
-        layout.addWidget(self.history, 1)
-
-        self.history_limit = QSpinBox()
-        self.history_limit.setRange(0, 10000)
-        self.history_limit.setSpecialValueText(t("no limit"))
-        self.history_limit.setSuffix(t(" entries"))
-        self.history_limit.setToolTip(t(
-            "Once the history passes this many entries, the oldest one is dropped "
-            "every time a new one arrives. Set it to 0 to keep everything."
-        ))
-        limit_row = QHBoxLayout()
-        limit_row.addWidget(QLabel(t("Keep at most")))
-        limit_row.addWidget(self.history_limit)
-        limit_row.addStretch(1)
-        layout.addLayout(limit_row)
-
-        copy = QPushButton(t("Copy selected to clipboard"))
-        copy.clicked.connect(self._copy_history)
-        delete = QPushButton(t("Delete selected"))
-        delete.clicked.connect(self._delete_history)
-        clear = QPushButton(t("Clear history"))
-        clear.clicked.connect(self._clear_history)
-        reload_ = QPushButton(t("Reload"))
-        reload_.clicked.connect(self._load_history)
-        row = QHBoxLayout()
-        row.addWidget(copy)
-        row.addWidget(delete)
-        row.addStretch(1)
-        row.addWidget(clear)
-        row.addWidget(reload_)
-        layout.addLayout(row)
-        return page
-
-    @staticmethod
-    def _prompt_page(tabs, title, intro, default):
-        """A tab holding one editable prompt, and returns its box."""
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        label = QLabel(intro)
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        box = QPlainTextEdit()
-        layout.addWidget(box, 1)
-        reset = QPushButton(t("Reset to default"))
-        reset.clicked.connect(lambda: box.setPlainText(default()))
-        layout.addWidget(reset, 0, Qt.AlignmentFlag.AlignRight)
-        tabs.addTab(page, title)
-        return box
-
-    @staticmethod
-    def _shortcut_box(placeholder=""):
-        """The field a global shortcut is typed or picked in."""
-        box = QComboBox()
-        box.setEditable(True)
-        name = hotkey.desktop_name()
-        if name == "macOS":
-            box.addItems(MAC_SHORTCUTS)
-        elif name == "Windows":
-            box.addItems(WIN_SHORTCUTS)
-        else:
-            box.addItems(SHORTCUTS)
-        box.setCurrentText("")
-        if placeholder:
-            box.lineEdit().setPlaceholderText(placeholder)
-        return box
-
-    def _shortcut_row(self, form, which, label, missing, placeholder="",
-                      tooltip=""):
-        """One global shortcut: the combination, Install, Remove, and a line
-        saying what the desktop has registered. `missing` is what that line
-        says when nothing is."""
-        box = self._shortcut_box(placeholder or t("none"))
-        if tooltip:
-            box.setToolTip(tooltip)
-        form.addRow(label, self._row(box, *self._install_buttons(
-            lambda: self._install_shortcut(which),
-            lambda: self._remove_shortcut(which),
-        )))
-        status = QLabel("")
-        status.setWordWrap(True)
-        form.addRow(status)
-        self._shortcut_rows[which] = (box, status, missing)
-        return box
-
-    @staticmethod
-    def _install_buttons(install_handler, remove_handler):
-        """Install and Remove, where this system has somewhere to install into.
-
-        macOS has not: Dikte asks for the combination itself while it runs, so
-        there is nothing to write down and nothing to take back out.
-        """
-        if not hotkey.installs_shortcuts():
-            return []
-        install = QPushButton(t("Install as a {desktop} shortcut",
-                                desktop=hotkey.desktop_name()))
-        install.clicked.connect(install_handler)
-        remove = QPushButton(t("Remove"))
-        remove.clicked.connect(remove_handler)
-        return [install, remove]
-
-    @staticmethod
-    def _row(*widgets):
-        """Widgets side by side in one form row; the first one takes the space."""
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        for index, widget in enumerate(widgets):
-            layout.addWidget(widget, 1 if index == 0 else 0)
-        holder = QWidget()
-        holder.setLayout(layout)
-        return holder
-
-    # ---- load / save ----------------------------------------------------
-
-    def _load(self):
-        conf = self.conf
-        self._select_data(self.ui_language, conf["ui_language"])
-        self._select_data(self.mic, conf["mic_target"])
-        self._select_data(self.language, conf["language"])
-        self.auto_paste.setChecked(conf["auto_paste"])
-        self.paste_shortcut.setCurrentText(conf["paste_shortcut"])
-        self.restore_clipboard.setChecked(conf["restore_clipboard"])
-        self._select_data(self.corner, conf["overlay_corner"])
-        self.max_seconds.setValue(conf["max_seconds"])
-        self.skip_silent.setChecked(conf["skip_silent"])
-        self.silence_db.setValue(int(conf["silence_db"]))
-        self.filter_hallucinations.setChecked(conf["filter_hallucinations"])
-        self.keep_audio.setChecked(conf["keep_audio"])
-
-        # A retired gateway only has a row while the config references it, so
-        # only the fields that were drawn are loaded — the rest keep whatever
-        # was stored, the way any setting the window does not show does.
-        for pid, field in self._key_fields.items():
-            field.setText(conf[KEY_SETTINGS[pid]])
-        for name, who in cfg.TRANSCRIBERS.items():
-            self._models[name] = conf[who.model]
-        # The registry list and the custom entries in the two provider boxes.
-        self._refresh_providers()
-        for pid, who in providers.definitions(conf).items():
-            if who.custom:
-                self._models[pid] = providers.custom_model(
-                    conf, pid, "transcription")
-        self._shown_provider = ""
-        self._select_data(self.transcribe_provider, conf["transcribe_provider"])
-        self._provider_changed()  # selecting index 0 fires no signal
-        self.local_gpu.setChecked(conf["local_gpu"])
-        self.local_preload.setChecked(conf["local_preload"])
-        self.local_threads.setValue(int(conf["local_threads"]))
-        self.local_whisper.load(conf["local_model"])
-
-        self.cleanup_enabled.setChecked(conf["cleanup_enabled"])
-        chosen_cleanup = conf["cleanup_provider"]
-        self.cleanup_model.setCurrentText(
-            providers.custom_model(conf, chosen_cleanup, "text")
-            if chosen_cleanup.startswith("user/") else conf["cleanup_model"])
-        self.cleanup_claude_model.setCurrentText(conf["cleanup_claude_model"])
-        self.cleanup_codex_model.setCurrentText(
-            conf["cleanup_codex_model"] or t("Codex's own default")
-        )
-        self.cleanup_agy_model.setCurrentText(
-            conf["cleanup_agy_model"] or cfg.DEFAULTS["cleanup_agy_model"])
-        self._select_data(self.cleanup_provider, conf["cleanup_provider"])
-        self._cleanup_provider_changed()  # selecting index 0 fires no signal
-        self._select_data(self.cleanup_reasoning, conf["cleanup_reasoning"])
-        self.local_llm_gpu.setChecked(conf["local_llm_gpu"])
-        self.local_llm_preload.setChecked(conf["local_llm_preload"])
-        self._select_data(self.local_llm_reasoning, conf["local_llm_reasoning"])
-        self.local_llm.load(conf["local_llm_model"], conf["local_llm_repo"])
-        self.cleanup_prompt.setPlainText(conf["cleanup_prompt"] or cfg.default_cleanup_prompt())
-        self.file_cleanup_prompt.setPlainText(
-            conf["file_cleanup_prompt"] or cfg.default_file_cleanup_prompt()
-        )
-        self.transcribe_prompt.setPlainText(conf["transcribe_prompt"])
-
-        self._select_data(self.assistant_provider, conf["assistant_provider"])
-        self.assistant_model.setCurrentText(conf["assistant_model"])
-        self._select_data(self.assistant_permission, conf["assistant_permission_mode"])
-        self.assistant_codex_model.setCurrentText(conf["assistant_codex_model"])
-        self.assistant_agy_model.setCurrentText(
-            conf["assistant_agy_model"] or cfg.DEFAULTS["assistant_agy_model"])
-        self._select_data(self.assistant_codex_sandbox, conf["assistant_codex_sandbox"])
-        self.assistant_gateway_model.setCurrentText(
-            providers.custom_model(conf, conf["assistant_provider"], "assistant"))
-        self._assistant_provider_changed()  # selecting index 0 fires no signal
-        self._select_data(self.assistant_reasoning, conf["assistant_reasoning"])
-        self.assistant_dir.setText(conf["assistant_dir"])
-        self.assistant_timeout.setValue(int(conf["assistant_timeout"]))
-        self.assistant_session_minutes.setValue(int(conf["assistant_session_minutes"]))
-        self.assistant_paste.setChecked(conf["assistant_paste"])
-        self.assistant_cleanup.setChecked(conf["assistant_cleanup"])
-        self.assistant_prompt.setPlainText(
-            conf["assistant_prompt"] or cfg.default_assistant_prompt()
-        )
-
-        self._select_data(self.meeting_mic, conf["meeting_mic_target"])
-        self._select_data(self.meeting_system, conf["meeting_system_target"])
-        self.meeting_self_name.setText(conf["meeting_self_name"])
-        self.meeting_other_name.setText(conf["meeting_other_name"])
-        self.meeting_participants.setPlainText(conf["meeting_participants"])
-        self._select_data(self.meeting_provider, conf["meeting_provider"])
-        chosen_minutes = conf["meeting_provider"]
-        self.meeting_model.setCurrentText(
-            providers.custom_model(conf, chosen_minutes, "minutes")
-            if chosen_minutes.startswith("user/") else conf["meeting_model"])
-        self._meeting_provider_changed()  # selecting index 0 fires no signal
-        self._select_data(self.meeting_reasoning, conf["meeting_reasoning"])
-        self._select_data(self.meeting_language, conf["meeting_language"])
-        self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
-        self.meeting_max_minutes.setValue(max(5, int(conf["meeting_max_seconds"]) // 60))
-        self.meeting_keep_audio.setChecked(conf["meeting_keep_audio"])
-        self.meeting_prompt.setPlainText(
-            conf["meeting_prompt"] or cfg.default_meeting_prompt()
-        )
-
-        self.file_timestamps.setChecked(conf["file_timestamps"])
-        self.file_cleanup.setChecked(conf["file_cleanup"])
-        self.file_path = ""
-
-        for which, (box, _status, _missing) in self._shortcut_rows.items():
-            box.setCurrentText(conf[hotkey.SHORTCUTS[which].setting])
-        self.evdev_enabled.setChecked(conf["evdev_hotkey"])
-
-        self.history_limit.setValue(max(0, int(conf["history_limit"])))
-
-        # Defer nonessential initialization (disk reads for history/minutes and
-        # external status queries) so the window shell and active tab controls
-        # appear immediately.
-        QTimer.singleShot(0, self._deferred_load)
-
-    def _deferred_load(self):
-        for which in self._shortcut_rows:
-            self._refresh_shortcut_status(which)
-        self._refresh_assistant_status()
-        self._load_history()
-        self._load_minutes()
-
-    def _save(self):
-        conf = self.conf
-        conf["ui_language"] = self.ui_language.currentData() or "auto"
-        conf["mic_target"] = self.mic.currentData() or ""
-        conf["language"] = self.language.currentData() or "auto"
-        conf["auto_paste"] = self.auto_paste.isChecked()
-        conf["paste_shortcut"] = self.paste_shortcut.currentText().strip()
-        conf["restore_clipboard"] = self.restore_clipboard.isChecked()
-        conf["overlay_corner"] = self.corner.currentData() or "bottom-left"
-        conf["max_seconds"] = self.max_seconds.value()
-        conf["skip_silent"] = self.skip_silent.isChecked()
-        conf["silence_db"] = float(self.silence_db.value())
-        conf["filter_hallucinations"] = self.filter_hallucinations.isChecked()
-        conf["keep_audio"] = self.keep_audio.isChecked()
-
-        provider = self.transcribe_provider.currentData() or "local"
-        if provider in self._models or provider.startswith("user/"):
-            self._models[provider] = self.transcribe_model.currentText().strip()
-        conf["transcribe_provider"] = provider
-        if provider.startswith("user/"):
-            # The gateway's own entry carries its model; no flat setting of
-            # another provider's is written over it.
-            providers.set_custom_model(conf, provider, "transcription",
-                                       self._models[provider])
-        for name, who in cfg.TRANSCRIBERS.items():
-            conf[who.model] = self._models[name].strip() or cfg.DEFAULTS[who.model]
-        # Only the fields that were drawn: a gateway with no row was never
-        # offered a key here, and its stored one is not the window's to clear.
-        for pid, setting in KEY_SETTINGS.items():
-            if pid in self._key_fields:
-                conf[setting] = self._key_fields[pid].text().strip()
-        conf["local_model"] = self.local_whisper.selected()
-        conf["local_gpu"] = self.local_gpu.isChecked()
-        conf["local_preload"] = self.local_preload.isChecked()
-        conf["local_threads"] = self.local_threads.value()
-
-        conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
-        cleanup_provider = self.cleanup_provider.currentData() or "local"
-        conf["cleanup_provider"] = cleanup_provider
-        if cleanup_provider.startswith("user/"):
-            # The shared row edits the gateway's own model, held in its entry.
-            providers.set_custom_model(conf, cleanup_provider, "text",
-                                       self.cleanup_model.currentText().strip())
-        else:
-            conf["cleanup_model"] = self.cleanup_model.currentText().strip()
-        conf["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip()
-                                        or cfg.DEFAULTS["cleanup_claude_model"])
-        codex_cleanup_model = self.cleanup_codex_model.currentText().strip()
-        conf["cleanup_codex_model"] = (
-            "" if codex_cleanup_model == t("Codex's own default") else codex_cleanup_model
-        )
-        conf["cleanup_agy_model"] = (self.cleanup_agy_model.currentText().strip()
-                                     or cfg.DEFAULTS["cleanup_agy_model"])
-        conf["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
-        conf["local_llm_model"] = self.local_llm.selected()
-        conf["local_llm_repo"] = self.local_llm.repository()
-        conf["local_llm_gpu"] = self.local_llm_gpu.isChecked()
-        conf["local_llm_preload"] = self.local_llm_preload.isChecked()
-        conf["local_llm_reasoning"] = self.local_llm_reasoning.currentData() or ""
-
-        # Store an empty prompt when it matches the default, so switching the
-        # interface language also switches the prompt language.
-        prompt = self.cleanup_prompt.toPlainText().strip()
-        conf["cleanup_prompt"] = "" if prompt == cfg.default_cleanup_prompt() else prompt
-        file_prompt = self.file_cleanup_prompt.toPlainText().strip()
-        conf["file_cleanup_prompt"] = ("" if file_prompt == cfg.default_file_cleanup_prompt()
-                                       else file_prompt)
-        conf["transcribe_prompt"] = self.transcribe_prompt.toPlainText().strip()
-
-        assistant_provider = self.assistant_provider.currentData() or "claude"
-        conf["assistant_provider"] = assistant_provider
-        if assistant_provider.startswith("user/"):
-            # The gateway's own entry holds the model its commands run on,
-            # apart from the ones its cleanup and minutes run on.
-            providers.set_custom_model(
-                conf, assistant_provider, "assistant",
-                self.assistant_gateway_model.currentText().strip())
-        conf["assistant_model"] = (self.assistant_model.currentText().strip()
-                                   or cfg.DEFAULTS["assistant_model"])
-        conf["assistant_permission_mode"] = (self.assistant_permission.currentData()
-                                             or "auto")
-        # The editable box shows a label for "no choice", which must not be
-        # stored as if it were a model id.
-        codex_model = self.assistant_codex_model.currentText().strip()
-        conf["assistant_codex_model"] = (
-            "" if codex_model == t("Codex's own default") else codex_model
-        )
-        conf["assistant_agy_model"] = (self.assistant_agy_model.currentText().strip()
-                                       or cfg.DEFAULTS["assistant_agy_model"])
-        conf["assistant_codex_sandbox"] = (self.assistant_codex_sandbox.currentData()
-                                           or "workspace-write")
-        conf["assistant_reasoning"] = self.assistant_reasoning.currentData() or ""
-        conf["assistant_dir"] = self.assistant_dir.text().strip()
-        conf["assistant_timeout"] = self.assistant_timeout.value()
-        conf["assistant_session_minutes"] = self.assistant_session_minutes.value()
-        conf["assistant_paste"] = self.assistant_paste.isChecked()
-        conf["assistant_cleanup"] = self.assistant_cleanup.isChecked()
-        assistant_prompt = self.assistant_prompt.toPlainText().strip()
-        conf["assistant_prompt"] = ("" if assistant_prompt == cfg.default_assistant_prompt()
-                                    else assistant_prompt)
-
-        conf["meeting_mic_target"] = self.meeting_mic.currentData() or ""
-        conf["meeting_system_target"] = self.meeting_system.currentData() or ""
-        conf["meeting_self_name"] = self.meeting_self_name.text().strip()
-        conf["meeting_other_name"] = self.meeting_other_name.text().strip()
-        conf["meeting_participants"] = self.meeting_participants.toPlainText().strip()
-        conf["meeting_provider"] = self.meeting_provider.currentData() or "local"
-        if conf["meeting_provider"].startswith("user/"):
-            # The gateway's own entry holds its minutes model apart, the way
-            # the cleanup model and the transcription model are held apart.
-            providers.set_custom_model(conf, conf["meeting_provider"], "minutes",
-                                       self.meeting_model.currentText().strip())
-        else:
-            conf["meeting_model"] = (self.meeting_model.currentText().strip()
-                                     or cfg.DEFAULTS["meeting_model"])
-        conf["meeting_reasoning"] = self.meeting_reasoning.currentData() or ""
-        conf["meeting_language"] = self.meeting_language.currentData() or ""
-        conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
-        conf["meeting_max_seconds"] = self.meeting_max_minutes.value() * 60
-        conf["meeting_keep_audio"] = self.meeting_keep_audio.isChecked()
-        meeting_prompt = self.meeting_prompt.toPlainText().strip()
-        conf["meeting_prompt"] = ("" if meeting_prompt == cfg.default_meeting_prompt()
-                                  else meeting_prompt)
-
-        conf["file_timestamps"] = self.file_timestamps.isChecked()
-        conf["file_cleanup"] = self.file_cleanup.isChecked()
-
-        # Left empty, only the toggle falls back to a default: the application
-        # is unusable without it. The other three stay empty, which is what
-        # turns them off.
-        for which, (box, _status, _missing) in self._shortcut_rows.items():
-            spec = hotkey.SHORTCUTS[which]
-            conf[spec.setting] = box.currentText().strip() or spec.fallback
-        conf["evdev_hotkey"] = self.evdev_enabled.isChecked()
-        conf["history_limit"] = self.history_limit.value()
-        # The write is the one part of Save that can fail for operational
-        # reasons: a read-only settings directory, a full disk, or (on Windows)
-        # an antivirus holding the config file locked. If it does, the exception
-        # must not escape this slot -- PyQt turns an unhandled exception in a
-        # slot into a terminated process, which is how Save used to just "close"
-        # the app. Surface the failure, keep the already-collected settings held
-        # in memory, and report that nothing was saved.
-        try:
-            conf.save()
-        except OSError as exc:
-            QMessageBox.warning(
-                self, t("Dikte Settings"),
-                t("Could not save the settings: {error}", error=exc))
-            return
-        # A lowered limit should bite now, not on the next dictation.
-        try:
-            cfg.trim_history(conf["history_limit"])
-        except OSError as exc:
-            print(f"dikte: could not trim the history ({exc})", file=sys.stderr)
-        self._load_history()  # the trim may just have dropped rows from the list
-
-        try:
-            self.applied.emit()
-        except Exception as exc:
-            print(f"dikte: settings saved but apply failed: {exc}", file=sys.stderr)
-
-        QMessageBox.information(self, t("Dikte Settings"), t("Saved successfully."))
-
-    @staticmethod
-    def _select_data(combo, value):
-        index = combo.findData(value)
-        combo.setCurrentIndex(index if index >= 0 else 0)
 
     # ---- api helpers -----------------------------------------------------
 
@@ -2525,7 +938,6 @@ class SettingsWindow(QDialog):
         if error:
             self.models_label.setText(t("Could not fetch the list: {error}", error=error))
             return
-        # One catalog, two boxes that read from it; both keep what is chosen.
         for combo in (self.cleanup_agy_model, self.assistant_agy_model):
             current = combo.currentText()
             combo.clear()
@@ -2535,8 +947,7 @@ class SettingsWindow(QDialog):
 
     def _load_claude_models(self):
         """The models the user's own Claude Code settings name, for whichever
-        Claude row asked. The aliases always lead; this adds what this
-        machine actually runs."""
+        Claude row asked."""
         self.refresh_claude_models.setEnabled(False)
         self.refresh_assistant_claude_models.setEnabled(False)
         self.models_label.setText(t("Fetching model list…"))
@@ -2545,8 +956,6 @@ class SettingsWindow(QDialog):
             try:
                 self._claude_models_loaded.emit(providers.claude_models(), "")
             except Exception as exc:
-                # claude_models() is written not to raise; a broken promise
-                # must not leave the buttons dead for good.
                 self._claude_models_loaded.emit([], str(exc))
 
         threading.Thread(target=work, daemon=True).start()
@@ -2558,8 +967,6 @@ class SettingsWindow(QDialog):
             self.models_label.setText(t("Could not fetch the list: {error}", error=error))
             return
         if models:
-            # One settings file, two boxes that read from it; both keep what
-            # is chosen.
             for combo in (self.cleanup_claude_model, self.assistant_model):
                 current = combo.currentText()
                 combo.clear()
@@ -2567,8 +974,6 @@ class SettingsWindow(QDialog):
                 combo.setCurrentText(current)
             self.models_label.setText(t("{count} models loaded.", count=len(models)))
         else:
-            # Nothing is named in the settings; the aliases the CLI itself
-            # resolves stay as they are rather than emptying the boxes.
             self.models_label.setText(
                 t("No models named in your own settings; the standing list stays."))
 
@@ -2597,8 +1002,6 @@ class SettingsWindow(QDialog):
             for combo in (self.cleanup_codex_model, self.assistant_codex_model):
                 current = combo.currentText()
                 combo.clear()
-                # The label for "no choice" leads here too: an empty model
-                # still means whatever Codex itself is set to.
                 combo.addItem(t("Codex's own default"))
                 combo.addItems(models)
                 combo.setCurrentText(current)
@@ -2613,8 +1016,6 @@ class SettingsWindow(QDialog):
             self.models_label.setText(t("Could not fetch the list: {error}", error=error))
             return
         provider = self.cleanup_provider.currentData() or "local"
-        # The fetched list is one catalog's, so it fills only the rows that
-        # read from that catalog; a job on another provider keeps its own.
         combos = [self.cleanup_model]
         for box, chosen in ((self.meeting_model, self.meeting_provider),
                             (self.assistant_gateway_model,
@@ -2630,12 +1031,7 @@ class SettingsWindow(QDialog):
 
     def _cleanup_conf_view(self):
         """The cleanup settings as they sit on screen right now, key, provider,
-        model and all, for the Test button to run through.
-
-        What is typed in the window is what a test should prove, not what was
-        last saved; a user/* gateway's model lands in a copy of its entry so
-        the real one is not written from a test.
-        """
+        model and all, for the Test button to run through."""
         provider = self.cleanup_provider.currentData() or "local"
         conf = self._conf_view(provider)
         conf.data["cleanup_provider"] = provider
@@ -2649,7 +1045,6 @@ class SettingsWindow(QDialog):
             providers.set_custom_model(conf, provider, "text",
                                        self.cleanup_model.currentText().strip())
         elif provider == "local":
-            # The model is the download box's choice, not an editable id.
             conf.data["local_llm_model"] = self.local_llm.selected()
             conf.data["local_llm_reasoning"] = (
                 self.local_llm_reasoning.currentData() or "")
@@ -2663,8 +1058,7 @@ class SettingsWindow(QDialog):
 
     def _test_cleanup_model(self):
         """One minimal run through the cleanup provider and model set above,
-        off the interface thread: a CLI run or a local model can take as long
-        as a network request."""
+        off the interface thread."""
         conf = self._cleanup_conf_view()
         self.cleanup_test.setEnabled(False)
         self.cleanup_test_status.setText(t("Trying…"))
@@ -2697,14 +1091,7 @@ class SettingsWindow(QDialog):
         self._remember_file_choices()
 
     def _remember_file_choices(self):
-        """Keep this tab's choices without waiting for the Save button.
-
-        The two switches and the folder belong to the run rather than to the
-        form: what was ticked before Transcribe is what the next file wants
-        too, and Save is at the far end of a window opened to transcribe one
-        file. Everything else on the tab is a button, so there is nothing here
-        an unsaved form could be caught by.
-        """
+        """Keep this tab's choices without waiting for the Save button."""
         self.conf["file_timestamps"] = self.file_timestamps.isChecked()
         self.conf["file_cleanup"] = self.file_cleanup.isChecked()
         self.conf.save()
@@ -2724,8 +1111,6 @@ class SettingsWindow(QDialog):
         )
 
     def _stop_file(self):
-        # The button goes dead here rather than when the run comes back, so a
-        # second press cannot land while the first one is still travelling.
         self.file_stop.setEnabled(False)
         self.file_status.setText(t("Stopping…"))
         self.transcriber.stop()
@@ -2827,8 +1212,6 @@ class SettingsWindow(QDialog):
     def _cleanup_provider_changed(self):
         provider = self.cleanup_provider.currentData() or "local"
         custom = providers.provider(self.conf, provider)
-        # A gateway of the user's own answers the hosted request, so it owns
-        # the shared model row and the fetch button beside it.
         gateway = custom is not None and custom.custom
         self.cleanup_form.setRowVisible(self.cleanup_model_row, gateway)
         self.cleanup_form.setRowVisible(self.cleanup_claude_model_row,
@@ -2837,8 +1220,6 @@ class SettingsWindow(QDialog):
                                         provider == "codex")
         self.cleanup_form.setRowVisible(self.cleanup_agy_model_row,
                                         provider == "antigravity")
-        # Antigravity's model slugs carry the effort (…-low, …-high), so a
-        # separate thinking choice would be a second word fighting the first.
         self.cleanup_form.setRowVisible(self.cleanup_reasoning,
                                         provider not in ("local",
                                                          "antigravity"))
@@ -2870,16 +1251,12 @@ class SettingsWindow(QDialog):
         self.gateway_box.setVisible(gateway)
         if gateway and who is not None:
             self.gateway_box.setTitle(who.name)
-        # Antigravity's slugs carry the effort in the model name, so the
-        # shared thinking row would only lie; the box above names it instead.
         self.how_form.setRowVisible(self.assistant_reasoning,
                                     provider != "antigravity")
         self._refresh_assistant_status()
 
     def _meeting_provider_changed(self):
         provider = self.meeting_provider.currentData() or "local"
-        # One row per provider, as in the cleanup group above: a hosted
-        # gateway's id and a local model file are not the same field.
         self.meeting_form.setRowVisible(
             self.meeting_model, provider.startswith("user/"))
 
@@ -2889,8 +1266,6 @@ class SettingsWindow(QDialog):
         binary = assistant.executable(provider)
         found = shutil.which(binary) if binary else ""
         if who is not None and who.custom:
-            # A gateway is reached over HTTP, like the hosted ones used to be:
-            # no program to find, only whichever of its keys is active.
             self.assistant_found.setText(
                 t("Needs no program installed, only the {service} key.",
                   service=who.name)
@@ -2965,8 +1340,6 @@ class SettingsWindow(QDialog):
         row = self._selected_meeting()
         if not row or self.meetings is None or self.meetings.busy:
             return
-        # A row that already has its transcript resumes from there; only a run
-        # that never got that far goes back to the audio.
         self.meetings.run(row)
         self.minutes_retry.setEnabled(False)
         self.minutes_status.setText(t("Working…"))
@@ -3010,8 +1383,6 @@ class SettingsWindow(QDialog):
             header = t("{ts}  ({duration} s)",
                        ts=row.get("ts", ""), duration=row.get("duration", 0))
             if row.get("mode") == "ask":
-                # The text of an answer says nothing about what was asked, and
-                # out of that context half of them read like non sequiturs.
                 asked = (row.get("question") or row.get("raw") or "").replace("\n", " ")
                 header += t("  ·  asked Claude: {question}",
                             question=asked[:60] + ("…" if len(asked) > 60 else ""))
@@ -3035,8 +1406,6 @@ class SettingsWindow(QDialog):
         rows = self._selected_rows()
         if not rows:
             return
-        # One entry goes without asking; a multi-selection is easy to make by
-        # accident, and there is no undo.
         if len(rows) > 1 and not self._confirm(
             t("Delete the {count} selected entries?", count=len(rows))
         ):
@@ -3101,3 +1470,467 @@ class SettingsWindow(QDialog):
             self._delete_history()
         elif chosen is clear:
             self._clear_history()
+
+    # ---- theme -----------------------------------------------------------
+
+    def _toggle_theme(self):
+        self._theme = "light" if self._theme == "dark" else "dark"
+        _theme.apply(self._theme)
+        self.shell.set_theme(self._theme)
+        # Refresh overlay windows (top-level, not children) so tint updates live
+        try:
+            from PyQt6.QtWidgets import QApplication
+            for w in QApplication.topLevelWidgets():
+                if w.__class__.__name__ == "Overlay" and hasattr(w, "update"):
+                    w.update()
+                # refresh corner picker / mini if visible
+                if hasattr(w, "corner_picker"):
+                    try:
+                        w.corner_picker.update()
+                    except Exception:
+                        pass
+            # also reapply icons for nav (shell handles)
+        except Exception:
+            pass
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        try:
+            w = self.width()
+            # 920: collapse sidebar (226->64), 1080: page padding, 760: row stacking
+            if hasattr(self, "shell") and hasattr(self.shell, "setCompact"):
+                self.shell.setCompact(w < 920)
+            # Narrow rows <760
+            is_narrow = w < 760
+            try:
+                from ui.widgets import SettingRow
+                for row in self.findChildren(SettingRow):
+                    row.setNarrow(is_narrow)
+            except Exception:
+                pass
+            # Page margins <1080
+            try:
+                from ui.pages import apply_page_margins_for_width
+                apply_page_margins_for_width(self, w)
+            except Exception:
+                pass
+            # Provider grid column hiding at <1080 and single-column at <760
+            if hasattr(self, "provider_grid"):
+                is_compact = w < 1080
+                for r in range(self.provider_grid.rowCount()):
+                    item = self.provider_grid.itemAtPosition(r, 1)
+                    if item is not None and item.widget() is not None:
+                        item.widget().setVisible(not is_compact)
+                # At <760 provider grid becomes single column; ensure column 2 also visible? keep simple
+        except Exception:
+            pass
+
+    # ---- helpers ---------------------------------------------------------
+
+    @staticmethod
+    def _prompt_page(tabs, title, intro, default):
+        """A tab holding one editable prompt, and returns its box."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        label = QLabel(intro)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        box = QPlainTextEdit()
+        layout.addWidget(box, 1)
+        reset = QPushButton(t("Reset to default"))
+        reset.clicked.connect(lambda: box.setPlainText(default()))
+        layout.addWidget(reset, 0, Qt.AlignmentFlag.AlignRight)
+        tabs.addTab(page, title)
+        return box
+
+    @staticmethod
+    def _shortcut_box(placeholder=""):
+        """The field a global shortcut is typed or picked in."""
+        box = QComboBox()
+        box.setEditable(True)
+        name = hotkey.desktop_name()
+        if name == "macOS":
+            box.addItems(MAC_SHORTCUTS)
+        elif name == "Windows":
+            box.addItems(WIN_SHORTCUTS)
+        else:
+            box.addItems(SHORTCUTS)
+        box.setCurrentText("")
+        if placeholder:
+            box.lineEdit().setPlaceholderText(placeholder)
+        return box
+
+    def _shortcut_row(self, form, which, label, missing, placeholder="",
+                      tooltip=""):
+        """One global shortcut: the combination, Install, Remove, and a line
+        saying what the desktop has registered."""
+        box = self._shortcut_box(placeholder or t("none"))
+        if tooltip:
+            box.setToolTip(tooltip)
+        form.addRow(label, self._row(box, *self._install_buttons(
+            lambda: self._install_shortcut(which),
+            lambda: self._remove_shortcut(which),
+        )))
+        status = QLabel("")
+        status.setWordWrap(True)
+        form.addRow(status)
+        self._shortcut_rows[which] = (box, status, missing)
+        return box
+
+    @staticmethod
+    def _install_buttons(install_handler, remove_handler):
+        """Install and Remove, where this system has somewhere to install into."""
+        if not hotkey.installs_shortcuts():
+            return []
+        install = QPushButton(t("Install as a {desktop} shortcut",
+                                desktop=hotkey.desktop_name()))
+        install.clicked.connect(install_handler)
+        remove = QPushButton(t("Remove"))
+        remove.clicked.connect(remove_handler)
+        return [install, remove]
+
+    @staticmethod
+    def _row(*widgets):
+        """Widgets side by side in one form row; the first one takes the space."""
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        for index, widget in enumerate(widgets):
+            layout.addWidget(widget, 1 if index == 0 else 0)
+        holder = QWidget()
+        holder.setLayout(layout)
+        return holder
+
+    # ---- load / save ----------------------------------------------------
+
+    def _load(self):
+        conf = self.conf
+        self._select_data(self.ui_language, conf["ui_language"])
+        self._select_data(self.mic, conf["mic_target"])
+        self._select_data(self.language, conf["language"])
+        self.auto_paste.setChecked(conf["auto_paste"])
+        self.paste_shortcut.setCurrentText(conf["paste_shortcut"])
+        self.restore_clipboard.setChecked(conf["restore_clipboard"])
+        self._select_data(self.corner, conf["overlay_corner"])
+        self.max_seconds.setValue(conf["max_seconds"])
+        self.skip_silent.setChecked(conf["skip_silent"])
+        self.silence_db.setValue(int(conf["silence_db"]))
+        self.filter_hallucinations.setChecked(conf["filter_hallucinations"])
+        self.keep_audio.setChecked(conf["keep_audio"])
+
+        for pid, field in self._key_fields.items():
+            field.setText(conf[KEY_SETTINGS[pid]])
+        for name, who in cfg.TRANSCRIBERS.items():
+            self._models[name] = conf[who.model]
+        self._refresh_providers()
+        for pid, who in providers.definitions(conf).items():
+            if who.custom:
+                self._models[pid] = providers.custom_model(
+                    conf, pid, "transcription")
+        self._shown_provider = ""
+        self._select_data(self.transcribe_provider, conf["transcribe_provider"])
+        self._provider_changed()  # selecting index 0 fires no signal
+        self.local_gpu.setChecked(conf["local_gpu"])
+        self.local_preload.setChecked(conf["local_preload"])
+        self.local_threads.setValue(int(conf["local_threads"]))
+        self.local_whisper.load(conf["local_model"])
+
+        self.cleanup_enabled.setChecked(conf["cleanup_enabled"])
+        chosen_cleanup = conf["cleanup_provider"]
+        self.cleanup_model.setCurrentText(
+            providers.custom_model(conf, chosen_cleanup, "text")
+            if chosen_cleanup.startswith("user/") else conf["cleanup_model"])
+        self.cleanup_claude_model.setCurrentText(conf["cleanup_claude_model"])
+        self.cleanup_codex_model.setCurrentText(
+            conf["cleanup_codex_model"] or t("Codex's own default")
+        )
+        self.cleanup_agy_model.setCurrentText(
+            conf["cleanup_agy_model"] or cfg.DEFAULTS["cleanup_agy_model"])
+        self._select_data(self.cleanup_provider, conf["cleanup_provider"])
+        self._cleanup_provider_changed()  # selecting index 0 fires no signal
+        self._select_data(self.cleanup_reasoning, conf["cleanup_reasoning"])
+        self.local_llm_gpu.setChecked(conf["local_llm_gpu"])
+        self.local_llm_preload.setChecked(conf["local_llm_preload"])
+        self._select_data(self.local_llm_reasoning, conf["local_llm_reasoning"])
+        self.local_llm.load(conf["local_llm_model"], conf["local_llm_repo"])
+        self.cleanup_prompt.setPlainText(conf["cleanup_prompt"] or cfg.default_cleanup_prompt())
+        self.file_cleanup_prompt.setPlainText(
+            conf["file_cleanup_prompt"] or cfg.default_file_cleanup_prompt()
+        )
+        self.transcribe_prompt.setPlainText(conf["transcribe_prompt"])
+
+        self._select_data(self.assistant_provider, conf["assistant_provider"])
+        self.assistant_model.setCurrentText(conf["assistant_model"])
+        self._select_data(self.assistant_permission, conf["assistant_permission_mode"])
+        self.assistant_codex_model.setCurrentText(conf["assistant_codex_model"])
+        self.assistant_agy_model.setCurrentText(
+            conf["assistant_agy_model"] or cfg.DEFAULTS["assistant_agy_model"])
+        self._select_data(self.assistant_codex_sandbox, conf["assistant_codex_sandbox"])
+        self.assistant_gateway_model.setCurrentText(
+            providers.custom_model(conf, conf["assistant_provider"], "assistant"))
+        self._assistant_provider_changed()  # selecting index 0 fires no signal
+        self._select_data(self.assistant_reasoning, conf["assistant_reasoning"])
+        self.assistant_dir.setText(conf["assistant_dir"])
+        self.assistant_timeout.setValue(int(conf["assistant_timeout"]))
+        self.assistant_session_minutes.setValue(int(conf["assistant_session_minutes"]))
+        self.assistant_paste.setChecked(conf["assistant_paste"])
+        self.assistant_cleanup.setChecked(conf["assistant_cleanup"])
+        self.assistant_prompt.setPlainText(
+            conf["assistant_prompt"] or cfg.default_assistant_prompt()
+        )
+
+        self._select_data(self.meeting_mic, conf["meeting_mic_target"])
+        self._select_data(self.meeting_system, conf["meeting_system_target"])
+        self.meeting_self_name.setText(conf["meeting_self_name"])
+        self.meeting_other_name.setText(conf["meeting_other_name"])
+        self.meeting_participants.setPlainText(conf["meeting_participants"])
+        self._select_data(self.meeting_provider, conf["meeting_provider"])
+        chosen_minutes = conf["meeting_provider"]
+        self.meeting_model.setCurrentText(
+            providers.custom_model(conf, chosen_minutes, "minutes")
+            if chosen_minutes.startswith("user/") else conf["meeting_model"])
+        self._meeting_provider_changed()  # selecting index 0 fires no signal
+        self._select_data(self.meeting_reasoning, conf["meeting_reasoning"])
+        self._select_data(self.meeting_language, conf["meeting_language"])
+        self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
+        self.meeting_max_minutes.setValue(max(5, int(conf["meeting_max_seconds"]) // 60))
+        self.meeting_keep_audio.setChecked(conf["meeting_keep_audio"])
+        self.meeting_prompt.setPlainText(
+            conf["meeting_prompt"] or cfg.default_meeting_prompt()
+        )
+
+        self.file_timestamps.setChecked(conf["file_timestamps"])
+        self.file_cleanup.setChecked(conf["file_cleanup"])
+        self.file_path = ""
+
+        for which, (box, _status, _missing) in self._shortcut_rows.items():
+            box.setCurrentText(conf[hotkey.SHORTCUTS[which].setting])
+        self.evdev_enabled.setChecked(conf["evdev_hotkey"])
+
+        self.history_limit.setValue(max(0, int(conf["history_limit"])))
+
+        QTimer.singleShot(0, self._deferred_load)
+
+    def _deferred_load(self):
+        for which in self._shortcut_rows:
+            self._refresh_shortcut_status(which)
+        self._refresh_assistant_status()
+        self._load_history()
+        self._load_minutes()
+        # Deferred work off the GUI thread: CLI versions and audio devices
+        try:
+            self._fetch_cli_versions(providers.definitions(self.conf))
+        except Exception:
+            pass
+        QTimer.singleShot(0, self._load_audio_devices)
+
+    def _load_audio_devices(self):
+        """Enumerate microphones/monitors off the GUI thread."""
+        def work():
+            try:
+                sources = audio.cached_list_sources()
+            except Exception:
+                sources = []
+            self._audio_sources_loaded.emit(sources)
+            try:
+                monitors = audio.cached_list_monitors()
+            except Exception:
+                monitors = []
+            self._audio_monitors_loaded.emit(monitors)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_audio_sources_loaded(self, sources):
+        # Fill mic combos: General mic + Meeting mic (if present)
+        # Preserve current selection
+        try:
+            cur_mic = self.mic.currentData() if hasattr(self, "mic") else ""
+            cur_meet_mic = self.meeting_mic.currentData() if hasattr(self, "meeting_mic") else ""
+            # General mic
+            if hasattr(self, "mic"):
+                cur = cur_mic
+                self.mic.blockSignals(True)
+                # keep first entry (default), rebuild rest
+                while self.mic.count() > 1:
+                    self.mic.removeItem(1)
+                for name, desc in sources:
+                    self.mic.addItem(desc, name)
+                idx = self.mic.findData(cur)
+                if idx >= 0:
+                    self.mic.setCurrentIndex(idx)
+                self.mic.blockSignals(False)
+            # Meeting mic
+            if hasattr(self, "meeting_mic"):
+                cur = cur_meet_mic
+                self.meeting_mic.blockSignals(True)
+                while self.meeting_mic.count() > 1:
+                    self.meeting_mic.removeItem(1)
+                for name, desc in sources:
+                    self.meeting_mic.addItem(desc, name)
+                idx = self.meeting_mic.findData(cur)
+                if idx >= 0:
+                    self.meeting_mic.setCurrentIndex(idx)
+                self.meeting_mic.blockSignals(False)
+        except Exception:
+            pass
+
+    def _on_audio_monitors_loaded(self, monitors):
+        try:
+            if not hasattr(self, "meeting_system"):
+                return
+            cur = self.meeting_system.currentData() if hasattr(self, "meeting_system") else ""
+            self.meeting_system.blockSignals(True)
+            while self.meeting_system.count() > 1:
+                self.meeting_system.removeItem(1)
+            for name, desc in monitors:
+                self.meeting_system.addItem(desc, name)
+            idx = self.meeting_system.findData(cur)
+            if idx >= 0:
+                self.meeting_system.setCurrentIndex(idx)
+            self.meeting_system.blockSignals(False)
+        except Exception:
+            pass
+
+    def _save(self):
+        conf = self.conf
+        conf["ui_theme"] = self._theme
+        conf["ui_language"] = self.ui_language.currentData() or "auto"
+        conf["mic_target"] = self.mic.currentData() or ""
+        conf["language"] = self.language.currentData() or "auto"
+        conf["auto_paste"] = self.auto_paste.isChecked()
+        conf["paste_shortcut"] = self.paste_shortcut.currentText().strip()
+        conf["restore_clipboard"] = self.restore_clipboard.isChecked()
+        conf["overlay_corner"] = self.corner.currentData() or "bottom-left"
+        conf["max_seconds"] = self.max_seconds.value()
+        conf["skip_silent"] = self.skip_silent.isChecked()
+        conf["silence_db"] = float(self.silence_db.value())
+        conf["filter_hallucinations"] = self.filter_hallucinations.isChecked()
+        conf["keep_audio"] = self.keep_audio.isChecked()
+
+        provider = self.transcribe_provider.currentData() or "local"
+        if provider in self._models or provider.startswith("user/"):
+            self._models[provider] = self.transcribe_model.currentText().strip()
+        conf["transcribe_provider"] = provider
+        if provider.startswith("user/"):
+            providers.set_custom_model(conf, provider, "transcription",
+                                       self._models[provider])
+        for name, who in cfg.TRANSCRIBERS.items():
+            conf[who.model] = self._models[name].strip() or cfg.DEFAULTS[who.model]
+        for pid, setting in KEY_SETTINGS.items():
+            if pid in self._key_fields:
+                conf[setting] = self._key_fields[pid].text().strip()
+        conf["local_model"] = self.local_whisper.selected()
+        conf["local_gpu"] = self.local_gpu.isChecked()
+        conf["local_preload"] = self.local_preload.isChecked()
+        conf["local_threads"] = self.local_threads.value()
+
+        conf["cleanup_enabled"] = self.cleanup_enabled.isChecked()
+        cleanup_provider = self.cleanup_provider.currentData() or "local"
+        conf["cleanup_provider"] = cleanup_provider
+        if cleanup_provider.startswith("user/"):
+            providers.set_custom_model(conf, cleanup_provider, "text",
+                                       self.cleanup_model.currentText().strip())
+        else:
+            conf["cleanup_model"] = self.cleanup_model.currentText().strip()
+        conf["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip()
+                                        or cfg.DEFAULTS["cleanup_claude_model"])
+        codex_cleanup_model = self.cleanup_codex_model.currentText().strip()
+        conf["cleanup_codex_model"] = (
+            "" if codex_cleanup_model == t("Codex's own default") else codex_cleanup_model
+        )
+        conf["cleanup_agy_model"] = (self.cleanup_agy_model.currentText().strip()
+                                     or cfg.DEFAULTS["cleanup_agy_model"])
+        conf["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
+        conf["local_llm_model"] = self.local_llm.selected()
+        conf["local_llm_repo"] = self.local_llm.repository()
+        conf["local_llm_gpu"] = self.local_llm_gpu.isChecked()
+        conf["local_llm_preload"] = self.local_llm_preload.isChecked()
+        conf["local_llm_reasoning"] = self.local_llm_reasoning.currentData() or ""
+
+        prompt = self.cleanup_prompt.toPlainText().strip()
+        conf["cleanup_prompt"] = "" if prompt == cfg.default_cleanup_prompt() else prompt
+        file_prompt = self.file_cleanup_prompt.toPlainText().strip()
+        conf["file_cleanup_prompt"] = ("" if file_prompt == cfg.default_file_cleanup_prompt()
+                                       else file_prompt)
+        conf["transcribe_prompt"] = self.transcribe_prompt.toPlainText().strip()
+
+        assistant_provider = self.assistant_provider.currentData() or "claude"
+        conf["assistant_provider"] = assistant_provider
+        if assistant_provider.startswith("user/"):
+            providers.set_custom_model(
+                conf, assistant_provider, "assistant",
+                self.assistant_gateway_model.currentText().strip())
+        conf["assistant_model"] = (self.assistant_model.currentText().strip()
+                                   or cfg.DEFAULTS["assistant_model"])
+        conf["assistant_permission_mode"] = (self.assistant_permission.currentData()
+                                             or "auto")
+        codex_model = self.assistant_codex_model.currentText().strip()
+        conf["assistant_codex_model"] = (
+            "" if codex_model == t("Codex's own default") else codex_model
+        )
+        conf["assistant_agy_model"] = (self.assistant_agy_model.currentText().strip()
+                                       or cfg.DEFAULTS["assistant_agy_model"])
+        conf["assistant_codex_sandbox"] = (self.assistant_codex_sandbox.currentData()
+                                           or "workspace-write")
+        conf["assistant_reasoning"] = self.assistant_reasoning.currentData() or ""
+        conf["assistant_dir"] = self.assistant_dir.text().strip()
+        conf["assistant_timeout"] = self.assistant_timeout.value()
+        conf["assistant_session_minutes"] = self.assistant_session_minutes.value()
+        conf["assistant_paste"] = self.assistant_paste.isChecked()
+        conf["assistant_cleanup"] = self.assistant_cleanup.isChecked()
+        assistant_prompt = self.assistant_prompt.toPlainText().strip()
+        conf["assistant_prompt"] = ("" if assistant_prompt == cfg.default_assistant_prompt()
+                                    else assistant_prompt)
+
+        conf["meeting_mic_target"] = self.meeting_mic.currentData() or ""
+        conf["meeting_system_target"] = self.meeting_system.currentData() or ""
+        conf["meeting_self_name"] = self.meeting_self_name.text().strip()
+        conf["meeting_other_name"] = self.meeting_other_name.text().strip()
+        conf["meeting_participants"] = self.meeting_participants.toPlainText().strip()
+        conf["meeting_provider"] = self.meeting_provider.currentData() or "local"
+        if conf["meeting_provider"].startswith("user/"):
+            providers.set_custom_model(conf, conf["meeting_provider"], "minutes",
+                                       self.meeting_model.currentText().strip())
+        else:
+            conf["meeting_model"] = (self.meeting_model.currentText().strip()
+                                     or cfg.DEFAULTS["meeting_model"])
+        conf["meeting_reasoning"] = self.meeting_reasoning.currentData() or ""
+        conf["meeting_language"] = self.meeting_language.currentData() or ""
+        conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
+        conf["meeting_max_seconds"] = self.meeting_max_minutes.value() * 60
+        conf["meeting_keep_audio"] = self.meeting_keep_audio.isChecked()
+        meeting_prompt = self.meeting_prompt.toPlainText().strip()
+        conf["meeting_prompt"] = ("" if meeting_prompt == cfg.default_meeting_prompt()
+                                  else meeting_prompt)
+
+        conf["file_timestamps"] = self.file_timestamps.isChecked()
+        conf["file_cleanup"] = self.file_cleanup.isChecked()
+
+        for which, (box, _status, _missing) in self._shortcut_rows.items():
+            spec = hotkey.SHORTCUTS[which]
+            conf[spec.setting] = box.currentText().strip() or spec.fallback
+        conf["evdev_hotkey"] = self.evdev_enabled.isChecked()
+        conf["history_limit"] = self.history_limit.value()
+
+        try:
+            conf.save()
+        except OSError as exc:
+            QMessageBox.warning(
+                self, t("Dikte Settings"),
+                t("Could not save the settings: {error}", error=exc))
+            return
+        try:
+            cfg.trim_history(conf["history_limit"])
+        except OSError as exc:
+            print(f"dikte: could not trim the history ({exc})", file=sys.stderr)
+        self._load_history()  # the trim may just have dropped rows from the list
+
+        try:
+            self.applied.emit()
+        except Exception as exc:
+            print(f"dikte: settings saved but apply failed: {exc}", file=sys.stderr)
+
+        QMessageBox.information(self, t("Dikte Settings"), t("Saved successfully."))
+
+    @staticmethod
+    def _select_data(combo, value):
+        index = combo.findData(value)
+        combo.setCurrentIndex(index if index >= 0 else 0)

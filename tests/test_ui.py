@@ -153,7 +153,7 @@ class Settings(DikteTest):
     def test_the_window_opens_with_every_tab_on_it(self):
         window = self.window(cfg.Config())
         tabs = window.findChildren(settings_ui.QTabWidget)[0]
-        self.assertEqual(tabs.count(), 9)
+        self.assertEqual(tabs.count(), 10)
         self.assertEqual(window.windowTitle(), "Dikte Settings")
 
     def test_saving_without_touching_anything_changes_nothing(self):
@@ -784,6 +784,22 @@ class Overlay(DikteTest):
         self.addCleanup(widget.close)
         return widget
 
+    @staticmethod
+    def click_pause_button(widget):
+        """Click the current button center through the widget's Qt event path."""
+        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtGui import QMouseEvent
+
+        position = widget._pause_button_rect().center()
+        event = QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            position,
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        widget.mousePressEvent(event)
+
     def test_it_never_takes_focus(self):
         """It appears while you are typing; stealing the keyboard would be rude."""
         from PyQt6.QtCore import Qt
@@ -876,6 +892,84 @@ class Overlay(DikteTest):
         widget.show_recording()
         self.assertTrue(widget.showing)
         self.assertFalse(widget.muted)
+
+    def test_hidden_overlay_stops_its_animation_scheduler(self):
+        widget = self.overlay()
+        widget.show_recording()
+        self.assertTrue(widget._anim.isActive())
+
+        widget._conceal()
+
+        self.assertFalse(widget._anim.isActive())
+
+    def test_recording_overlay_keeps_its_animation_scheduler_running(self):
+        widget = self.overlay()
+
+        widget.show_recording()
+
+        self.assertTrue(widget._anim.isActive())
+
+    def test_paused_overlay_stops_scheduler_after_reveal_completes(self):
+        """The paused state must not retain a needless 33ms wake-up loop."""
+        widget = self.overlay()
+        with mock.patch.object(overlay_module.time, "monotonic",
+                               side_effect=(10.0, 10.25)):
+            widget.show_recording()
+            widget.set_paused(True)
+            widget._tick()
+
+        self.assertEqual(widget._reveal_progress, 1.0)
+        self.assertFalse(widget._anim.isActive())
+
+    def test_pause_button_rect_stays_fixed_across_pause_and_resume(self):
+        widget = self.overlay(interactive_live=True)
+
+        widget.show_recording()
+        recording_rect = widget._pause_button_rect()
+        widget.show_paused()
+        paused_rect = widget._pause_button_rect()
+        widget.set_paused(False)
+        resumed_rect = widget._pause_button_rect()
+
+        def geometry(rect):
+            return rect.x(), rect.y(), rect.width(), rect.height()
+
+        self.assertEqual(geometry(paused_rect), geometry(recording_rect))
+        self.assertEqual(geometry(resumed_rect), geometry(recording_rect))
+
+    def test_pause_button_emits_pause_then_resume_signal(self):
+        widget = self.overlay(interactive_live=True)
+        pause = mock.Mock()
+        resume = mock.Mock()
+        widget.pauseRequested.connect(pause)
+        widget.resumeRequested.connect(resume)
+
+        widget.show_recording()
+        self.click_pause_button(widget)
+        widget.show_paused()
+        self.click_pause_button(widget)
+
+        self.assertEqual(pause.call_count, 1)
+        self.assertEqual(resume.call_count, 1)
+
+    def test_waveform_bars_stay_inside_after_a_narrow_resize(self):
+        """Resize must invalidate geometry or keep every drawn bar in bounds."""
+        widget = self.overlay()
+        widget.show_recording()
+        widget._reveal_progress = 1.0
+        widget.resize(80, overlay_module.HEIGHT)
+        painter = mock.Mock()
+
+        widget._draw_waveform(painter)
+
+        bars = [call.args[0] for call in painter.drawRoundedRect.call_args_list]
+        self.assertEqual(len(bars), overlay_module.BARS)
+        for bar in bars:
+            with self.subTest(bar=bar):
+                self.assertGreaterEqual(bar.left(), 0.0)
+                self.assertGreaterEqual(bar.top(), 0.0)
+                self.assertLessEqual(bar.right(), float(widget.width()))
+                self.assertLessEqual(bar.bottom(), float(widget.height()))
 
 
 if __name__ == "__main__":

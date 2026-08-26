@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Kısayollar — Dikte</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+</head>
+<body data-page="shortcuts" data-runtime="pyqt6" data-python-screen="shortcuts">
+<div class="app" data-od-id="app-shell">
+  <div class="titlebar" data-od-id="titlebar">
+    <div class="tb-brand"><span class="tb-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>Dikte<span class="tb-sub">Ayarlar</span></div>
+    <div class="tb-controls" aria-hidden="true">
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="minus"></span></button>
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="square"></span></button>
+      <button class="tb-btn close" type="button" tabindex="-1"><span data-ic="x"></span></button>
+    </div>
+  </div>
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="side-brand">
+      <span class="brand-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>
+      <div><div class="brand-name">Dikte</div><div class="brand-sub">Yerelden dikte</div></div>
+    </div>
+    <nav class="nav" aria-label="Bölümler">
+      <a class="nav-item" data-nav="general" href="general.html"><span data-ic="sliders"></span><span>Genel</span></a>
+      <a class="nav-item" data-nav="api" href="api-models.html"><span data-ic="plug"></span><span>API ve Modeller</span></a>
+      <a class="nav-item" data-nav="cleanup" href="cleanup-rules.html"><span data-ic="eraser"></span><span>Temizlik Kuralları</span></a>
+      <a class="nav-item" data-nav="agent" href="agent.html"><span data-ic="terminal"></span><span>Ajan</span></a>
+      <a class="nav-item" data-nav="meeting" href="meeting.html"><span data-ic="users"></span><span>Toplantı</span></a>
+      <a class="nav-item" data-nav="minutes" href="minutes.html"><span data-ic="fileText"></span><span>Tutanaklar</span></a>
+      <a class="nav-item" data-nav="audio" href="audio-file.html"><span data-ic="fileAudio"></span><span>Ses Dosyası</span></a>
+      <a class="nav-item active" data-nav="shortcuts" href="shortcuts.html" aria-current="page"><span data-ic="keyboard"></span><span>Kısayollar</span></a>
+      <a class="nav-item" data-nav="history" href="history.html"><span data-ic="history"></span><span>Geçmiş</span></a>
+      <a class="nav-item" data-nav="overlay" href="overlay.html"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="engine-card" data-od-id="engine-card">
+        <div class="engine-top"><span data-ic="wave"></span><span>Whisper Small</span><span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></div>
+        <div class="engine-status"><span class="dot dot-ok"></span>Hazır<span class="engine-ver">1.0</span></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main" data-od-id="main">
+    <div class="page">
+      <header class="page-head" data-od-id="page-head">
+        <div>
+          <h1 class="page-title">Kısayollar</h1>
+          <p class="page-sub">Genel tuş kombinasyonları — odak nerede olursa olsun çalışır. Windows'ta Dikte bu kombinasyonları çalıştığı sürece kendisi tutar; başka uygulamaya sızmazlar. Alanlardan birine tıklayıp yeni kombinasyona basın; Esc vazgeçtir.</p>
+        </div>
+      </header>
+
+      <section class="card" data-od-id="group-shortcuts">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Genel kısayollar</h2>
+            <p class="card-desc">Dört eylem. Kaldırdığınızda eylem kaybolmaz; tepsi menüsünden yürütülür.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-sc-toggle">
+            <div class="row-main">
+              <div class="row-label">Kaydı başlat / durdur</div>
+              <div class="row-help">Diktenin kalbi. Kayıt yoksa başlatır, kayıt varsa durdurur ve yazıya çevirir.</div>
+              <div class="row-help" id="sc-toggle-status" style="margin-top:6px"><span class="status-line" style="color:var(--ok)"><span class="dot dot-ok"></span>Windows'a kayıtlı: <span class="mono">Ctrl+Space</span> — Dikte çalıştığı sürece geçerli.</span></div>
+            </div>
+            <div class="row-control" style="flex-wrap:wrap">
+              <div class="hotkey" data-sc="toggle" data-od-id="hotkey-toggle" role="button" tabindex="0" aria-label="Kayıt kısayolunu değiştir">
+                <span class="hk-display"><span class="kbd">Ctrl</span><span class="hk-hint">+</span><span class="kbd">Space</span></span>
+              </div>
+              <button class="btn btn-ghost btn-sm" data-remove-sc="toggle">Kaldır</button>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-sc-cancel">
+            <div class="row-main">
+              <div class="row-label">Kaydı at</div>
+              <div class="row-help">Kaydı yazıya çevirmeden çöpe atar; diktede de ajan komutunda da, o an hangisi çalışıyorsa onu etkiler.</div>
+              <div class="row-help" id="sc-cancel-status" style="margin-top:6px"><span class="status-line" style="color:var(--ok)"><span class="dot dot-ok"></span>Windows'a kayıtlı: <span class="mono">Ctrl+Alt+Space</span></span></div>
+            </div>
+            <div class="row-control" style="flex-wrap:wrap">
+              <div class="hotkey" data-sc="cancel" data-od-id="hotkey-cancel" role="button" tabindex="0" aria-label="Kaydı at kısayolunu değiştir">
+                <span class="hk-display"><span class="kbd">Ctrl</span><span class="hk-hint">+</span><span class="kbd">Alt</span><span class="hk-hint">+</span><span class="kbd">Space</span></span>
+              </div>
+              <button class="btn btn-ghost btn-sm" data-remove-sc="cancel">Kaldır</button>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-sc-agent">
+            <div class="row-main">
+              <div class="row-label">Ajana sor</div>
+              <div class="row-help">Söylediğinizi komut olarak ajana gönderir. Model, izinler ve oturum ayrıntıları <a href="agent.html">Ajan</a> sayfasında.</div>
+              <div class="row-help" id="sc-agent-status" style="margin-top:6px"><span class="status-line" style="color:var(--ok)"><span class="dot dot-ok"></span>Windows'a kayıtlı: <span class="mono">Ctrl+Alt+A</span></span></div>
+            </div>
+            <div class="row-control" style="flex-wrap:wrap">
+              <div class="hotkey" data-sc="agent" data-od-id="hotkey-agent" role="button" tabindex="0" aria-label="Ajan kısayolunu değiştir">
+                <span class="hk-display"><span class="kbd">Ctrl</span><span class="hk-hint">+</span><span class="kbd">Alt</span><span class="hk-hint">+</span><span class="kbd">A</span></span>
+              </div>
+              <button class="btn btn-ghost btn-sm" data-remove-sc="agent">Kaldır</button>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-sc-meeting">
+            <div class="row-main">
+              <div class="row-label">Toplantı başlat / bitir</div>
+              <div class="row-help">İki kanallı toplantı kaydını başlatır; ikinci basış bitirir ve tutanağı yazar. Ayrıntılar <a href="meeting.html">Toplantı</a> sayfasında.</div>
+              <div class="row-help" id="sc-meeting-status" style="margin-top:6px"><span class="status-line" style="color:var(--fg-3)"><span class="dot dot-idle"></span>Kısayol yok — tepsi menüsü de toplantı başlatır.</span></div>
+            </div>
+            <div class="row-control" style="flex-wrap:wrap">
+              <div class="hotkey empty" data-sc="meeting" data-od-id="hotkey-meeting" role="button" tabindex="0" aria-label="Toplantı kısayolu ata">
+                <span class="hk-display"><span class="kbd add">yok</span><span class="hk-hint">ata</span></span>
+              </div>
+              <button class="btn btn-ghost btn-sm" data-remove-sc="meeting" disabled style="opacity:.4">Kaldır</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-listener">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Yerleşik dinleyici</h2>
+            <p class="card-desc">Masaüstü kısayolu henüz devrede değilken tuşları doğrudan dinleyen yedek yol.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-listener">
+            <div class="row-main">
+              <div class="row-label">/dev/input dinleyicisini kullan</div>
+              <div class="row-help">KDE/GNOME'da "kurulu ama oturum yeniden başlatılmalı" durumunda beklemeden çalışır. Tek farkı: kombinasyon aynı zamanda odaktaki uygulamaya da ulaşır. Windows ve macOS'ta Dikte kombinasyonları kendisi istediği için bu seçenek gerekmez.</div>
+            </div>
+            <div class="row-control">
+              <label class="toggle"><input type="checkbox" disabled><span class="tr"></span></label>
+              <span class="chip chip-gray">Bu platformda uygulanamaz</span>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-platform-note">
+            <div class="row-main">
+              <div class="note note-info"><span data-ic="info"></span><span class="note-body"><b>Platform notları.</b> Windows: kombinasyonu başka bir uygulama tutuyorsa Windows bunu Dikte'ye vermez; "Sına" bunu hemen gösterir. KDE: kısayol, oturum kapatılıp açılana kadar ateşlenmez — bu sürede yerleşik dinleyici devreye girer. GNOME: kurar kurulmaz çalışır. macOS: Dikte kombinasyonu kendisi ister; başka uygulama tutuyorsa sistem reddeder.</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="savebar" data-od-id="savebar">
+        <span class="sb-status"><span class="dot dot-rec"></span>Kaydedilmemiş değişiklikler</span>
+        <div class="sb-actions">
+          <button class="btn btn-ghost" type="button" data-reset>Geri al</button>
+          <button class="btn btn-ink" type="button" data-save>Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast-stack" aria-live="polite"></div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  const LABELS={toggle:"Kaydı başlat / durdur",cancel:"Kaydı at",agent:"Ajana sor",meeting:"Toplantı başlat / bitir"};
+  const combos={toggle:"Ctrl+Space",cancel:"Ctrl+Alt+Space",agent:"Ctrl+Alt+A",meeting:""};
+  function renderCombo(hk,combo){
+    const d=hk.querySelector(".hk-display");
+    if(!combo){d.innerHTML='<span class="kbd add">yok</span><span class="hk-hint">ata</span>';hk.classList.add("empty");}
+    else{
+      d.innerHTML=combo.split("+").map(p=>'<span class="kbd">'+p+"</span>").join('<span class="hk-hint">+</span>');
+      hk.classList.remove("empty");
+    }
+  }
+  function statusFor(name){
+    const el=document.getElementById("sc-"+name+"-status");
+    if(!el)return;
+    const c=combos[name];
+    if(c)el.innerHTML='<span class="status-line" style="color:var(--ok)"><span class="dot dot-ok"></span>Windows\'a kayıtlı: <span class="mono">'+c+"</span></span>";
+    else el.innerHTML='<span class="status-line" style="color:var(--fg-3)"><span class="dot dot-idle"></span>Kısayol yok — tepsi menüsü de yürütür.</span>';
+  }
+  function conflictFor(name,combo){
+    if(!combo)return null;
+    for(const key in combos){
+      if(key!==name&&combos[key]&&combos[key]===combo)return key;
+    }
+    return null;
+  }
+  document.querySelectorAll(".hotkey[data-sc]").forEach(hk=>{
+    const name=hk.dataset.sc;
+    hk.addEventListener("click",()=>{
+      if(hk.classList.contains("rec"))return;
+      document.querySelectorAll(".hotkey.rec").forEach(o=>{
+        o.classList.remove("rec");
+        renderCombo(o,combos[o.dataset.sc]);
+      });
+      hk.classList.add("rec");
+      const d=hk.querySelector(".hk-display");
+      d.innerHTML='<span class="hk-hint">Tuşlara basın…</span><span class="hk-hint">Esc = vazgeç</span>';
+      function onKey(ev){
+        ev.preventDefault();ev.stopPropagation();
+        document.removeEventListener("keydown",onKey,true);
+        hk.classList.remove("rec");
+        if(ev.key==="Escape"){renderCombo(hk,combos[name]);return;}
+        const parts=[];
+        if(ev.ctrlKey)parts.push("Ctrl");
+        if(ev.altKey)parts.push("Alt");
+        if(ev.shiftKey)parts.push("Shift");
+        if(ev.metaKey)parts.push("Win");
+        if(["Control","Alt","Shift","Meta"].includes(ev.key)){renderCombo(hk,combos[name]);return;}
+        let k=ev.key===" "?"Space":(ev.key.length===1?ev.key.toUpperCase():ev.key);
+        const combo=parts.concat([k]).join("+");
+        const clash=conflictFor(name,combo);
+        if(clash){
+          renderCombo(hk,combos[name]);
+          DK.toast(combo+" zaten "+LABELS[clash]+" eyleminde.","warn");
+          return;
+        }
+        combos[name]=combo;
+        renderCombo(hk,combo);
+        statusFor(name);
+        DK.toast("Kaydedildi: "+combo+" → "+LABELS[name]);
+      }
+      document.addEventListener("keydown",onKey,true);
+    });
+  });
+  document.querySelectorAll("[data-remove-sc]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const name=btn.dataset.removeSc;
+      combos[name]="";
+      const hk=document.querySelector('.hotkey[data-sc="'+name+'"]');
+      renderCombo(hk,"");
+      statusFor(name);
+      DK.toast(LABELS[name]+" kısayolu kaldırıldı.","warn");
+    });
+  });
+})();
+</script>
+</body>
+</html>

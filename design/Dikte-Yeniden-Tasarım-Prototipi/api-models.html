@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>API ve Modeller — Dikte</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+</head>
+<body data-page="api" data-runtime="pyqt6" data-python-screen="api">
+<div class="app" data-od-id="app-shell">
+  <div class="titlebar" data-od-id="titlebar">
+    <div class="tb-brand"><span class="tb-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>Dikte<span class="tb-sub">Ayarlar</span></div>
+    <div class="tb-controls" aria-hidden="true">
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="minus"></span></button>
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="square"></span></button>
+      <button class="tb-btn close" type="button" tabindex="-1"><span data-ic="x"></span></button>
+    </div>
+  </div>
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="side-brand">
+      <span class="brand-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>
+      <div><div class="brand-name">Dikte</div><div class="brand-sub">Yerelden dikte</div></div>
+    </div>
+    <nav class="nav" aria-label="Bölümler">
+      <a class="nav-item" data-nav="general" href="general.html"><span data-ic="sliders"></span><span>Genel</span></a>
+      <a class="nav-item active" data-nav="api" href="api-models.html" aria-current="page"><span data-ic="plug"></span><span>API ve Modeller</span></a>
+      <a class="nav-item" data-nav="cleanup" href="cleanup-rules.html"><span data-ic="eraser"></span><span>Temizlik Kuralları</span></a>
+      <a class="nav-item" data-nav="agent" href="agent.html"><span data-ic="terminal"></span><span>Ajan</span></a>
+      <a class="nav-item" data-nav="meeting" href="meeting.html"><span data-ic="users"></span><span>Toplantı</span></a>
+      <a class="nav-item" data-nav="minutes" href="minutes.html"><span data-ic="fileText"></span><span>Tutanaklar</span></a>
+      <a class="nav-item" data-nav="audio" href="audio-file.html"><span data-ic="fileAudio"></span><span>Ses Dosyası</span></a>
+      <a class="nav-item" data-nav="shortcuts" href="shortcuts.html"><span data-ic="keyboard"></span><span>Kısayollar</span></a>
+      <a class="nav-item" data-nav="history" href="history.html"><span data-ic="history"></span><span>Geçmiş</span></a>
+      <a class="nav-item" data-nav="overlay" href="overlay.html"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="engine-card" data-od-id="engine-card">
+        <div class="engine-top"><span data-ic="wave"></span><span>Whisper Small</span><span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></div>
+        <div class="engine-status"><span class="dot dot-ok"></span>Hazır<span class="engine-ver">1.0</span></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main" data-od-id="main">
+    <div class="page">
+      <header class="page-head" data-od-id="page-head">
+        <div>
+          <h1 class="page-title">API ve Modeller</h1>
+          <p class="page-sub">Konuşmadan metne ve transkript temizliğinin nerede çalışacağını seçin. Kimlik bilgileri yalnızca bu bilgisayarda saklanır.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary" type="button" id="test-all"><span data-ic="plug"></span>Bağlantıları sına</button>
+        </div>
+      </header>
+
+      <section class="card" data-od-id="group-providers">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Sağlayıcılar</h2>
+            <p class="card-desc">Yerleşik sağlayıcılar ve kendi eklediğiniz ağ geçitleri. Anahtarlar kaydedildikten sonra bir daha gösterilmez.</p>
+          </div>
+        </div>
+        <div class="card-b flush">
+          <div id="prov-list">
+            <div class="prov" data-od-id="provider-local-whisper">
+              <div class="prov-name"><b>Yerel Whisper<span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></b><span class="mono">whisper.cpp · bu makinede</span></div>
+              <div></div>
+              <div class="prov-status" id="st-local"><span class="dot dot-ok"></span>Hazır: <span class="mono">ggml-large-v3-turbo-q5_0.bin</span></div>
+              <div class="prov-actions"><button class="btn btn-secondary btn-sm" data-test data-test-status="#st-local" data-test-ok="Hazır: ggml-large-v3-turbo-q5_0.bin.">Sına</button></div>
+            </div>
+            <div class="prov" data-od-id="provider-local-llama">
+              <div class="prov-name"><b>Yerel Llama<span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></b><span class="mono">llama.cpp · bu makinede</span></div>
+              <div></div>
+              <div class="prov-status" id="st-local-llm"><span class="dot dot-idle"></span>Model indirilmedi — Temizlik bölümünden indirin</div>
+              <div class="prov-actions"><button class="btn btn-secondary btn-sm" data-test data-test-status="#st-local-llm" data-test-ok="Hazır: gemma-3-4b-it-Q4_K_M.">Sına</button></div>
+            </div>
+            <div class="prov" data-od-id="provider-deepgram">
+              <div class="prov-name"><b>Deepgram<span class="chip chip-gray">Bulut</span></b><span class="mono">api.deepgram.com</span></div>
+              <div class="key-field" style="max-width:210px"><input class="field" type="password" value="dgprod_7f2a91c4" readonly aria-label="Maskeli Deepgram anahtarı"><button class="reveal" type="button" data-reveal aria-label="Anahtarı göster/gizle"><span data-ic="eye"></span></button></div>
+              <div class="prov-status" id="st-deepgram"><span class="dot dot-ok"></span>Anahtar çalışıyor.</div>
+              <div class="prov-actions"><button class="btn btn-secondary btn-sm" data-test data-test-status="#st-deepgram" data-test-ok="Anahtar çalışıyor.">Sına</button></div>
+            </div>
+            <div class="prov" data-od-id="provider-openrouter">
+              <div class="prov-name"><b>OpenRouter<span class="chip chip-tan">Ağ geçidi</span></b><span class="mono">openrouter.ai/api/v1</span></div>
+              <div class="key-field" style="max-width:210px"><input class="field" type="password" value="sk-or-v1_9c31b8" readonly aria-label="Maskeli OpenRouter anahtarı"><button class="reveal" type="button" data-reveal aria-label="Anahtarı göster/gizle"><span data-ic="eye"></span></button></div>
+              <div class="prov-status" id="st-openrouter"><span class="dot dot-ok"></span>Anahtar çalışıyor.</div>
+              <div class="prov-actions">
+                <button class="btn btn-secondary btn-sm" data-dialog-open="dlg-keys"><span data-ic="key"></span>Anahtarlar…</button>
+                <button class="btn btn-secondary btn-sm" data-test data-test-status="#st-openrouter" data-test-ok="Anahtar çalışıyor.">Sına</button>
+                <span class="menu-anchor" style="position:relative">
+                  <button class="btn btn-ghost btn-sm btn-icon" data-menu="menu-openrouter" aria-label="Diğer eylemler" aria-haspopup="true"><span data-ic="dots"></span></button>
+                  <div class="menu" id="menu-openrouter" hidden style="position:absolute;right:0;top:32px;z-index:45">
+                    <button class="menu-item" type="button" data-dialog-open="dlg-url"><span data-ic="globe"></span>Temel URL…</button>
+                    <button class="menu-item" type="button" data-dialog-open="dlg-rename"><span data-ic="pencil"></span>Yeniden adlandır…</button>
+                    <div class="menu-sep"></div>
+                    <button class="menu-item danger" type="button" data-dialog-open="dlg-provider-remove"><span data-ic="trash"></span>Kaldır</button>
+                  </div>
+                </span>
+              </div>
+            </div>
+            <div class="prov" data-od-id="provider-claude">
+              <div class="prov-name"><b>Claude Code<span class="chip chip-gray">CLI</span></b><span class="mono">claude · hesabınızla</span></div>
+              <div></div>
+              <div class="prov-status" id="st-claude"><span class="dot dot-ok"></span>Bulundu: <span class="mono">2.1.36</span></div>
+              <div class="prov-actions"><button class="btn btn-secondary btn-sm" data-test data-test-status="#st-claude" data-test-ok="Bulundu: 2.1.36">Sına</button></div>
+            </div>
+            <div class="prov" data-od-id="provider-codex">
+              <div class="prov-name"><b>Codex<span class="chip chip-gray">CLI</span></b><span class="mono">codex · hesabınızla</span></div>
+              <div></div>
+              <div class="prov-status" id="st-codex"><span class="dot dot-ok"></span>Bulundu: <span class="mono">0.42.0</span></div>
+              <div class="prov-actions"><button class="btn btn-secondary btn-sm" data-test data-test-status="#st-codex" data-test-ok="Bulundu: 0.42.0">Sına</button></div>
+            </div>
+            <div class="prov" data-od-id="provider-antigravity">
+              <div class="prov-name"><b>Antigravity<span class="chip chip-gray">CLI</span></b><span class="mono">agy · hesabınızla</span></div>
+              <div></div>
+              <div class="prov-status" id="st-agy"><span class="dot dot-err"></span><span class="mono">agy</span>&nbsp;kurulu değil — yükleyici PATH'e ekler</div>
+              <div class="prov-actions"><button class="btn btn-secondary btn-sm" data-test data-test-status="#st-agy" data-test-ok="Bulundu: 1.4.2">Sına</button></div>
+            </div>
+          </div>
+          <div class="card-f" data-od-id="providers-footer">
+            <button class="btn btn-secondary" type="button" data-dialog-open="dlg-add"><span data-ic="plus"></span>Sağlayıcı ekle</button>
+            <span class="meta" style="margin-left:auto">Sağlayıcı ekleme, adlandırma ve anahtar değişiklikleri anında kaydedilir.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-stt">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Konuşmadan metne</h2>
+            <p class="card-desc">Kayıtları metne çeviren model. Dikte, ajan komutları, toplantı ve dosya transkripsiyonu burada seçileni kullanır.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-stt-provider">
+            <div class="row-main">
+              <div class="row-label">Sağlayıcı</div>
+              <div class="row-help">Yerel model ücretsiz ve çevrimdışı çalışır; bulut modelleri daha hızlı olabilir.</div>
+            </div>
+            <div class="row-control" style="width:280px">
+              <span class="select-wrap w-full"><select class="field" data-switch='{"local":"#stt-local","deepgram":"#stt-cloud","openrouter":"#stt-cloud"}'>
+                <option value="local" selected>Bu makine (whisper.cpp)</option>
+                <option value="deepgram">Deepgram</option>
+                <option value="openrouter">OpenRouter</option>
+              </select></span>
+            </div>
+          </div>
+
+          <div id="stt-local">
+            <div class="panel" data-od-id="panel-local-whisper">
+              <div class="panel-t"><span data-ic="cpu"></span>Bu makinede</div>
+              <div class="row" data-od-id="row-local-program">
+                <div class="row-main">
+                  <div class="row-label">Program</div>
+                  <div class="row-help mono">C:\Users\MAMAK\dikte\bin\whisper-cli.exe</div>
+                </div>
+                <div class="row-control">
+                  <span class="status-line"><span class="dot dot-ok"></span>Kurulu · <span class="mono">1.7.4</span></span>
+                  <button class="btn btn-secondary btn-sm" data-busy-demo="Güncelleniyor…">Güncelle</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-local-model">
+                <div class="row-main">
+                  <div class="row-label">Model</div>
+                  <div class="row-help">Büyük modeller daha isabetli, küçük modeller daha hızlıdır.</div>
+                </div>
+                <div class="row-control" style="flex-wrap:wrap">
+                  <span class="select-wrap" style="width:300px"><select class="field" id="whisper-model">
+                    <option selected>ggml-large-v3-turbo-q5_0.bin · indirildi</option>
+                    <option>ggml-medium.bin · indirildi</option>
+                    <option>ggml-small.bin · indirildi</option>
+                    <option>ggml-large-v3.bin · indirilmedi · 2,9 GB</option>
+                  </select></span>
+                  <button class="btn btn-secondary btn-sm" id="dl-model"><span data-ic="download"></span>İndir</button>
+                  <button class="btn btn-ghost btn-sm" data-busy-demo="Siliniyor…">Sil</button>
+                </div>
+              </div>
+              <div class="row" id="row-download" data-od-id="row-downloading" hidden>
+                <div class="row-main">
+                  <div class="row-label" id="dl-name">İndiriliyor: ggml-large-v3.bin</div>
+                  <div class="row-help"><span class="mono" id="dl-size">1,21 / 2,90 GB · %42</span></div>
+                </div>
+                <div class="row-control" style="flex:1;max-width:340px">
+                  <span class="progress" style="flex:1"><i id="dl-bar" style="width:42%"></i></span>
+                  <button class="btn btn-ghost btn-sm" id="dl-stop">Durdur</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-local-gpu">
+                <div class="row-main">
+                  <div class="row-label">Ekran kartını kullan</div>
+                  <div class="row-help">whisper.cpp, CUDA, ROCm veya Vulkan ile derlenmişse kartı kullanır; derlenmemişse bu ayar ne olursa olsun işlemcide çalışır.</div>
+                </div>
+                <div class="row-control">
+                  <label class="toggle"><input type="checkbox" checked><span class="tr"></span></label>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-local-preload">
+                <div class="row-main">
+                  <div class="row-label">Dikte başlarken modeli yükle</div>
+                  <div class="row-help">Büyük model bir-iki saniyede yüklenir. Önden yüklemek bu süreyi ilk dikte yerine başlangıca taşır; karşılığında bellekte yer eder.</div>
+                </div>
+                <div class="row-control">
+                  <label class="toggle"><input type="checkbox" checked><span class="tr"></span></label>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-local-threads">
+                <div class="row-main">
+                  <div class="row-label">İş parçacığı</div>
+                  <div class="row-help">0 = whisper.cpp kendisi karar verir. Çoğu makinede otomatik en iyisidir.</div>
+                </div>
+                <div class="row-control">
+                  <span class="num"><button type="button" class="nbtn" data-step="-1">−</button><input type="number" value="0" min="0" max="64"><span class="suffix">parçacık</span><button type="button" class="nbtn" data-step="1">+</button></span>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-local-status">
+                <div class="row-main"></div>
+                <div class="row-control">
+                  <span class="status-line" id="stt-local-status"><span class="dot dot-ok"></span>Hazır: <span class="mono">ggml-large-v3-turbo-q5_0.bin</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="stt-cloud" hidden>
+            <div class="panel" data-od-id="panel-cloud-stt">
+              <div class="panel-t"><span data-ic="globe"></span>Bulut modeli</div>
+              <div class="row" data-od-id="row-stt-model">
+                <div class="row-main">
+                  <div class="row-label">Model</div>
+                  <div class="row-help">Listeden seçebilir ya da sağlayıcının desteklediği herhangi bir model kimliğini yazabilirsiniz.</div>
+                </div>
+                <div class="row-control" style="flex-wrap:wrap">
+                  <input class="field field-mono" list="dl-stt-models" style="width:280px" value="nova-3" aria-label="STT model kimliği">
+                  <datalist id="dl-stt-models">
+                    <option value="nova-3"></option>
+                    <option value="nova-2"></option>
+                    <option value="base"></option>
+                    <option value="enhanced"></option>
+                    <option value="whisper-large-v3-turbo"></option>
+                  </datalist>
+                  <button class="btn btn-secondary btn-sm" data-fetch data-fetch-status="#stt-fetch">Model listesini getir</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-stt-fetch-status">
+                <div class="row-main"></div>
+                <div class="row-control"><span class="status-line" id="stt-fetch"><span class="dot dot-ok"></span>18 model yüklendi.</span></div>
+              </div>
+              <div class="row" data-od-id="row-stt-note">
+                <div class="row-main">
+                  <div class="note note-info"><span data-ic="info"></span><span class="note-body">"Model listesini getir" sağlayıcıdan canlı liste alır; kendi kimliğiniz her zaman yazılabilir kalır.</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-cleanup">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Transkript temizliği</h2>
+            <p class="card-desc">Doldurma sözcüklerini ayıklar, noktalama ekler, bariz yanlış duymaları onarır. Ham transkript her zaman saklanır.</p>
+          </div>
+          <div class="h-control">
+            <label class="check" data-gate="#cln-body"><input type="checkbox" checked><span>Temizliği aç</span></label>
+          </div>
+        </div>
+        <div class="card-b" id="cln-body">
+          <div class="row" data-od-id="row-cleanup-provider">
+            <div class="row-main">
+              <div class="row-label">Nerede çalışsın</div>
+              <div class="row-help">llama.cpp bu makinede, aşağıda indirdiğiniz modelle çalışır: ödenecek bir şey yok, kurulacak başka bir şey yok. Claude Code, Codex ve Antigravity zaten sahip olduğunuz abonelikle temizler; ikinci bir anahtar gerekmez, her biri oturum açtığı için birkaç saniye uzun sürer.</div>
+            </div>
+            <div class="row-control" style="width:280px">
+              <span class="select-wrap w-full"><select class="field" data-switch='{"local":"#cln-local","claude":"#cln-claude","codex":"#cln-codex","antigravity":"#cln-agy","openrouter":"#cln-gw"}'>
+                <option value="local">Bu makine (llama.cpp)</option>
+                <option value="claude">Claude Code</option>
+                <option value="codex">Codex</option>
+                <option value="antigravity">Antigravity</option>
+                <option value="openrouter" selected>OpenRouter</option>
+              </select></span>
+            </div>
+          </div>
+
+          <div id="cln-gw">
+            <div class="panel" data-od-id="panel-cleanup-gateway">
+              <div class="panel-t"><span data-ic="globe"></span>OpenRouter</div>
+              <div class="row" data-od-id="row-cleanup-model">
+                <div class="row-main">
+                  <div class="row-label">Model</div>
+                  <div class="row-help">Temizlik hafif bir iştir; küçük ve hızlı modeller yeterlidir.</div>
+                </div>
+                <div class="row-control" style="flex-wrap:wrap">
+                  <input class="field field-mono" list="dl-cln-models" style="width:300px" value="google/gemini-3.5-flash-lite" aria-label="Temizlik modeli">
+                  <datalist id="dl-cln-models">
+                    <option value="google/gemini-3.5-flash-lite"></option>
+                    <option value="google/gemini-3.1-flash-lite"></option>
+                    <option value="anthropic/claude-haiku-4.5"></option>
+                    <option value="openai/gpt-5-mini"></option>
+                    <option value="meta-llama/llama-3.3-70b-instruct"></option>
+                  </datalist>
+                  <button class="btn btn-secondary btn-sm" data-fetch data-fetch-status="#cln-fetch">Model listesini getir</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-cleanup-fetch">
+                <div class="row-main"></div>
+                <div class="row-control"><span class="status-line" id="cln-fetch"><span class="dot dot-ok"></span>24 model yüklendi.</span></div>
+              </div>
+              <div class="row" data-od-id="row-cleanup-thinking">
+                <div class="row-main">
+                  <div class="row-label">Düşünme</div>
+                  <div class="row-help">Düşünen modelin yanıtından önce ne kadar düşünebileceği. Temizlik hafif bir iş olduğu için fazla düşünmek çoğunlukla yalnızca zaman ve token demektir; düşünemeyen modeller bunu yok sayar.</div>
+                </div>
+                <div class="row-control" style="width:240px">
+                  <span class="select-wrap w-full"><select class="field">
+                    <option selected>Modelin kendi varsayılanı</option>
+                    <option>Kapalı</option>
+                    <option>Minimal</option>
+                    <option>Düşük</option>
+                    <option>Orta</option>
+                    <option>Yüksek</option>
+                    <option>Çok yüksek</option>
+                    <option>Maksimum</option>
+                  </select></span>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-cleanup-test">
+                <div class="row-main">
+                  <div class="row-label">Sınama</div>
+                  <div class="row-help">Temizlik modeline bir test cümlesi gönderir ve yanıtını gösterir; anahtarın, adresin ve model kimliğinin birlikte çalıştığını kanıtlar. Ekrandaki (kaydedilmemiş) değerlerle çalışır.</div>
+                </div>
+                <div class="row-control">
+                  <button class="btn btn-secondary btn-sm" data-test data-test-status="#cln-test" data-test-ok='"This is a test." → "OK"'>Temizliği sına</button>
+                  <span class="status-line" id="cln-test"><span class="dot dot-ok"></span>✓ <span class="mono">"This is a test." → "OK"</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="cln-local" hidden>
+            <div class="panel" data-od-id="panel-cleanup-local">
+              <div class="panel-t"><span data-ic="cpu"></span>Bu makinede · llama.cpp</div>
+              <div class="row" data-od-id="row-llm-repo">
+                <div class="row-main">
+                  <div class="row-label">Yayıncı</div>
+                  <div class="row-help">GGUF dosyaları içeren bir Hugging Face deposu. Liste getirilir; başka bir depo da yazılabilir.</div>
+                </div>
+                <div class="row-control" style="width:300px">
+                  <input class="field field-mono" list="dl-llm-repos" value="ggml-org/gemma-3-4b-it-GGUF" aria-label="Model deposu">
+                  <datalist id="dl-llm-repos">
+                    <option value="ggml-org/gemma-3-4b-it-GGUF"></option>
+                    <option value="ggml-org/gemma-4-E2B-it-GGUF"></option>
+                    <option value="ggml-org/SmolLM3-3B-GGUF"></option>
+                  </datalist>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-llm-model">
+                <div class="row-main">
+                  <div class="row-label">Model</div>
+                </div>
+                <div class="row-control" style="flex-wrap:wrap">
+                  <span class="select-wrap" style="width:300px"><select class="field">
+                    <option selected>gemma-3-4b-it-Q4_K_M.gguf · indirildi</option>
+                    <option>gemma-3-4b-it-Q8_0.gguf · indirilmedi · 6,1 GB</option>
+                  </select></span>
+                  <button class="btn btn-secondary btn-sm"><span data-ic="download"></span>İndir</button>
+                  <button class="btn btn-ghost btn-sm" data-busy-demo="Siliniyor…">Sil</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-llm-gpu">
+                <div class="row-main"><div class="row-label">Ekran kartını kullan</div></div>
+                <div class="row-control"><label class="toggle"><input type="checkbox" checked><span class="tr"></span></label></div>
+              </div>
+              <div class="row" data-od-id="row-llm-preload">
+                <div class="row-main">
+                  <div class="row-label">Dikte başlarken modeli yükle</div>
+                  <div class="row-help">Bir LLM, whisper modelinden yavaş yüklenir ve daha çok bellek eder. Kapalıyken ilk temizlikte yüklenir.</div>
+                </div>
+                <div class="row-control"><label class="toggle"><input type="checkbox"><span class="tr"></span></label></div>
+              </div>
+              <div class="row" data-od-id="row-llm-thinking">
+                <div class="row-main">
+                  <div class="row-label">Düşünme</div>
+                  <div class="row-help">Düşünmeye eğitilmiş model, söylenmedikçe düşünür; bir virgül için 300 düşünme tokeni, 300 token beklemek demektir. Temizlik "Kapalı" ister.</div>
+                </div>
+                <div class="row-control" style="width:220px">
+                  <span class="select-wrap w-full"><select class="field"><option selected>Kapalı</option><option>Minimal</option><option>Düşük</option><option>Orta</option></select></span>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-llm-status">
+                <div class="row-main"></div>
+                <div class="row-control"><span class="status-line"><span class="dot dot-ok"></span>Hazır: <span class="mono">gemma-3-4b-it-Q4_K_M.gguf</span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="cln-claude" hidden>
+            <div class="panel" data-od-id="panel-cleanup-claude">
+              <div class="panel-t"><span data-ic="terminal"></span>Claude Code</div>
+              <div class="row" data-od-id="row-claude-model">
+                <div class="row-main">
+                  <div class="row-label">Model</div>
+                  <div class="row-help">"haiku" gibi bir ad her zaman o serinin en yeni modelidir. Temizlik için en hızlısı yeterlidir.</div>
+                </div>
+                <div class="row-control" style="flex-wrap:wrap">
+                  <span class="select-wrap" style="width:220px"><select class="field"><option selected>haiku</option><option>sonnet</option><option>opus</option><option>fable</option></select></span>
+                  <button class="btn btn-secondary btn-sm" data-fetch data-fetch-status="#cln-fetch">Model listesini getir</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-claude-status">
+                <div class="row-main"></div>
+                <div class="row-control"><span class="status-line"><span class="dot dot-ok"></span>Bulundu: <span class="mono">2.1.36</span> · kendi Claude ayarlarınız okunur</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="cln-codex" hidden>
+            <div class="panel" data-od-id="panel-cleanup-codex">
+              <div class="panel-t"><span data-ic="terminal"></span>Codex</div>
+              <div class="row" data-od-id="row-codex-model">
+                <div class="row-main">
+                  <div class="row-label">Model</div>
+                  <div class="row-help">"Codex'in kendi varsayılanı", Codex yapılandırmasında ne seçiliyse odur.</div>
+                </div>
+                <div class="row-control" style="flex-wrap:wrap">
+                  <span class="select-wrap" style="width:260px"><select class="field"><option selected>Codex'in kendi varsayılanı</option><option>gpt-5.6-sol</option><option>gpt-5.6-terra</option><option>gpt-5.6-luna</option><option>gpt-5.5</option></select></span>
+                  <button class="btn btn-secondary btn-sm" data-fetch data-fetch-status="#cln-fetch">Model listesini getir</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-codex-status">
+                <div class="row-main"></div>
+                <div class="row-control"><span class="status-line"><span class="dot dot-ok"></span>Bulundu: <span class="mono">0.42.0</span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="cln-agy" hidden>
+            <div class="panel" data-od-id="panel-cleanup-agy">
+              <div class="panel-t"><span data-ic="terminal"></span>Antigravity</div>
+              <div class="row" data-od-id="row-agy-model">
+                <div class="row-main">
+                  <div class="row-label">Model</div>
+                  <div class="row-help">Antigravity model adları çabayı taşır (flash-low, flash-medium, flash-high); ayrı bir düşünme ayarı uygulanmaz.</div>
+                </div>
+                <div class="row-control" style="flex-wrap:wrap">
+                  <span class="select-wrap" style="width:280px"><select class="field"><option selected>gemini-3.6-flash-medium</option><option>gemini-3.6-flash-low</option><option>gemini-3.6-flash-high</option></select></span>
+                  <button class="btn btn-secondary btn-sm" data-fetch data-fetch-status="#cln-fetch">Model listesini getir</button>
+                </div>
+              </div>
+              <div class="row" data-od-id="row-agy-status">
+                <div class="row-main"></div>
+                <div class="row-control"><span class="status-line"><span class="dot dot-err"></span><span class="mono">agy</span>&nbsp;kurulu değil — komutlar çalışmaz</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="savebar" data-od-id="savebar">
+        <span class="sb-status"><span class="dot dot-rec"></span>Kaydedilmemiş değişiklikler</span>
+        <div class="sb-actions">
+          <button class="btn btn-ghost" type="button" data-reset>Geri al</button>
+          <button class="btn btn-ink" type="button" data-save>Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="dlg-add" data-od-id="dialog-add-provider" role="dialog" aria-modal="true" aria-labelledby="dlg-add-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-add-t">Sağlayıcı ekle</div>
+    <div class="dialog-b">
+      <p style="margin-bottom:12px">OpenAI uyumlu bir ağ geçidi ekler: kendi adresi, kendi anahtarları. İki yeteneği de kullanılabilir: transkripsiyon ve metin.</p>
+      <div class="kv" style="margin-bottom:10px">
+        <label for="np-name">Ad</label>
+        <input class="field" id="np-name" placeholder="Kendi geçidim">
+        <span class="field-error" id="np-name-err" hidden><span data-ic="alert"></span>Bir ad girin.</span>
+      </div>
+      <div class="kv">
+        <label for="np-url">Temel URL</label>
+        <input class="field field-mono" id="np-url" placeholder="https://ornek.com/v1">
+        <span class="field-error" id="np-url-err" hidden><span data-ic="alert"></span>https:// ile başlayan geçerli bir adres girin.</span>
+      </div>
+    </div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-add">Vazgeç</button>
+      <button class="btn btn-ink" type="button" id="np-add">Ekle</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-keys" data-od-id="dialog-provider-keys" role="dialog" aria-modal="true" aria-labelledby="dlg-keys-t">
+  <div class="dialog wide">
+    <div class="dialog-h" id="dlg-keys-t"><span data-ic="key"></span>OpenRouter — Anahtarlar</div>
+    <div class="dialog-b">
+      <p style="margin-bottom:12px">Anahtarlar yalnızca bu cihazda saklanır ve kaydedildikten sonra bir daha gösterilmez. Aynı anda bir anahtar etkindir.</p>
+      <div class="list" style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div class="li-row" style="cursor:default" data-od-id="key-active">
+          <span class="li-ic" data-ic="key"></span>
+          <div class="li-main">
+            <div class="li-title">Üretim <span class="chip chip-sage" style="margin-left:6px"><span class="dot dot-sage"></span>Etkin</span></div>
+            <div class="li-sub mono">sk-or-v1 ••••••••••••9c31 · Mayıs 2026'dan beri</div>
+          </div>
+          <div class="li-side">
+            <div class="li-actions" style="opacity:1">
+              <button class="btn btn-ghost btn-sm" data-busy-demo="Yenileniyor…">Yenile</button>
+              <button class="btn btn-ghost btn-sm" data-dialog-open="dlg-rename">Yeniden adlandır</button>
+              <button class="btn btn-ghost btn-sm" disabled style="opacity:.4">Etkin yap</button>
+            </div>
+          </div>
+        </div>
+        <div class="li-row" style="cursor:default;border-top:1px solid var(--border)" data-od-id="key-backup">
+          <span class="li-ic" data-ic="key"></span>
+          <div class="li-main">
+            <div class="li-title">Yedek <span class="chip chip-gray" style="margin-left:6px">Yedek</span></div>
+            <div class="li-sub mono">sk-or-v1 ••••••••••••4b7e · Mart 2026'dan beri</div>
+          </div>
+          <div class="li-side">
+            <div class="li-actions" style="opacity:1">
+              <button class="btn btn-ghost btn-sm" data-set-active>Etkin yap</button>
+              <button class="btn btn-ghost btn-sm" data-dialog-open="dlg-rename">Yeniden adlandır</button>
+              <button class="btn btn-ghost btn-sm" data-dialog-open="dlg-key-remove" style="color:var(--err)">Kaldır</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note note-info" style="margin-top:12px"><span data-ic="info"></span><span class="note-body">Anahtar listesi boşken sağlayıcı satırı <b>"Anahtar gerekli"</b> olarak görünür ve test çalışmaz.</span></div>
+    </div>
+    <div class="dialog-f">
+      <button class="btn btn-secondary" type="button" data-dialog-open="dlg-key-add"><span data-ic="plus"></span>Anahtar ekle</button>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-keys">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-key-add" role="dialog" aria-modal="true" aria-labelledby="dlg-key-add-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-key-add-t">Anahtar ekle</div>
+    <div class="dialog-b">
+      <div class="kv" style="margin-bottom:10px">
+        <label for="nk-name">Etiket</label>
+        <input class="field" id="nk-name" placeholder="Örn. Dizüstü">
+      </div>
+      <div class="kv">
+        <label for="nk-value">Anahtar</label>
+        <input class="field field-mono" id="nk-value" type="password" placeholder="sk-or-v1 …">
+      </div>
+    </div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-key-add">Vazgeç</button>
+      <button class="btn btn-ink" type="button" id="nk-save">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-key-remove" role="dialog" aria-modal="true" aria-labelledby="dlg-key-rm-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-key-rm-t"><span data-ic="trash" style="color:var(--err)"></span>Anahtar kaldırılsın mı?</div>
+    <div class="dialog-b"><p><b>Yedek</b> anahtarı silinir. Bu işlem geri alınamaz; anahtarı yalnızca sağlayıcı panelinden yeniden ekleyebilirsiniz.</p></div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-key-remove">Vazgeç</button>
+      <button class="btn btn-danger solid" type="button" id="nk-remove">Kaldır</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-rename" role="dialog" aria-modal="true" aria-labelledby="dlg-rename-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-rename-t">Yeniden adlandır</div>
+    <div class="dialog-b">
+      <div class="kv">
+        <label for="rn-value">Yeni ad</label>
+        <input class="field" id="rn-value" value="OpenRouter">
+      </div>
+    </div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-rename">Vazgeç</button>
+      <button class="btn btn-ink" type="button" data-dialog-close="dlg-rename" id="rn-save">Yeniden adlandır</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-url" role="dialog" aria-modal="true" aria-labelledby="dlg-url-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-url-t">Temel URL</div>
+    <div class="dialog-b">
+      <div class="kv">
+        <label for="url-value">Adres</label>
+        <input class="field field-mono" id="url-value" value="https://openrouter.ai/api/v1">
+        <span class="row-help" style="margin-top:6px">OpenAI uyumlu <span class="mono">/chat/completions</span> ve <span class="mono">/models</span> uçlarını içeren kök adres.</span>
+      </div>
+    </div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-url">Vazgeç</button>
+      <button class="btn btn-ink" type="button" data-dialog-close="dlg-url" id="url-save">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-provider-remove" role="dialog" aria-modal="true" aria-labelledby="dlg-prm-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-prm-t"><span data-ic="trash" style="color:var(--err)"></span>OpenRouter kaldırılsın mı?</div>
+    <div class="dialog-b"><p>Sağlayıcı, anahtarları ve ona atanmış model seçimleri silinir. Dikte bu sağlayıcıyı kullanan işler için başka bir sağlayıcıya döner.</p></div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-provider-remove">Vazgeç</button>
+      <button class="btn btn-danger solid" type="button" id="prm-remove">Kaldır</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" aria-live="polite"></div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  document.querySelectorAll("[data-reveal]").forEach(b=>{
+    b.addEventListener("click",()=>{
+      const inp=b.parentElement.querySelector("input");
+      inp.type=inp.type==="password"?"text":"password";
+    });
+  });
+  document.querySelectorAll("[data-menu]").forEach(btn=>{
+    btn.addEventListener("click",e=>{
+      e.stopPropagation();
+      const m=document.getElementById(btn.dataset.menu);
+      document.querySelectorAll(".menu").forEach(x=>{if(x!==m)x.hidden=true;});
+      m.hidden=!m.hidden;
+    });
+  });
+  document.addEventListener("click",e=>{
+    if(!e.target.closest(".menu-anchor"))document.querySelectorAll(".menu").forEach(m=>m.hidden=true);
+  });
+  document.querySelectorAll("[data-busy-demo]").forEach(b=>{
+    b.addEventListener("click",()=>{
+      const old=b.textContent;
+      b.disabled=true;b.textContent=b.dataset.busyDemo;
+      setTimeout(()=>{b.disabled=false;b.textContent=old;DK.toast("Tamamlandı.");},1000);
+    });
+  });
+  const dlModel=document.getElementById("dl-model");
+  const dlRow=document.getElementById("row-download");
+  const dlBar=document.getElementById("dl-bar");
+  const dlSize=document.getElementById("dl-size");
+  let dlTimer=null,dlPct=42;
+  dlModel.addEventListener("click",()=>{
+    dlRow.hidden=false;dlPct=42;
+    clearInterval(dlTimer);
+    dlTimer=setInterval(()=>{
+      dlPct=Math.min(100,dlPct+1);
+      dlBar.style.width=dlPct+"%";
+      const gb=(2.9*dlPct/100).toFixed(2).replace(".",",");
+      dlSize.textContent=gb+" / 2,90 GB · %"+dlPct;
+      if(dlPct>=100){
+        clearInterval(dlTimer);
+        dlRow.hidden=true;
+        DK.toast("ggml-large-v3.bin indirildi.");
+        const sel=document.getElementById("whisper-model");
+        sel.options[3].textContent="ggml-large-v3.bin · indirildi";
+      }
+    },120);
+  });
+  document.getElementById("dl-stop").addEventListener("click",()=>{
+    clearInterval(dlTimer);dlRow.hidden=true;DK.toast("İndirme durduruldu.","warn");
+  });
+  const npAdd=document.getElementById("np-add");
+  npAdd.addEventListener("click",()=>{
+    const name=document.getElementById("np-name");
+    const url=document.getElementById("np-url");
+    const nameErr=document.getElementById("np-name-err");
+    const urlErr=document.getElementById("np-url-err");
+    let ok=true;
+    nameErr.hidden=name.value.trim().length>0;if(nameErr.hidden===false)ok=false;
+    const uOk=/^https:\/\/.+\..+/.test(url.value.trim());
+    urlErr.hidden=uOk;if(!uOk)ok=false;
+    name.classList.toggle("is-invalid",nameErr.hidden===false);
+    url.classList.toggle("is-invalid",!uOk);
+    if(!ok)return;
+    const list=document.getElementById("prov-list");
+    const div=document.createElement("div");
+    div.className="prov";div.setAttribute("data-od-id","provider-user-new");
+    div.innerHTML='<div class="prov-name"><b></b><span class="chip chip-tan">Ağ geçidi</span></b><span class="mono"></span></div><div></div><div class="prov-status"><span class="dot dot-err"></span>Anahtar gerekli — Anahtarlar… ile ekleyin</div><div class="prov-actions"><button class="btn btn-secondary btn-sm" data-dialog-open="dlg-keys"><span data-ic="key"></span>Anahtarlar…</button><button class="btn btn-secondary btn-sm" data-test data-test-status="#st-new" data-test-ok="Anahtar çalışıyor.">Sına</button></div>';
+    div.querySelector("b").textContent=name.value.trim();
+    div.querySelector(".prov-name .mono").textContent=url.value.trim().replace(/^https?:\/\//,"");
+    list.appendChild(div);
+    DK.inject();
+    DK.closeDialog("dlg-add");
+    DK.toast("Sağlayıcı eklendi: "+name.value.trim());
+    name.value="";url.value="";
+  });
+  document.getElementById("nk-save").addEventListener("click",()=>{
+    DK.closeDialog("dlg-key-add");
+    DK.toast("Anahtar kaydedildi ve maskeleyildi.");
+  });
+  document.getElementById("nk-remove").addEventListener("click",()=>{
+    DK.closeDialog("dlg-key-remove");
+    DK.toast("Anahtar kaldırıldı.","warn");
+  });
+  document.querySelectorAll("[data-set-active]").forEach(b=>b.addEventListener("click",()=>{
+    DK.toast("Yedek anahtar etkin yapıldı.");
+  }));
+  document.getElementById("rn-save").addEventListener("click",()=>DK.toast("Sağlayıcı yeniden adlandırıldı."));
+  document.getElementById("url-save").addEventListener("click",()=>DK.toast("Temel URL güncellendi."));
+  document.getElementById("prm-remove").addEventListener("click",()=>{
+    DK.closeDialog("dlg-provider-remove");
+    DK.toast("OpenRouter kaldırıldı.","warn");
+  });
+  document.getElementById("test-all").addEventListener("click",()=>{
+    const btn=document.getElementById("test-all");
+    btn.disabled=true;btn.innerHTML='<span class="spin sm"></span> Sınanıyor…';
+    setTimeout(()=>{
+      btn.disabled=false;btn.innerHTML='Bağlantıları sına';
+      DK.toast("6 sağlayıcı çalışıyor · 1 sorun (agy kurulu değil)","warn");
+    },1400);
+  });
+})();
+</script>
+</body>
+</html>

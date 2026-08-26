@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Tutanaklar — Dikte</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+</head>
+<body data-page="minutes" data-runtime="pyqt6" data-python-screen="minutes">
+<div class="app" data-od-id="app-shell">
+  <div class="titlebar" data-od-id="titlebar">
+    <div class="tb-brand"><span class="tb-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>Dikte<span class="tb-sub">Ayarlar</span></div>
+    <div class="tb-controls" aria-hidden="true">
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="minus"></span></button>
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="square"></span></button>
+      <button class="tb-btn close" type="button" tabindex="-1"><span data-ic="x"></span></button>
+    </div>
+  </div>
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="side-brand">
+      <span class="brand-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>
+      <div><div class="brand-name">Dikte</div><div class="brand-sub">Yerelden dikte</div></div>
+    </div>
+    <nav class="nav" aria-label="Bölümler">
+      <a class="nav-item" data-nav="general" href="general.html"><span data-ic="sliders"></span><span>Genel</span></a>
+      <a class="nav-item" data-nav="api" href="api-models.html"><span data-ic="plug"></span><span>API ve Modeller</span></a>
+      <a class="nav-item" data-nav="cleanup" href="cleanup-rules.html"><span data-ic="eraser"></span><span>Temizlik Kuralları</span></a>
+      <a class="nav-item" data-nav="agent" href="agent.html"><span data-ic="terminal"></span><span>Ajan</span></a>
+      <a class="nav-item" data-nav="meeting" href="meeting.html"><span data-ic="users"></span><span>Toplantı</span></a>
+      <a class="nav-item active" data-nav="minutes" href="minutes.html" aria-current="page"><span data-ic="fileText"></span><span>Tutanaklar</span></a>
+      <a class="nav-item" data-nav="audio" href="audio-file.html"><span data-ic="fileAudio"></span><span>Ses Dosyası</span></a>
+      <a class="nav-item" data-nav="shortcuts" href="shortcuts.html"><span data-ic="keyboard"></span><span>Kısayollar</span></a>
+      <a class="nav-item" data-nav="history" href="history.html"><span data-ic="history"></span><span>Geçmiş</span></a>
+      <a class="nav-item" data-nav="overlay" href="overlay.html"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="engine-card" data-od-id="engine-card">
+        <div class="engine-top"><span data-ic="wave"></span><span>Whisper Small</span><span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></div>
+        <div class="engine-status"><span class="dot dot-ok"></span>Hazır<span class="engine-ver">1.0</span></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main" data-od-id="main">
+    <div class="page">
+      <header class="page-head" data-od-id="page-head">
+        <div>
+          <h1 class="page-title">Tutanaklar</h1>
+          <p class="page-sub">Kaydedilen toplantılar ve yazılan tutanaklar. Kayıt biter bitmez yazım kendiliğinden başlar; başarısız olursa kayıt burada bekler.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-ghost" type="button" id="reload"><span data-ic="refresh"></span>Yeniden yükle</button>
+          <button class="btn btn-secondary" type="button" id="open-folder"><span data-ic="folder"></span>Klasörü aç</button>
+        </div>
+      </header>
+
+      <div class="split" data-od-id="minutes-split">
+        <section class="pane" data-od-id="meeting-list-pane" aria-label="Toplantı listesi">
+          <div class="pane-h">
+            <span class="card-title" style="font-size:13.5px">Toplantılar</span>
+            <span class="meta" style="margin-left:auto" id="list-count">5 toplantı</span>
+          </div>
+          <div class="pane-b list" id="meet-list"></div>
+        </section>
+
+        <section class="pane" data-od-id="minutes-viewer" aria-label="Tutanak görüntüleyici">
+          <div id="viewer-status" style="padding:12px 16px 0"></div>
+          <article class="doc" id="viewer-doc" data-od-id="minutes-doc"></article>
+          <div class="pane-f" data-od-id="minutes-actions">
+            <button class="btn btn-secondary btn-sm" type="button" id="copy-min"><span data-ic="copy"></span>Kopyala</button>
+            <button class="btn btn-secondary btn-sm" type="button" id="open-folder-2"><span data-ic="folder"></span>Klasörü aç</button>
+            <span class="spacer"></span>
+            <button class="btn btn-danger btn-sm" type="button" id="delete-min"><span data-ic="trash"></span>Seçileni sil</button>
+            <button class="btn btn-ink btn-sm" type="button" id="write-min">Yaz</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="dlg-delete-meeting" role="dialog" aria-modal="true" aria-labelledby="dlg-dm-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-dm-t"><span data-ic="trash" style="color:var(--err)"></span>Toplantı silinsin mi?</div>
+    <div class="dialog-b">
+      <p id="dlg-dm-body">Bu toplantı, tutanağı ve ses kaydı silinir. Bu işlem geri alınamaz.</p>
+    </div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-delete-meeting">Vazgeç</button>
+      <button class="btn btn-danger solid" type="button" id="delete-confirm">Sil</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" aria-live="polite"></div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  const MEETINGS=[
+    {id:"m1",title:"Tasarım gözden geçirme",date:"24 Ağustos 2026, 14:30",len:"42 dk",status:"done",model:"google/gemini-3.5-flash",
+     banner:"",
+     doc:'<h1>Tasarım gözden geçirme</h1><div class="doc-meta">24 Ağustos 2026, 14:30 · 42 dk · google/gemini-3.5-flash ile yazıldı</div>'+
+     '<h2>Özet</h2><p>Kayıt akışının üç ekranı elden geçirildi; yapıştırma davranışı ve gösterge köşesi kararlaştırıldı. Ses dosyası kuyruğu bir sonraki sürüme bırakıldı.</p>'+
+     '<h2>Kararlar</h2><ul><li>Gösterge varsayılanı sol alt köşe olacak.</li><li>Temizlik varsayılanı açık, düşünme düzeyi kapalı kalacak.</li><li>Yapıştırma tuşu ayarı Genel sayfasında tutulacak.</li></ul>'+
+     '<h2>Yapılacaklar</h2><ul><li><b>Deniz:</b> gösterge dalga formunu yeni paletle yeniden çizmek — 27 Ağustos.</li><li><b>Aylin:</b> yapıştırma hata mesajlarını gözden geçirmek — 29 Ağustos.</li><li><b>Atanmadı:</b> SRT çıktısı için örnek dosya hazırlamak.</li></ul>'+
+     '<h2>Açık sorular</h2><ul><li>Toplantı kayıtları 4 saatten uzun olursa parçalama stratejisi ne olacak?</li></ul>'+
+     '<h2>Dikkat çeken anlar</h2><ul><li><span class="stamp">[12:40]</span> Yapıştırma tuşunun uçbirimde çalışmama durumu tartışıldı.</li></ul>'+
+     '<div class="doc-transcript"><h2>Transkript</h2>'+
+     '<p class="t-line"><span class="stamp">[00:12]</span><b>Mamak:</b> Göstergeyi sol alta alalım, sağ altta bildirim merkezi var.</p>'+
+     '<p class="t-line"><span class="stamp">[03:26]</span><b>Deniz Yıldırım:</b> Dalga formunu tek satır tutalım, toplantıda ikiye bölüyoruz zaten.</p>'+
+     '<p class="t-line"><span class="stamp">[18:03]</span><b>Aylin Kaya:</b> Temizlik kapalıyken ham metin gidiyor, kullanıcı şaşırmasın diye küçük bir not koyalım.</p></div>'},
+    {id:"m2",title:"Ürün fikirleri — sesli not",date:"24 Ağustos 2026, 09:10",len:"18 dk",status:"recorded",
+     banner:'<div class="note note-info"><span data-ic="info"></span><span class="note-body"><b>Kayıt tamamlandı, tutanak bekliyor.</b> Bu kayıt için yazım henüz başlatılmadı; "Yaz" ile şimdi başlatabilirsiniz.</span></div>',
+     doc:'<h1>Ürün fikirleri — sesli not</h1><div class="doc-meta">24 Ağustos 2026, 09:10 · 18 dk · kayıt: 20260824-0910.wav</div><p>Henüz bir şey yazılmadı. Kayıt diskte bekliyor; transkripsiyon ve tutanak "Yaz" dediğinizde sırayla çalışır.</p>'},
+    {id:"m3",title:"Haftalık planlama",date:"21 Ağustos 2026, 09:00",len:"1 sa 05 dk",status:"working",progress:"Temizleniyor 2/3…",
+     banner:'<div class="note note-info"><span data-ic="info"></span><span class="note-body"><b>Tutanak yazılıyor.</b> <span class="working"><span class="spin sm"></span>Temizleniyor 2/3…</span> Bu toplantı silinemez; yazım bitince kendiliğinden listeye düşer.</span></div>',
+     doc:'<h1>Haftalık planlama</h1><div class="doc-meta">21 Ağustos 2026, 09:00 · 1 sa 05 dk</div><p class="working"><span class="spin"></span>Transkript temizleniyor; tutanak bundan sonra yazılacak. Bu pencere yazım bitince kendiliğinden dolar.</p>'},
+    {id:"m4",title:"Müşteri görüşmesi",date:"19 Ağustos 2026, 15:22",len:"36 dk",status:"failed",error:"Model 600 sn içinde bitmedi",
+     banner:'<div class="note note-err"><span data-ic="alert"></span><span class="note-body"><b>Tutanak yazılamadı:</b> Model 600 sn içinde bitmedi. Kayıt saklandı — aşağıdan yeniden deneyebilir ya da Toplantı sayfasından başka bir model seçebilirsiniz.</span></div>',
+     doc:'<h1>Müşteri görüşmesi</h1><div class="doc-meta">19 Ağustos 2026, 15:22 · 36 dk · kayıt korundu</div><p>Tutanak yazılamadı; transkript hazır olduğundan yazım transkriptten devam eder, ses bir daha işlenmez.</p>'},
+    {id:"m5",title:"Sprint değerlendirmesi",date:"15 Ağustos 2026, 11:00",len:"52 dk",status:"done",model:"gemma-3-4b-it-Q4_K_M",
+     banner:"",
+     doc:'<h1>Sprint değerlendirmesi</h1><div class="doc-meta">15 Ağustos 2026, 11:00 · 52 dk · gemma-3-4b-it-Q4_K_M ile yazıldı</div>'+
+     '<h2>Özet</h2><p>Yayın gecikmesi tek başına dosya transkripsiyonunun parça yüklemesinden kaynaklandı; parça boyutu 24 MB'a sabitlendi.</p>'+
+     '<h2>Kararlar</h2><ul><li>Parça üst sınırı 24 MB, parça süresi 10 dakika.</li><li>Zaman damgası kapalıyken parçalar arası örtüşme kaldırıldı.</li></ul>'+
+     '<h2>Yapılacaklar</h2><ul><li><b>Deniz:</b> parça birleştirme testlerini genişletmek — 18 Ağustos.</li></ul>'}
+  ];
+  let selected="m1";
+  const list=document.getElementById("meet-list");
+  function chipFor(m){
+    if(m.status==="done")return '<span class="chip chip-ok"><span data-ic="check" style="width:11px;height:11px"></span>Tutanak hazır</span>';
+    if(m.status==="working")return '<span class="chip chip-sage"><span class="spin sm"></span>Yazılıyor…</span>';
+    if(m.status==="recorded")return '<span class="chip chip-gray"><span class="dot dot-idle"></span>Yazılmayı bekliyor</span>';
+    if(m.status==="failed")return '<span class="chip chip-red"><span data-ic="alert" style="width:11px;height:11px"></span>Başarısız</span>';
+    return "";
+  }
+  function renderList(){
+    list.innerHTML="";
+    MEETINGS.forEach(m=>{
+      const row=document.createElement("div");
+      row.className="li-row"+(m.id===selected?" selected":"");
+      row.setAttribute("data-od-id","meeting-"+m.id);
+      row.setAttribute("role","button");
+      row.tabIndex=0;
+      row.innerHTML='<span class="li-ic" data-ic="users"></span>'+
+        '<div class="li-main"><div class="li-title">'+m.title+'</div>'+
+        '<div class="li-sub">'+(m.status==="failed"?m.error:(m.status==="working"?m.progress:(m.status==="done"?m.model+" ile yazıldı":"kayıt: "+m.date.split(",")[1].trim()+" · wav diskte")))+"</div></div>"+
+        '<div class="li-side"><div class="li-meta">'+m.date.split(",")[0]+" · "+m.len+"</div>"+chipFor(m)+"</div>";
+      row.addEventListener("click",()=>{selected=m.id;render();});
+      row.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selected=m.id;render();}});
+      list.appendChild(row);
+    });
+    document.getElementById("list-count").textContent=MEETINGS.length+" toplantı";
+    DK.inject(list);
+  }
+  function render(){
+    renderList();
+    const m=MEETINGS.find(x=>x.id===selected);
+    const status=document.getElementById("viewer-status");
+    const doc=document.getElementById("viewer-doc");
+    const write=document.getElementById("write-min");
+    const del=document.getElementById("delete-min");
+    const copy=document.getElementById("copy-min");
+    if(!m){
+      status.innerHTML="";
+      doc.innerHTML='<div class="empty"><span class="empty-ic" data-ic="users"></span><div class="empty-t">Henüz toplantı yok</div><div class="empty-d">Tepsi menüsünden "Toplantı kaydet" ile başlayın; kayıt bittiğinde tutanak kendiliğinden yazılır ve burada listelenir.</div><a class="btn btn-secondary" href="meeting.html">Toplantı ayarları</a></div>';
+      DK.inject(doc);
+      write.disabled=true;write.textContent="Yaz";write.title="";
+      del.disabled=true;copy.disabled=true;
+      return;
+    }
+    status.innerHTML=m.banner||"";
+    DK.inject(status);
+    doc.innerHTML=m.doc;
+    write.disabled=false;
+    del.disabled=(m.status==="working");
+    copy.disabled=false;
+    if(m.status==="done"){write.textContent="Yazıldı";write.disabled=true;write.title="Bu toplantı zaten yazıldı.";}
+    else if(m.status==="working"){write.innerHTML='<span class="spin sm"></span> Yazılıyor…';write.disabled=true;}
+    else if(m.status==="failed"){write.textContent="Yeniden yaz";write.title="Transkript hazır; yazım transkriptten devam eder.";}
+    else{write.textContent="Yaz";write.title="Kaydı transkribe et ve tutanağı yaz.";}
+  }
+  document.getElementById("write-min").addEventListener("click",()=>{
+    const m=MEETINGS.find(x=>x.id===selected);
+    if(!m||m.status==="done"||m.status==="working")return;
+    m.status="working";m.progress="Transkript hazırlanıyor…";
+    render();
+    DK.toast("Yazım başladı: "+m.title);
+    setTimeout(()=>{m.progress="Temizleniyor 1/2…";render();},1600);
+    setTimeout(()=>{m.status="done";m.model=m.model||"google/gemini-3.5-flash";render();DK.toast("Tutanak yazıldı: "+m.title);},4200);
+  });
+  document.getElementById("delete-min").addEventListener("click",()=>{
+    const m=MEETINGS.find(x=>x.id===selected);
+    if(!m)return;
+    if(m.status==="working"){DK.toast("Bu toplantı şu anda yazılıyor; silinemez.","warn");return;}
+    document.getElementById("dlg-dm-body").innerHTML="<b>"+m.title+"</b> toplantısı, tutanağı ve ses kaydı silinir. Bu işlem geri alınamaz.";
+    DK.openDialog("dlg-delete-meeting");
+  });
+  document.getElementById("delete-confirm").addEventListener("click",()=>{
+    const i=MEETINGS.findIndex(x=>x.id===selected);
+    const name=MEETINGS[i].title;
+    MEETINGS.splice(i,1);
+    selected=MEETINGS.length?MEETINGS[Math.max(0,i-1)].id:null;
+    DK.closeDialog("dlg-delete-meeting");
+    render();
+    DK.toast("Silindi: "+name,"warn");
+  });
+  document.getElementById("copy-min").addEventListener("click",()=>DK.toast("Tutanak panoya kopyalandı."));
+  document.getElementById("open-folder").addEventListener("click",()=>DK.toast("Klasör açılıyor: …\\dikte\\meetings"));
+  document.getElementById("open-folder-2").addEventListener("click",()=>DK.toast("Klasör açılıyor: …\\dikte\\meetings"));
+  document.getElementById("reload").addEventListener("click",e=>{
+    const btn=e.currentTarget;
+    btn.disabled=true;btn.innerHTML='<span class="spin sm"></span> Yeniden yükleniyor…';
+    setTimeout(()=>{
+      btn.disabled=false;btn.innerHTML='Yeniden yükle';
+      render();DK.toast("Tutanak listesi yenilendi.");
+    },900);
+  });
+  render();
+})();
+</script>
+</body>
+</html>

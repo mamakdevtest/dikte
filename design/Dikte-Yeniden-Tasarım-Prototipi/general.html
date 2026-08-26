@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Genel — Dikte</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+</head>
+<body data-page="general" data-runtime="pyqt6" data-python-screen="general">
+<div class="app" data-od-id="app-shell">
+  <div class="titlebar" data-od-id="titlebar">
+    <div class="tb-brand"><span class="tb-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>Dikte<span class="tb-sub">Ayarlar</span></div>
+    <div class="tb-controls" aria-hidden="true">
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="minus"></span></button>
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="square"></span></button>
+      <button class="tb-btn close" type="button" tabindex="-1"><span data-ic="x"></span></button>
+    </div>
+  </div>
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="side-brand">
+      <span class="brand-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>
+      <div><div class="brand-name">Dikte</div><div class="brand-sub">Yerelden dikte</div></div>
+    </div>
+    <nav class="nav" aria-label="Bölümler">
+      <a class="nav-item active" data-nav="general" href="general.html" aria-current="page"><span data-ic="sliders"></span><span>Genel</span></a>
+      <a class="nav-item" data-nav="api" href="api-models.html"><span data-ic="plug"></span><span>API ve Modeller</span></a>
+      <a class="nav-item" data-nav="cleanup" href="cleanup-rules.html"><span data-ic="eraser"></span><span>Temizlik Kuralları</span></a>
+      <a class="nav-item" data-nav="agent" href="agent.html"><span data-ic="terminal"></span><span>Ajan</span></a>
+      <a class="nav-item" data-nav="meeting" href="meeting.html"><span data-ic="users"></span><span>Toplantı</span></a>
+      <a class="nav-item" data-nav="minutes" href="minutes.html"><span data-ic="fileText"></span><span>Tutanaklar</span></a>
+      <a class="nav-item" data-nav="audio" href="audio-file.html"><span data-ic="fileAudio"></span><span>Ses Dosyası</span></a>
+      <a class="nav-item" data-nav="shortcuts" href="shortcuts.html"><span data-ic="keyboard"></span><span>Kısayollar</span></a>
+      <a class="nav-item" data-nav="history" href="history.html"><span data-ic="history"></span><span>Geçmiş</span></a>
+      <a class="nav-item" data-nav="overlay" href="overlay.html"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="engine-card" data-od-id="engine-card">
+        <div class="engine-top"><span data-ic="wave"></span><span>Whisper Small</span><span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></div>
+        <div class="engine-status"><span class="dot dot-ok"></span>Hazır<span class="engine-ver">1.0</span></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main" data-od-id="main">
+    <div class="page">
+      <header class="page-head" data-od-id="page-head">
+        <div>
+          <h1 class="page-title">Genel</h1>
+          <p class="page-sub">Günlük diktenin davranışı: dil, metnin nereye yazılacağı, kayıt limitleri ve sessizlik algısı.</p>
+        </div>
+      </header>
+
+      <section class="card" data-od-id="group-language">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Dil ve giriş</h2>
+            <p class="card-desc">Arayüzün dili, hangi mikrofondan dinleyeceğiniz ve konuşmanın hangi dilde bekleneceği.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-ui-language">
+            <div class="row-main">
+              <div class="row-label">Arayüz dili</div>
+              <div class="row-help">Değişikliğin her pencereye ulaşması için Dikte'yi yeniden başlatın.</div>
+            </div>
+            <div class="row-control" style="width:220px">
+              <span class="select-wrap w-full"><select class="field" id="ui-lang">
+                <option selected>Sistem dili (otomatik)</option>
+                <option>Türkçe</option>
+                <option>English</option>
+              </select></span>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-microphone">
+            <div class="row-main">
+              <div class="row-label">Mikrofon</div>
+              <div class="row-help">Dikte, ajan komutu ve toplantı mikrofonu bu girişi dinler.</div>
+            </div>
+            <div class="row-control" style="width:300px">
+              <span class="select-wrap w-full"><select class="field">
+                <option selected>Varsayılan mikrofon</option>
+                <option>Mikrofon Dizisi (Realtek Audio)</option>
+                <option>Yeti Stereo Microphone</option>
+              </select></span>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-speech-language">
+            <div class="row-main">
+              <div class="row-label">Konuşma dili</div>
+              <div class="row-help">Doğru dil, ilk denemede daha az yanlış duyma demektir. Otomatik algılamada kısa kayıtlar bazen yanılmaktadır.</div>
+            </div>
+            <div class="row-control" style="width:220px">
+              <span class="select-wrap w-full"><select class="field">
+                <option>Otomatik algıla</option>
+                <option selected>Türkçe</option>
+                <option>English</option>
+                <option>Deutsch</option>
+                <option>Français</option>
+                <option>Español</option>
+                <option>العربية</option>
+              </select></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-insertion">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Metin ekleme</h2>
+            <p class="card-desc">Transkript hazır olduğunda metnin nereye ve hangi tuşlarla yazılacağı.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-auto-paste">
+            <div class="row-main">
+              <div class="row-label">Metni odaklanan pencereye yapıştır</div>
+              <div class="row-help">Kapalıyken transkript yalnızca panoya kopyalanır; siz yapıştırırsınız.</div>
+            </div>
+            <div class="row-control" data-gate="#row-paste-key,#row-clipboard">
+              <label class="toggle"><input type="checkbox" checked><span class="tr"></span></label>
+            </div>
+          </div>
+          <div class="row" id="row-paste-key" data-od-id="row-paste-key">
+            <div class="row-main">
+              <div class="row-label">Yapıştırma tuşu</div>
+              <div class="row-help">Uçbirimler genellikle <span class="kbd">Ctrl</span> <span class="kbd">Shift</span> <span class="kbd">V</span> ister; yapıştırma hiçbir şey yapmıyorsa bunu değiştirin.</div>
+            </div>
+            <div class="row-control">
+              <div class="hotkey" data-od-id="hotkey-paste" role="button" tabindex="0" aria-label="Yapıştırma tuşunu değiştir">
+                <span class="hk-display"><span class="kbd">Ctrl</span><span class="hk-hint">+</span><span class="kbd">V</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="row" id="row-clipboard" data-od-id="row-clipboard">
+            <div class="row-main">
+              <div class="row-label">Yapıştırdıktan sonra önceki panoyu geri yükle</div>
+              <div class="row-help">Kopyaladığınız şey, yapıştırma bitince eski haline döner.</div>
+            </div>
+            <div class="row-control">
+              <label class="toggle"><input type="checkbox"><span class="tr"></span></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-recording">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Kayıt davranışı</h2>
+            <p class="card-desc">Kayıt sırasında nelerin görüneceği ve kaydın nerede duracağı.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-corner">
+            <div class="row-main">
+              <div class="row-label">Gösterge köşesi</div>
+              <div class="row-help">Kayıt sırasında ekranın köşesinde beliren yüzen gösterge. Tüm durumları <a href="overlay.html">Gösterge ve Tepsi</a> sayfasında görürsünüz.</div>
+            </div>
+            <div class="row-control" style="width:220px">
+              <span class="select-wrap w-full"><select class="field" id="corner">
+                <option selected>sol-alt</option>
+                <option>sağ-alt</option>
+                <option>sol-üst</option>
+                <option>sağ-üst</option>
+              </select></span>
+            </div>
+          </div>
+          <div class="row" id="row-max-sec" data-od-id="row-max-seconds">
+            <div class="row-main">
+              <div class="row-label">En uzun kayıt</div>
+              <div class="row-help">Bu süreye ulaşan kayıt kendiliğinden durur ve yine de yazıya çevrilir.</div>
+              <div class="field-error" hidden><span data-ic="alert"></span>10 ile 3600 arasında bir saniye değeri girin.</div>
+            </div>
+            <div class="row-control">
+              <span class="num"><button type="button" class="nbtn" data-step="-10">−</button><input id="max-sec" type="number" value="300" min="10" max="3600"><span class="suffix">sn</span><button type="button" class="nbtn" data-step="10">+</button></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-silence">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Sessizlik algısı</h2>
+            <p class="card-desc">Boşa giden kayıtların ve modellerin sessizlik için uydurduğu cümlelerin süzülmesi.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-skip-silent">
+            <div class="row-main">
+              <div class="row-label">Sessiz kayıtları atla</div>
+              <div class="row-help">Ses düzeyi eşiğin altındaysa transkripsiyon hiç çağrılmaz; sessiz bir kayıt boşa gitmez.</div>
+            </div>
+            <div class="row-control" data-gate="#row-threshold,#row-hallucination">
+              <label class="toggle"><input type="checkbox" checked><span class="tr"></span></label>
+            </div>
+          </div>
+          <div class="row" id="row-threshold" data-od-id="row-silence-threshold">
+            <div class="row-main">
+              <div class="row-label">Sessizlik eşiği</div>
+              <div class="row-help">Konuşma, kaydın kendi gürültü tabanının 10 dB üzerinde olmak zorundadır; bu mutlak tabana nadiren dokunmak gerekir. Sessiz konuşma atlanıyorsa düşürün, gürültü hâlâ geçiyorsa yükseltin.</div>
+            </div>
+            <div class="row-control">
+              <span class="num"><button type="button" class="nbtn" data-step="-5">−</button><input id="sil-db" type="number" value="-55" min="-80" max="-20"><span class="suffix">dB</span><button type="button" class="nbtn" data-step="5">+</button></span>
+            </div>
+          </div>
+          <div class="row" id="row-hallucination" data-od-id="row-hallucination">
+            <div class="row-main">
+              <div class="row-label">Sessize yakın kayıtlarda uydurma kalıp ifadeleri at</div>
+              <div class="row-help">Whisper sessizliğe “İzlediğiniz için teşekkürler” gibi yanıtlar verebilir; bunlar bilinen kalıp listesine karşı süzülür.</div>
+            </div>
+            <div class="row-control">
+              <label class="toggle"><input type="checkbox" checked><span class="tr"></span></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-storage">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Depolama</h2>
+            <p class="card-desc">Ham sesin saklanıp saklanmayacağı.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-keep-audio">
+            <div class="row-main">
+              <div class="row-label">Ses dosyalarını sakla</div>
+              <div class="row-help">Kapalıyken kayıt, yazıya çevrildikten sonra silinir. Açıkken şuraya taşınır: <span class="mono">C:\Users\MAMAK\AppData\Roaming\dikte\recordings</span></div>
+            </div>
+            <div class="row-control">
+              <label class="toggle"><input type="checkbox"><span class="tr"></span></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="savebar" data-od-id="savebar">
+        <span class="sb-status"><span class="dot dot-rec"></span>Kaydedilmemiş değişiklikler</span>
+        <div class="sb-actions">
+          <button class="btn btn-ghost" type="button" data-reset>Geri al</button>
+          <button class="btn btn-ink" type="button" data-save>Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  const inp=document.getElementById("max-sec");
+  const row=document.getElementById("row-max-sec");
+  const err=row.querySelector(".field-error");
+  function validate(){
+    const v=parseInt(inp.value,10);
+    const bad=isNaN(v)||v<10||v>3600;
+    inp.classList.toggle("is-invalid",bad);
+    err.hidden=!bad;
+  }
+  inp.addEventListener("change",validate);
+  validate();
+})();
+</script>
+</body>
+</html>

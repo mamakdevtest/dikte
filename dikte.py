@@ -51,7 +51,7 @@ from settings_ui import SettingsWindow  # noqa: E402
 from worker import Pipeline  # noqa: E402
 
 SERVER_NAME = ipc.SERVER_NAME
-IDLE, RECORDING, BUSY = "idle", "recording", "busy"
+IDLE, RECORDING, PAUSED, BUSY = "idle", "recording", "paused", "busy"
 # Dictation and a command for the agent are two runs of the same machinery, kept
 # apart so that neither waits on the other: an agent can spend a minute thinking,
 # and having dictation blocked for that minute is the whole problem. They share
@@ -112,12 +112,27 @@ class Dikte:
         # Which recording is the current one, so a timer set for the run that
         # started it cannot stop the one that came after.
         self._run_id = 0
+        self._accumulated_ms = 0
+        self._segment_clock = QElapsedTimer()
 
-        self.overlay = Overlay(self.conf["overlay_corner"])
+        self.overlay = Overlay(self.conf["overlay_corner"], interactive_live=True)
         # The agent's indicator sits on top of the dictation one when both are
         # up, and drops into the corner when it is alone there.
         self.ask_overlay = Overlay(self.conf["overlay_corner"], below=self.overlay,
-                                   dismissable=True)
+                                   dismissable=True, interactive_live=True)
+        # Wire recording pause/resume from overlay pill
+        self.overlay.pauseRequested.connect(lambda: self.pause_recording())
+        self.overlay.resumeRequested.connect(lambda: self.resume_recording())
+        self.ask_overlay.pauseRequested.connect(lambda: self.pause_recording())
+        self.ask_overlay.resumeRequested.connect(lambda: self.resume_recording())
+        # Thinking popup for AI stages (pause/stop) — separate from audio pause
+        try:
+            from ui.thinking import ThinkingPopup
+            self.thinking = ThinkingPopup()
+            self.thinking.pauseToggled.connect(self._on_thinking_pause)
+            self.thinking.stopRequested.connect(self.cancel_ask)
+        except Exception:
+            self.thinking = None
         self.recorder = audio.Recorder()
         self.pipeline = Pipeline(self.conf)
         self.ask_pipeline = Pipeline(self.conf)
@@ -138,6 +153,11 @@ class Dikte:
         self.ask_pipeline.finished.connect(self._on_ask_finished)
         self.ask_pipeline.failed.connect(self._on_ask_error)
         self.ask_pipeline.cancelled.connect(self._on_ask_cancelled)
+        if getattr(self, "thinking", None) is not None:
+            self.ask_pipeline.stage.connect(self.thinking.push_stage)
+            self.ask_pipeline.finished.connect(lambda *a: self.thinking.hide_popup())
+            self.ask_pipeline.failed.connect(lambda *a: self.thinking.hide_popup())
+            self.ask_pipeline.cancelled.connect(lambda: self.thinking.hide_popup())
         self.meeting_recorder.levels.connect(self._on_meeting_levels)
         self.meeting_recorder.stopped.connect(self._on_meeting_recorded)
         self.meeting_recorder.died.connect(self._on_meeting_died)
@@ -169,26 +189,38 @@ class Dikte:
     def _build_tray(self):
         # Keep menu and actions on self: PyQt does not take ownership when they
         # are only passed to addAction(), and garbage collection eats them.
+        try:
+            from ui import icons as _icons
+            from ui import theme as _theme
+            _pal = _theme.palette()
+            _ic = lambda n: _icons.icon(n, 15, _pal.get("fg2", "#A8BCB5"))
+        except Exception:
+            _ic = lambda _n: QIcon()
         self.menu = QMenu()
-        self.toggle_action = QAction(t("Start recording"), self.menu)
+        # Ensure QSS is applied (non-native) so dark/light tokens are readable on all OS
+        try:
+            self.menu.setStyleSheet(QApplication.instance().styleSheet() if QApplication.instance() else "")
+        except Exception:
+            pass
+        self.toggle_action = QAction(_ic("mic"), t("Start recording"), self.menu)
         self.toggle_action.triggered.connect(self._toggle)
         self.menu.addAction(self.toggle_action)
 
         # Named in _refresh_tray, which is where the chosen provider is known.
-        self.ask_action = QAction("", self.menu)
+        self.ask_action = QAction(_ic("terminal"), "", self.menu)
         self.ask_action.triggered.connect(self._toggle_ask)
         self.menu.addAction(self.ask_action)
 
-        self.reset_action = QAction(t("Start a new conversation"), self.menu)
+        self.reset_action = QAction(_ic("refresh"), t("Start a new conversation"), self.menu)
         self.reset_action.triggered.connect(self.reset_conversation)
         self.menu.addAction(self.reset_action)
 
-        self.ask_cancel_action = QAction("", self.menu)
+        self.ask_cancel_action = QAction(_ic("stop"), "", self.menu)
         self.ask_cancel_action.triggered.connect(self.cancel_ask)
         self.ask_cancel_action.setEnabled(False)
         self.menu.addAction(self.ask_cancel_action)
 
-        self.cancel_action = QAction(t("Discard the recording"), self.menu)
+        self.cancel_action = QAction(_ic("x"), t("Discard the recording"), self.menu)
         # The inner method, so that a menu click is never mistaken for the KDE
         # shortcut echoing the built-in listener's press.
         self.cancel_action.triggered.connect(self._cancel)
@@ -196,26 +228,26 @@ class Dikte:
         self.menu.addAction(self.cancel_action)
         self.menu.addSeparator()
 
-        self.meeting_action = QAction(t("Record a meeting"), self.menu)
+        self.meeting_action = QAction(_ic("users"), t("Record a meeting"), self.menu)
         self.meeting_action.triggered.connect(self._toggle_meeting)
         self.menu.addAction(self.meeting_action)
 
-        self.meeting_cancel_action = QAction(t("Discard the meeting"), self.menu)
+        self.meeting_cancel_action = QAction(_ic("trash"), t("Discard the meeting"), self.menu)
         self.meeting_cancel_action.triggered.connect(self.cancel_meeting)
         self.meeting_cancel_action.setEnabled(False)
         self.menu.addAction(self.meeting_cancel_action)
         self.menu.addSeparator()
 
-        self.settings_action = QAction(t("Settings…"), self.menu)
+        self.settings_action = QAction(_ic("sliders"), t("Settings…"), self.menu)
         self.settings_action.triggered.connect(self.open_settings)
         self.menu.addAction(self.settings_action)
 
-        self.restart_action = QAction(t("Restart"), self.menu)
+        self.restart_action = QAction(_ic("restart"), t("Restart"), self.menu)
         self.restart_action.triggered.connect(self.restart)
         self.menu.addAction(self.restart_action)
         self.menu.addSeparator()
 
-        self.quit_action = QAction(t("Quit"), self.menu)
+        self.quit_action = QAction(_ic("power"), t("Quit"), self.menu)
         self.quit_action.triggered.connect(self.app.quit)
         self.menu.addAction(self.quit_action)
 
@@ -230,7 +262,7 @@ class Dikte:
         # The two shortcuts are each tied to their own mode, on purpose, but the
         # icon is one button: having it refuse to stop a recording it can see is
         # just a button that does nothing.
-        if self.ask_state == RECORDING:
+        if self.ask_state in (RECORDING, PAUSED):
             self._toggle_ask()
         else:
             self._toggle()
@@ -260,13 +292,19 @@ class Dikte:
 
     @property
     def recording(self):
-        """True while the microphone is serving either of the two.
+        """True while a logical recording session exists (capturing or paused).
 
         Read off the states rather than off recorder_owner, which outlives the
         recording: it is still set between stop() and the audio arriving, and
         the microphone is free in that gap.
+        PAUSED still counts as a session – it blocks a second dictation/ask.
         """
-        return RECORDING in (self.state, self.ask_state)
+        return (self.state in (RECORDING, PAUSED)) or (self.ask_state in (RECORDING, PAUSED))
+
+    @property
+    def capturing(self):
+        """True while the microphone subprocess is actually running."""
+        return (self.state == RECORDING) or (self.ask_state == RECORDING)
 
     def _set_state(self, state):
         self.state = state
@@ -286,24 +324,29 @@ class Dikte:
         labels = {
             IDLE: ("Start recording", "audio-input-microphone", "Dikte: ready"),
             RECORDING: ("Stop and transcribe", "media-record", "Dikte: recording"),
+            PAUSED: ("Stop and transcribe", "media-record", "Dikte: paused"),
             BUSY: ("Working…", "view-refresh", "Dikte: working"),
         }
-        label, icon, tip = labels[self.state]
+        # PAUSED reuses RECORDING label – main toggle remains stop, pause is overlay button
+        label, icon, tip = labels.get(self.state, labels[IDLE])
         agent = assistant.display_name(self.conf)
 
         self.toggle_action.setText(t(label))
         # Free while the other one is thinking, blocked only while it is holding
-        # the microphone.
+        # the microphone. PAUSED still blocks new session, but toggle remains stop.
         self.toggle_action.setEnabled(
-            self.state == RECORDING or (self.state == IDLE and not self.recording)
+            self.state in (RECORDING, PAUSED) or (self.state == IDLE and not self.recording)
         )
-        asked = i18n.name(agent, "dative")
-        self.ask_action.setText(
-            t("Stop and ask {name}", name=asked) if self.ask_state == RECORDING
-            else t("Ask {name}", name=asked)
-        )
+        # Ask tray labels handle RECORDING and PAUSED as stop
+        if self.ask_state == RECORDING:
+            ask_label = t("Stop and ask {name}", name=i18n.name(agent, "dative"))
+        elif self.ask_state == PAUSED:
+            ask_label = t("Stop and ask {name}", name=i18n.name(agent, "dative"))
+        else:
+            ask_label = t("Ask {name}", name=i18n.name(agent, "dative"))
+        self.ask_action.setText(ask_label)
         self.ask_action.setEnabled(
-            self.ask_state == RECORDING
+            self.ask_state in (RECORDING, PAUSED)
             or (self.ask_state == IDLE and not self.recording)
         )
         self.reset_action.setEnabled(self.ask_state != BUSY)
@@ -318,8 +361,9 @@ class Dikte:
         # The agent speaks through the icon only when dictation has nothing to
         # say, since dictation is the one being waited on in front of a screen.
         if self.state == IDLE and self.ask_state != IDLE:
-            if self.ask_state == RECORDING:
-                icon, tip = "media-record", "Dikte: recording for Claude"
+            if self.ask_state in (RECORDING, PAUSED):
+                icon = "media-record"
+                tip = t("Dikte: paused") if self.ask_state == PAUSED else "Dikte: recording for Claude"
             else:
                 icon, tip = "view-refresh", "Dikte: talking to Claude"
 
@@ -491,7 +535,7 @@ class Dikte:
 
     def _auto_stop(self, run):
         """The end of a `record --seconds`, if that recording is still the one."""
-        if self._run_id == run and self.state == RECORDING:
+        if self._run_id == run and self.state in (RECORDING, PAUSED):
             self.stop()
 
     def status(self):
@@ -518,7 +562,7 @@ class Dikte:
         # land on top of a key press; swallow the immediate repeat.
         if self._repeated():
             return
-        if self.state == RECORDING:
+        if self.state in (RECORDING, PAUSED):
             self.stop()
         elif self.state == IDLE:
             self.start()
@@ -527,7 +571,7 @@ class Dikte:
     def _toggle_ask(self):
         if self._repeated():
             return
-        if self.ask_state == RECORDING:
+        if self.ask_state in (RECORDING, PAUSED):
             self.stop_ask()
         elif self.ask_state == IDLE:
             self.start_ask()
@@ -556,21 +600,97 @@ class Dikte:
         """One microphone, so one of the two holds it at a time."""
         self.recorder_owner = owner
         self._run_id += 1
+        self._accumulated_ms = 0
+        self._segment_clock.restart()
         self.elapsed.restart()
         self.ticker.start()
         self.recorder.start(self.conf["mic_target"], self.conf["max_seconds"])
 
+    def pause_recording(self):
+        """Pause the active logical recording (dictation or ask)."""
+        # Dictation owns recorder
+        if self.recorder_owner == DICTATION and self.state == RECORDING:
+            if self.recorder.pause():
+                self._accumulated_ms += self._segment_clock.elapsed()
+                self.ticker.stop()
+                self._set_state(PAUSED)
+                try:
+                    self.overlay.show_paused(t("Paused"))
+                except AttributeError:
+                    self.overlay.show_busy(t("Paused"))
+                return True
+        elif self.recorder_owner == ASK and self.ask_state == RECORDING:
+            if self.recorder.pause():
+                self._accumulated_ms += self._segment_clock.elapsed()
+                self.ticker.stop()
+                self._set_ask_state(PAUSED)
+                try:
+                    self.ask_overlay.show_paused(t("Paused"))
+                except AttributeError:
+                    self.ask_overlay.show_busy(t("Paused"))
+                return True
+        return False
+
+    def resume_recording(self):
+        """Resume a paused session in the same logical recording."""
+        if self.recorder_owner == DICTATION and self.state == PAUSED:
+            # Check remaining capacity before resume
+            remaining = self.conf["max_seconds"] * 1000 - self._accumulated_ms
+            if remaining <= 0:
+                self._refresh_tray()
+                return False
+            if self.recorder.resume():
+                self._segment_clock.restart()
+                self.ticker.start()
+                self._set_state(RECORDING)
+                self.overlay.show_resumed()
+                return True
+        elif self.recorder_owner == ASK and self.ask_state == PAUSED:
+            remaining = self.conf["max_seconds"] * 1000 - self._accumulated_ms
+            if remaining <= 0:
+                return False
+            if self.recorder.resume():
+                self._segment_clock.restart()
+                self.ticker.start()
+                self._set_ask_state(RECORDING)
+                self.ask_overlay.show_resumed(asking=True)
+                return True
+        return False
+
+    def _current_seconds(self):
+        if self.state == RECORDING or self.ask_state == RECORDING:
+            return (self._accumulated_ms + self._segment_clock.elapsed()) / 1000.0
+        elif self.state == PAUSED or self.ask_state == PAUSED:
+            return self._accumulated_ms / 1000.0
+        else:
+            # fallback to elapsed for initial
+            try:
+                return self.elapsed.elapsed() / 1000.0
+            except Exception:
+                return 0.0
+
     def stop(self):
-        if self.state != RECORDING:
+        if self.state not in (RECORDING, PAUSED):
             return
+        # Accumulate final segment if still recording
+        if self.state == RECORDING:
+            try:
+                self._accumulated_ms += self._segment_clock.elapsed()
+            except Exception:
+                pass
         self.ticker.stop()
         self._set_state(BUSY)
         self.overlay.show_busy(t("Transcribing…"))
         self.recorder.stop()
 
     def stop_ask(self):
-        if self.ask_state != RECORDING:
+        if self.ask_state not in (RECORDING, PAUSED):
             return
+        if self.ask_state == RECORDING:
+            try:
+                self._accumulated_ms += self._segment_clock.elapsed()
+            except Exception:
+                pass
         self.ticker.stop()
         self._set_ask_state(BUSY)
         self.ask_overlay.show_busy(t("Transcribing…"))
@@ -580,9 +700,10 @@ class Dikte:
         """Throw away whichever recording is running."""
         if not self.recording:
             return
-        asking = self.ask_state == RECORDING
+        asking = self.ask_state in (RECORDING, PAUSED)
         self.ticker.stop()
         self.recorder.cancel()
+        self._accumulated_ms = 0
         self.recorder_owner = None
         # What goes over the socket is read by a program as often as by a
         # person, so it stays in one language; only what a run itself said
@@ -597,12 +718,22 @@ class Dikte:
             self._set_state(IDLE)
             self._settle(DICTATION, dropped)
 
+    def _on_thinking_pause(self, paused):
+        if paused:
+            self.ask_pipeline.pause()
+            self.ask_overlay.show_busy(t("Paused — thinking on hold"))
+        else:
+            self.ask_pipeline.resume()
+            # will resume next stage push
+
     def cancel_ask(self):
         """Call off the agent, whether it is still recording or already working."""
-        if self.ask_state == RECORDING:
+        if self.ask_state in (RECORDING, PAUSED):
             self._cancel()
         elif self.ask_state == BUSY:
             self.ask_overlay.show_busy(t("Stopping…"))
+            if getattr(self, "thinking", None) is not None:
+                self.thinking.hide_popup()
             self.ask_pipeline.cancel()
 
     def reset_conversation(self):
@@ -618,12 +749,16 @@ class Dikte:
         return self.ask_overlay if self.recorder_owner == ASK else self.overlay
 
     def _on_level(self, level):
+        # While paused, no new levels arrive (recorder stopped), so ignore
+        if self.state == PAUSED or self.ask_state == PAUSED:
+            return
         self._recording_overlay().push_level(level)
 
     def _tick(self):
-        seconds = self.elapsed.elapsed() / 1000.0
+        seconds = self._current_seconds()
         self._recording_overlay().set_seconds(seconds)
-        if seconds >= self.conf["max_seconds"]:
+        # Only auto-stop while actively capturing, not while paused
+        if self.capturing and seconds >= self.conf["max_seconds"]:
             (self.stop_ask if self.recorder_owner == ASK else self.stop)()
 
     # ---- meetings ---------------------------------------------------------

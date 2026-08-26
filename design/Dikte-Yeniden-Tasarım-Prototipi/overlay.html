@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Gösterge ve Tepsi | Dikte</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+<style>
+.ov-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px 14px;padding:16px 20px 20px}
+.ov-cell{display:flex;flex-direction:column;gap:9px}
+.ov-cell{grid-column:span 4}
+.ov-cell:nth-child(1),.ov-cell:nth-child(3),.ov-cell:nth-child(9){grid-column:span 6}
+.ov-cell .desk{min-height:148px;justify-content:center}
+.ov-cell .desk{background:color-mix(in srgb,var(--surface-2) 72%,var(--canvas));box-shadow:var(--sh-2)}
+.ov-cell figcaption{display:flex;flex-direction:column;gap:1px}
+.ov-cell figcaption b{font-size:13px;font-weight:600}
+.ov-cell figcaption span{font-size:11.5px;color:var(--fg-3);line-height:16px}
+.stack-gap{height:10px}
+.tray-demo{display:grid;grid-template-columns:280px minmax(0,1fr);gap:22px;padding:16px 20px 20px;align-items:start}
+.tray-col{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.balloon{max-width:360px}
+.balloon .b-title{font-weight:600;color:var(--fg);margin-bottom:2px;display:flex;align-items:center;gap:7px}
+.balloon .b-body{font-size:12px;color:var(--fg-2);line-height:17px;white-space:pre-line}
+.overlay-tuning{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
+.color-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.color-control{display:flex;align-items:center;gap:8px;padding:8px 9px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--fg-2)}
+.color-control input{width:30px;height:26px;padding:0;border:0;border-radius:5px;background:transparent;cursor:pointer}
+.sound-panel{display:flex;flex-direction:column;gap:10px;padding:14px 16px;background:color-mix(in oklab,var(--sage) 11%,var(--surface));border:1px solid color-mix(in oklab,var(--sage-dark) 24%,var(--border));border-radius:8px}
+.sound-panel h3{font-size:13px;font-weight:600}.sound-panel p{font-size:11.5px;line-height:17px;color:var(--fg-3)}
+.sound-meter{height:58px;display:flex;align-items:center;gap:3px;padding:0 10px;background:var(--field);border:1px solid var(--border);border-radius:7px}.sound-meter i{width:4px;height:8px;border-radius:3px;background:var(--ov-rec,var(--terra));transition:height .08s ease}
+.sound-controls{display:flex;align-items:center;gap:9px}.sound-controls input[type=range]{flex:1;accent-color:var(--sage-dark)}.sound-state{display:flex;align-items:center;gap:6px;min-height:18px;font-size:11px;color:var(--fg-3)}
+.color-control:focus-within{outline:2px solid var(--sage-dark);outline-offset:2px}.sound-controls button:focus-visible,.sound-controls input:focus-visible{outline:2px solid var(--sage-dark);outline-offset:2px}
+.ov.is-rec{--wc:var(--ov-rec,var(--terra))}.ov.is-ask{--wc:var(--ov-ask,var(--sage-dark))}.ov.is-busy{--wc:var(--ov-busy,var(--info))}
+.ov-dot.rec{background:var(--ov-rec,var(--terra))}.ov-dot.ask{background:var(--ov-ask,var(--sage-dark))}.ov-dot.ok{background:var(--ov-ok,var(--ok))}.ov-dot.warn{background:var(--ov-warn,var(--warn))}.ov-dot.err{background:var(--ov-err,var(--err))}
+.ov.is-ok [data-ic]{color:var(--ov-ok,var(--ok))!important}.ov.is-warn [data-ic]{color:var(--ov-warn,var(--warn))!important}.ov.is-err [data-ic]{color:var(--ov-err,var(--err))!important}.ov .arc{border-top-color:var(--ov-busy,var(--info))}
+@media (max-width:900px){.overlay-tuning{grid-template-columns:1fr}.color-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){.ov-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ov-cell,.ov-cell:nth-child(1),.ov-cell:nth-child(3),.ov-cell:nth-child(9){grid-column:auto}}
+@media (max-width:560px){.color-grid{grid-template-columns:1fr}.sound-controls{flex-wrap:wrap}.sound-controls input[type=range]{min-width:150px}}
+@media (max-width:560px){.ov-grid{grid-template-columns:1fr;padding-left:14px;padding-right:14px}}
+@media (prefers-reduced-motion:reduce){.sound-meter i,.ov-wave i{transition:none!important;animation:none!important}}
+@media (max-width:900px){.tray-demo{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-page="overlay" data-runtime="pyqt6" data-python-screen="overlay">
+<div class="app" data-od-id="app-shell">
+  <div class="titlebar" data-od-id="titlebar">
+    <div class="tb-brand"><span class="tb-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>Dikte<span class="tb-sub">Ayarlar</span></div>
+    <div class="tb-controls" aria-hidden="true">
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="minus"></span></button>
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="square"></span></button>
+      <button class="tb-btn close" type="button" tabindex="-1"><span data-ic="x"></span></button>
+    </div>
+  </div>
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="side-brand">
+      <span class="brand-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>
+      <div><div class="brand-name">Dikte</div><div class="brand-sub">Yerelden dikte</div></div>
+    </div>
+    <nav class="nav" aria-label="Bölümler">
+      <a class="nav-item" data-nav="general" href="general.html"><span data-ic="sliders"></span><span>Genel</span></a>
+      <a class="nav-item" data-nav="api" href="api-models.html"><span data-ic="plug"></span><span>API ve Modeller</span></a>
+      <a class="nav-item" data-nav="cleanup" href="cleanup-rules.html"><span data-ic="eraser"></span><span>Temizlik Kuralları</span></a>
+      <a class="nav-item" data-nav="agent" href="agent.html"><span data-ic="terminal"></span><span>Ajan</span></a>
+      <a class="nav-item" data-nav="meeting" href="meeting.html"><span data-ic="users"></span><span>Toplantı</span></a>
+      <a class="nav-item" data-nav="minutes" href="minutes.html"><span data-ic="fileText"></span><span>Tutanaklar</span></a>
+      <a class="nav-item" data-nav="audio" href="audio-file.html"><span data-ic="fileAudio"></span><span>Ses Dosyası</span></a>
+      <a class="nav-item" data-nav="shortcuts" href="shortcuts.html"><span data-ic="keyboard"></span><span>Kısayollar</span></a>
+      <a class="nav-item" data-nav="history" href="history.html"><span data-ic="history"></span><span>Geçmiş</span></a>
+      <a class="nav-item active" data-nav="overlay" href="overlay.html" aria-current="page"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="engine-card" data-od-id="engine-card">
+        <div class="engine-top"><span data-ic="wave"></span><span>Whisper Small</span><span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></div>
+        <div class="engine-status"><span class="dot dot-ok"></span>Hazır<span class="engine-ver">1.0</span></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main" data-od-id="main">
+    <div class="page">
+      <header class="page-head" data-od-id="page-head">
+        <div>
+          <h1 class="page-title">Gösterge ve Tepsi</h1>
+          <p class="page-sub">Gösterge kayıt, işleme ve sonuç durumlarını tek bakışta anlatır. Tepsi menüsü aynı eylemleri pencere dışından da erişilebilir tutar.</p>
+        </div>
+      </header>
+
+      <section class="card" data-od-id="group-overlay-states">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Gösterge durumları</h2>
+            <p class="card-desc">Köşe bandı 56 px yüksekliğindedir. Renk tek başına anlam taşımaz; her durumda simge veya dalga formu da görünür.</p>
+          </div>
+        </div>
+        <div class="card-b flush">
+          <div class="ov-grid">
+            <figure class="ov-cell" data-od-id="overlay-dictation">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-rec"><span class="ov-dot rec"></span><span class="ov-wave" data-wave="18"></span><span class="ov-timer">00:42</span></div>
+              </div>
+              <figcaption><b>A · Dikte kaydı</b><span>Nabızlı nokta, canlı dalga formu ve süre. Terracotta yalnızca kayıt anında kullanılır.</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-agent">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-ask"><span class="ov-dot ask"></span><span class="ov-wave" data-wave="18"></span><span class="ov-timer">00:07</span></div>
+              </div>
+              <figcaption><b>B · Ajan komutu kaydı</b><span>Aynı bant, menekşe vurgu. Kaydedilen içerik bir komuttur.</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-meeting">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-rec"><span class="ov-dot rec"></span>
+                  <span class="ov-wave dual" data-wave="dual"></span>
+                  <span class="ov-channels"><b>Karşı taraf ↑</b>Siz ↓</span>
+                  <span class="ov-timer">1:02:41</span>
+                </div>
+              </div>
+              <figcaption><b>C · Toplantı kaydı</b><span>İki kanal görünür: sizin mikrofonunuz altta, karşı taraf üstte. 12 sn sonra gizlenir.</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-busy">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-busy"><span class="arc"></span><span class="ov-msg">Transkribe ediliyor…</span><span class="ov-timer">0:04</span></div>
+              </div>
+              <figcaption><b>D · Meşgul</b><span>Örnek mesajlar: "Temizleniyor…", "Claude'a soruluyor…", "Tutanak yazılıyor…".</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-dismissable">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-busy"><span class="arc"></span><span class="ov-msg">Claude düşünüyor, dosyaları tarıyor…</span><span class="ov-x" role="button" aria-label="Bildirimi kapat, iş sürsün"><span data-ic="x"></span></span></div>
+              </div>
+              <figcaption><b>I · Kapatılabilir uzun iş</b><span>Sağdaki silik × bildirimi susturur; iş sürer, sonuç yine de bildirilir.</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-done">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-ok"><span class="ov-dot ok"></span><span data-ic="check" style="width:15px;height:15px;color:var(--ov-ok,var(--ok))"></span><span class="ov-msg">Yapıştırıldı: Toplantı notlarını gönd…</span></div>
+              </div>
+              <figcaption><b>E · Tamamlandı</b><span>2 sn sonra kendiliğinden kaybolur; eylem + kısa önizleme.</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-warning">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-warn"><span class="ov-dot warn"></span><span data-ic="alert" style="width:15px;height:15px;color:var(--ov-warn,var(--warn))"></span><span class="ov-msg">Ham yazıldı, temizlik başarısız: ağ geçidi yanıt vermedi</span></div>
+              </div>
+              <figcaption><b>F · Uyarı</b><span>Metin panoya yazıldı, ancak temizlik tamamlanamadı. 9 sn.</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-error">
+              <div class="desk"><span class="desk-tag">sol alt</span>
+                <div class="ov is-err"><span class="ov-dot err"></span><span data-ic="xC" style="width:15px;height:15px;color:var(--ov-err,var(--err))"></span><span class="ov-msg">Claude bulunamadı. Kurun veya sağlayıcıyı değiştirin.</span></div>
+              </div>
+              <figcaption><b>G · Hata</b><span>Tek satır, eyleme çağrı içerir. Ayrıntı balon bildirimde. 6 sn.</span></figcaption>
+            </figure>
+            <figure class="ov-cell" data-od-id="overlay-stacked">
+              <div class="desk"><span class="desk-tag">sol alt · yığınlı</span>
+                <div>
+                  <div class="ov is-rec"><span class="ov-dot rec"></span><span class="ov-wave" data-wave="14"></span><span class="ov-timer">00:18</span></div>
+                  <div class="stack-gap"></div>
+                  <div class="ov is-busy"><span class="arc"></span><span class="ov-msg">Claude düşünüyor…</span></div>
+                </div>
+              </div>
+              <figcaption><b>H · Yığınlı göstergeler</b><span>Dikte ve ajan bağımsız çalışır: iki iş aynı köşede 10 px arayla dizilir, biri bitince diğeri köşeye iner.</span></figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-overlay-behavior">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Köşe ve davranış</h2>
+            <p class="card-desc">Gösterge, imlecin olduğu ekranda belirir; sürüklenemez, odağı almaz, tıklamayı geçirir.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-corner-picker">
+            <div class="row-main">
+              <div class="row-label">Köşe</div>
+              <div class="row-help">Genel sayfasındaki seçimle aynı ayar. Sağdaki önizleme seçimi anında yansıtır.</div>
+            </div>
+            <div class="row-control" style="gap:16px">
+              <div class="corner-picker" role="group" aria-label="Gösterge köşesi">
+                <button class="corner-cell" type="button" data-corner="tl" aria-label="Sol üst"><span class="mini-pill"></span></button>
+                <button class="corner-cell" type="button" data-corner="tr" aria-label="Sağ üst"><span class="mini-pill"></span></button>
+                <button class="corner-cell active" type="button" data-corner="bl" aria-label="Sol alt"><span class="mini-pill"></span></button>
+                <button class="corner-cell" type="button" data-corner="br" aria-label="Sağ alt"><span class="mini-pill"></span></button>
+              </div>
+              <div class="mini-screen" aria-hidden="true">
+                <div class="mini-ov" style="left:6px;bottom:6px"><span class="d"></span><span class="bars"><i style="height:3px"></i><i style="height:6px"></i><i style="height:4px"></i><i style="height:7px"></i><i style="height:5px"></i></span><span>0:12</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-peek">
+            <div class="row-main">
+              <div class="row-label">Toplantı göstergesi 12 sn sonra gizlenir</div>
+              <div class="row-help">Uzun toplantıda bant sürekli görünmez; iki kanal görüldükten sonra yerini tepsi saatine bırakır.</div>
+            </div>
+            <div class="row-control"><span class="chip chip-gray"><span class="dot dot-idle"></span>kendiliğinden</span></div>
+          </div>
+          <div class="row" data-od-id="row-clickthrough">
+            <div class="row-main">
+              <div class="row-label">Tıklamaları geçirir</div>
+              <div class="row-help">Kayıt ve meşgul göstergeleri fare için yoktur; yalnızca ajan bandı tıklanabilir ve kapatılabilir.</div>
+            </div>
+            <div class="row-control">
+              <label class="toggle"><input type="checkbox" checked disabled><span class="tr"></span></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-overlay-tuning">
+        <div class="card-h"><div><h2 class="card-title">Renk ve ses tepkisi</h2><p class="card-desc">Gösterge renklerini ürün durumlarına göre değiştirin. Dalga formu ses seviyesine göre büyüyüp küçülür.</p></div><div class="h-control"><button class="btn btn-ghost btn-sm" id="reset-overlay-theme" type="button"><span data-ic="refresh"></span>Varsayılanlara dön</button></div></div>
+        <div class="card-b"><div class="overlay-tuning"><div><div class="color-grid" data-od-id="overlay-color-controls">
+          <label class="color-control"><input type="color" data-overlay-color="rec" value="#E08A72"><span>Kayıt</span></label>
+          <label class="color-control"><input type="color" data-overlay-color="ask" value="#A8C7B5"><span>Ajan</span></label>
+          <label class="color-control"><input type="color" data-overlay-color="busy" value="#82B9CE"><span>İşleniyor</span></label>
+          <label class="color-control"><input type="color" data-overlay-color="ok" value="#75C59B"><span>Başarı</span></label>
+          <label class="color-control"><input type="color" data-overlay-color="warn" value="#D8B870"><span>Uyarı</span></label>
+          <label class="color-control"><input type="color" data-overlay-color="err" value="#DF8582"><span>Hata</span></label>
+        </div><div class="row" style="padding-left:0;padding-right:0;border-top:0;margin-top:12px"><div class="row-main"><div class="row-label">Ses hassasiyeti</div><div class="row-help">Yüksek değerlerde küçük sesler daha büyük dalga formu üretir.</div></div><div class="row-control"><input id="sound-sensitivity" type="range" min="20" max="100" value="62" aria-label="Ses hassasiyeti"><output id="sound-sensitivity-value" for="sound-sensitivity">62</output></div></div></div>
+          <div class="sound-panel" data-od-id="sound-response-panel"><h3>Canlı ses önizlemesi</h3><div class="sound-meter" id="sound-meter" aria-label="Ses seviyesi göstergesi"></div><div class="sound-controls"><button class="btn btn-secondary btn-sm" id="sound-toggle" type="button"><span data-ic="play"></span>Ses tepkisini başlat</button><span class="sound-state" id="sound-state" role="status" aria-live="polite"><span class="dot dot-idle"></span>Kapalı</span></div><p>İzin verilirse mikrofon seviyesi kullanılır. Mikrofon açılamazsa önizleme kontrollü simülasyonla devam eder.</p></div>
+        </div></div>
+      </section>
+
+      <section class="card" data-od-id="group-tray">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Tepsi menüsü</h2>
+            <p class="card-desc">Duruma göre etiketler değişir, eylemler açılıp kapanır. Sol tık: süren kaydı bitirir ya da dikteyi başlatır/durdurur.</p>
+          </div>
+          <div class="h-control">
+            <span class="seg" id="tray-states" role="tablist" aria-label="Tepsi durumu">
+              <button class="seg-btn active" data-tray="idle" role="tab" aria-selected="true">Hazır</button>
+              <button class="seg-btn" data-tray="rec" role="tab" aria-selected="false">Kayıt</button>
+              <button class="seg-btn" data-tray="ask" role="tab" aria-selected="false">Ajan kaydı</button>
+              <button class="seg-btn" data-tray="busy" role="tab" aria-selected="false">Ajan düşünüyor</button>
+              <button class="seg-btn" data-tray="meeting" role="tab" aria-selected="false">Toplantı</button>
+              <button class="seg-btn" data-tray="writing" role="tab" aria-selected="false">Yazılıyor</button>
+            </span>
+          </div>
+        </div>
+        <div class="card-b flush">
+          <div class="tray-demo">
+            <div class="tray-col">
+              <div class="tray-strip" aria-hidden="true">
+                <span data-ic="chevD" class="tray-glyph"></span>
+                <span data-ic="globe" class="tray-glyph"></span>
+                <span data-ic="wave" class="tray-glyph"></span>
+                <span class="tray-app is-active" id="tray-app"><span class="tray-icon"><span data-ic="mic"></span><span class="tray-rec" id="tray-dot" hidden></span></span></span>
+              </div>
+              <div class="tray-tip"><span class="tip" id="tray-tip">Dikte: hazır</span></div>
+              <p class="row-help" style="max-width:260px">Simge durumunca değişir: kayıtta terracotta nokta, ajan işinde menekşe, toplantıda mavi. Araç ipucu süreyi de verir.</p>
+            </div>
+            <div class="menu" id="tray-menu" style="position:relative;align-self:flex-start" data-od-id="tray-menu"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-notifications">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Balon bildirimler</h2>
+            <p class="card-desc">İş sonuçları ve arıza durumları. Gösterge kısa özet verir; ayrıntı buradadır.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-notif-ok">
+            <div class="row-main">
+              <div class="note note-ok balloon"><span data-ic="checkC"></span>
+                <span class="note-body"><span class="b-title">Dikte: toplantı yazıldı</span><span class="b-body">Tasarım gözden geçirme
+F:\_Work\dikte\meetings\20260824-1430.md</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-notif-warn">
+            <div class="row-main">
+              <div class="note note-warn balloon"><span data-ic="alert"></span>
+                <span class="note-body"><span class="b-title">Dikte: toplantı yazılamadı</span><span class="b-body">Model 600 sn içinde bitmedi.
+
+Kayıt saklandı. Tutanaklar sayfasından yeniden denenebilir.</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast-stack" aria-live="polite"></div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  const SEP={sep:true};
+  const COMMON=[
+    {ic:"sliders",label:"Ayarlar…"},
+    {ic:"restart",label:"Yeniden başlat"},
+    SEP,
+    {ic:"power",label:"Çık"}
+  ];
+  const STATES={
+    idle:{
+      tip:"Dikte: hazır",dot:"",
+      items:[
+        {ic:"mic",label:"Kaydı başlat",kbd:"Ctrl+Space"},
+        {ic:"terminal",label:"Claude'a sor",kbd:"Ctrl+Alt+A"},
+        {ic:"refresh",label:"Yeni bir konuşma başlat"},
+        {ic:"stop",label:"Claude'u durdur",off:true},
+        {ic:"x",label:"Kaydı at",off:true},
+        SEP,
+        {ic:"users",label:"Toplantı kaydet"},
+        {ic:"trash",label:"Toplantıyı at",off:true},
+        ...COMMON
+      ]},
+    rec:{
+      tip:"Dikte: kaydediliyor",dot:"var",
+      items:[
+        {ic:"fileText",label:"Durdur ve transkribe et",kbd:"Ctrl+Space"},
+        {ic:"terminal",label:"Claude'a sor",off:true},
+        {ic:"refresh",label:"Yeni bir konuşma başlat"},
+        {ic:"stop",label:"Claude'u durdur",off:true},
+        {ic:"x",label:"Kaydı at",kbd:"Ctrl+Alt+Space"},
+        SEP,
+        {ic:"users",label:"Toplantı kaydet",off:true},
+        {ic:"trash",label:"Toplantıyı at",off:true},
+        ...COMMON
+      ]},
+    ask:{
+      tip:"Dikte: Claude'a kaydediliyor",dot:"ask",
+      items:[
+        {ic:"mic",label:"Kaydı başlat",off:true},
+        {ic:"fileText",label:"Durdur ve Claude'a sor",kbd:"Ctrl+Alt+A"},
+        {ic:"refresh",label:"Yeni bir konuşma başlat"},
+        {ic:"stop",label:"Claude'u durdur",off:true},
+        {ic:"x",label:"Kaydı at",kbd:"Ctrl+Alt+Space"},
+        SEP,
+        {ic:"users",label:"Toplantı kaydet",off:true},
+        {ic:"trash",label:"Toplantıyı at",off:true},
+        ...COMMON
+      ]},
+    busy:{
+      tip:"Dikte: Claude düşünüyor",dot:"busy",
+      items:[
+        {ic:"mic",label:"Kaydı başlat",kbd:"Ctrl+Space"},
+        {ic:"terminal",label:"Claude'a sor",off:true},
+        {ic:"refresh",label:"Yeni bir konuşma başlat",off:true},
+        {ic:"stop",label:"Claude'u durdur"},
+        {ic:"x",label:"Kaydı at",off:true},
+        SEP,
+        {ic:"users",label:"Toplantı kaydet"},
+        {ic:"trash",label:"Toplantıyı at",off:true},
+        ...COMMON
+      ]},
+    meeting:{
+      tip:"Dikte: toplantıda (0:12:41)",dot:"meeting",
+      items:[
+        {ic:"mic",label:"Kaydı başlat",off:true},
+        {ic:"terminal",label:"Claude'a sor",off:true},
+        {ic:"refresh",label:"Yeni bir konuşma başlat"},
+        {ic:"stop",label:"Claude'u durdur",off:true},
+        {ic:"x",label:"Kaydı at",off:true},
+        SEP,
+        {ic:"fileText",label:"Toplantıyı bitir ve yaz"},
+        {ic:"trash",label:"Toplantıyı at"},
+        ...COMMON
+      ]},
+    writing:{
+      tip:"Dikte: toplantı yazılıyor",dot:"busy",
+      items:[
+        {ic:"mic",label:"Kaydı başlat",kbd:"Ctrl+Space"},
+        {ic:"terminal",label:"Claude'a sor",off:true},
+        {ic:"refresh",label:"Yeni bir konuşma başlat",off:true},
+        {ic:"stop",label:"Claude'u durdur",off:true},
+        {ic:"x",label:"Kaydı at",off:true},
+        SEP,
+        {ic:"fileText",label:"Toplantı yazılıyor…",off:true},
+        {ic:"trash",label:"Toplantıyı at",off:true},
+        ...COMMON
+      ]}
+  };
+  const DOT_COLORS={var:"#E08A72",ask:"#A8C7B5",busy:"#82B9CE",meeting:"#E08A72"};
+  const menu=document.getElementById("tray-menu");
+  const tip=document.getElementById("tray-tip");
+  const dot=document.getElementById("tray-dot");
+  function dotColor(key){return getComputedStyle(document.documentElement).getPropertyValue('--ov-'+key).trim()||DOT_COLORS[key]||'#E08A72';}
+  function renderTray(key){
+    const st=STATES[key];
+    tip.textContent=st.tip;
+    if(st.dot){dot.hidden=false;dot.style.background=dotColor(st.dot);}
+    else dot.hidden=true;
+    menu.innerHTML=st.items.map(it=>{
+      if(it.sep)return '<div class="menu-sep"></div>';
+      return '<button class="menu-item'+(it.off?" disabled":"")+'" type="button"'+(it.off?' aria-disabled="true"':"")+'><span data-ic="'+it.ic+'"></span>'+it.label+(it.kbd?'<span class="menu-kbd">'+it.kbd+"</span>":"")+"</button>";
+    }).join("");
+    DK.inject(menu);
+  }
+  document.querySelectorAll("#tray-states .seg-btn").forEach(b=>{
+    b.addEventListener("click",()=>{
+      document.querySelectorAll("#tray-states .seg-btn").forEach(x=>{x.classList.remove("active");x.setAttribute("aria-selected","false");});
+      b.classList.add("active");b.setAttribute("aria-selected","true");
+      renderTray(b.dataset.tray);
+    });
+  });
+  renderTray("idle");
+  document.addEventListener('overlay-color-change',function(){var active=document.querySelector('#tray-states .seg-btn.active');if(active)renderTray(active.dataset.tray);});
+  menu.addEventListener("click",e=>{
+    const it=e.target.closest(".menu-item");
+    if(!it||it.classList.contains("disabled"))return;
+    DK.toast("Tepsi eylemi: "+it.textContent.trim());
+  });
+})();
+</script>
+<script>
+(function(){
+  var defaults={rec:'#E08A72',ask:'#A8C7B5',busy:'#82B9CE',ok:'#75C59B',warn:'#D8B870',err:'#DF8582'};
+  var colors={};try{colors=JSON.parse(localStorage.getItem('dikte.overlay.colors')||'{}')}catch(e){}
+  var root=document.documentElement, fields=[].slice.call(document.querySelectorAll('[data-overlay-color]')),rangeValue=document.getElementById('sound-sensitivity-value');
+  function applyColor(key,value){var safe=/^#[0-9a-f]{6}$/i.test(value)?value:defaults[key];colors[key]=safe;root.style.setProperty('--ov-'+key,safe);var field=document.querySelector('[data-overlay-color="'+key+'"]');if(field)field.value=safe;try{localStorage.setItem('dikte.overlay.colors',JSON.stringify(colors))}catch(e){}document.dispatchEvent(new CustomEvent('overlay-color-change'));}
+  fields.forEach(function(field){var key=field.dataset.overlayColor;applyColor(key,colors[key]||field.value||defaults[key]);field.addEventListener('input',function(){applyColor(key,field.value);});});
+  document.getElementById('reset-overlay-theme').addEventListener('click',function(){Object.keys(defaults).forEach(function(key){applyColor(key,defaults[key]);});DK.toast('Gösterge renkleri varsayılana döndü.');});
+  var meter=document.getElementById('sound-meter'), toggle=document.getElementById('sound-toggle'), state=document.getElementById('sound-state'), range=document.getElementById('sound-sensitivity'), bars=[];for(var i=0;i<24;i++){var bar=document.createElement('i');meter.appendChild(bar);bars.push(bar)}
+  function syncRange(){rangeValue.textContent=range.value;}range.addEventListener('input',syncRange);syncRange();
+  var running=false,timer=null,audio=null,source=null,analyser=null,data=null,stream=null;
+  function paint(level){var gain=parseInt(range.value,10)/62;bars.forEach(function(bar,i){var shape=.18+.82*Math.abs(Math.sin(i*.74+Date.now()/180));var h=Math.max(5,Math.min(50,Math.round(5+level*gain*shape*42)));bar.style.height=h+'px';});document.querySelectorAll('.ov-wave i').forEach(function(bar,i){var h=Math.max(3,Math.min(24,Math.round(3+level*gain*(.25+.75*Math.abs(Math.sin(i*.9+Date.now()/150)))*22)));bar.style.setProperty('--h',h+'px');});}
+  function stopAudio(){if(timer){cancelAnimationFrame(timer);timer=null}if(source){source.disconnect();source=null}if(stream){stream.getTracks().forEach(function(track){track.stop()});stream=null}if(audio){audio.close();audio=null}running=false;toggle.innerHTML='<span data-ic="play"></span>Ses tepkisini başlat';state.innerHTML='<span class="dot dot-idle"></span>Kapalı';DK.inject(toggle);}
+  function simulate(){if(!running)return;paint(.25+Math.random()*.68);timer=requestAnimationFrame(simulate);}
+  function live(){if(!running)return;if(analyser){analyser.getByteTimeDomainData(data);var sum=0;for(var i=0;i<data.length;i++){var x=(data[i]-128)/128;sum+=x*x}paint(Math.min(1,Math.sqrt(sum/data.length)*3.6));timer=requestAnimationFrame(live)}else simulate();}
+  function startAudio(){running=true;toggle.innerHTML='<span data-ic="stop"></span>Ses tepkisini durdur';state.innerHTML='<span class="dot dot-rec"></span>Dinleniyor';DK.inject(toggle);if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.AudioContext){navigator.mediaDevices.getUserMedia({audio:true}).then(function(received){stream=received;audio=new (window.AudioContext||window.webkitAudioContext)();source=audio.createMediaStreamSource(stream);analyser=audio.createAnalyser();analyser.fftSize=256;data=new Uint8Array(analyser.fftSize);source.connect(analyser);state.innerHTML='<span class="dot dot-ok"></span>Mikrofon bağlı';live();}).catch(function(){state.innerHTML='<span class="dot dot-warn"></span>Simülasyon';simulate();});}else{state.innerHTML='<span class="dot dot-warn"></span>Simülasyon';simulate();}}
+  toggle.addEventListener('click',function(){if(running)stopAudio();else startAudio();});window.addEventListener('beforeunload',stopAudio);
+  paint(.45);
+})();
+</script>
+</body>
+</html>

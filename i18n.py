@@ -756,4 +756,18 @@ TR = {
     "Ready: {model}": "Hazır: {model}",
     "This provider does not list models.": "Bu sağlayıcı model listelemez.",
     "This provider cannot be tested.": "Bu sağlayıcı test edilemez.",
+    "Pause": "Duraklat",
+    "Resume": "Sürdür",
+    "Paused": "Duraklatıldı",
+    "Dikte: paused": "Dikte: duraklatıldı",
+    "Small recording dot, live waveform, timer and a compact Pause action.":
+        "Küçük kayıt noktası, canlı dalga, sayaç ve kompakt Duraklat eylemi.",
+    "Wide recording pill with a right-to-left live waveform, timer and a circular Pause action.":
+        "Sağdan sola akan canlı dalga, sayaç ve dairesel Duraklat eylemi bulunan geniş kayıt bandı.",
+    "The corner band is 48 px tall. Color alone never carries meaning; each state also shows an icon or waveform.":
+        "Köşe bandı 48 px yüksekliğindedir. Renk tek başına anlam taşımaz; her durumda ikon ya da dalga görünür.",
+    "The corner band is 72 px tall. Color alone never carries meaning; each state also shows an icon or waveform.":
+        "Köşe bandı 72 px yüksekliğindedir. Renk tek başına anlam taşımaz; her durumda ikon ya da dalga görünür.",
+    "The indicator appears on the screen where the cursor is; it cannot be dragged, does not take focus, and only its live action accepts clicks.":
+        "Gösterge imlecin bulunduğu ekranda görünür; sürüklenemez, odağı almaz ve yalnızca canlı eylemi tıklama kabul eder.",
 }

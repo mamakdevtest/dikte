@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Dikte | Masaüstü uygulaması</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-columns:250px minmax(0,1fr);grid-template-rows:46px minmax(0,1fr);grid-template-areas:"top top" "side work";background:var(--canvas)}
+.shell-top{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface)}
+.shell-mark{width:24px;height:24px;display:grid;place-items:center;overflow:hidden;border-radius:6px;background:var(--fg)}.shell-brand-icon{display:block;width:24px;height:24px;object-fit:cover}
+.shell-title{font-size:13px;font-weight:600}.shell-context{font-size:11.5px;color:var(--fg-3);padding-left:12px;border-left:1px solid var(--border)}
+.shell-actions{margin-left:auto;display:flex;align-items:center;gap:8px}.shell-status{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--fg-2);padding-right:8px}.shell-status .dot{width:6px;height:6px}
+.shell-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:6px;color:var(--fg-2);transition:background .12s ease,color .12s ease,transform .08s ease}.shell-icon:hover{background:var(--surface-2);color:var(--fg)}.shell-icon:active{transform:translateY(1px);background:var(--border)}
+.shell-icon:focus-visible,.shell-nav-item:focus-visible,.shell-search:focus-visible{outline:2px solid var(--sage-dark);outline-offset:2px}
+.shell-side{grid-area:side;min-height:0;display:flex;flex-direction:column;padding:14px 10px 10px;background:var(--sidebar);border-right:1px solid var(--border)}
+.shell-side-head{display:flex;align-items:center;justify-content:space-between;padding:2px 8px 12px}.shell-side-head h1{font-size:14px;font-weight:700}.shell-side-head span{font-family:var(--mono);font-size:10px;color:var(--fg-3)}
+.shell-search{height:32px;width:100%;padding:0 10px 0 31px;background:var(--surface);border:1px solid var(--border);border-radius:6px;position:relative}.shell-search-wrap{position:relative;margin:0 4px 10px}.shell-search-wrap [data-ic]{position:absolute;left:10px;top:8px;width:14px;height:14px;color:var(--fg-3);z-index:1}
+.shell-nav{overflow:auto;min-height:0;padding:0 2px}.shell-nav-label{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);padding:11px 10px 5px}.shell-nav-item{height:34px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:6px;color:var(--fg-2);font-size:12.5px;font-weight:500;transition:background .12s ease,color .12s ease}.shell-nav-item:hover{background:color-mix(in srgb,var(--surface-2) 76%,transparent);color:var(--fg)}.shell-nav-item:active{background:var(--sage-tint-2)}.shell-nav-item.is-active{background:var(--sage-tint);color:var(--fg);box-shadow:inset 0 0 0 1px var(--sage-tint-2)}.shell-nav-item [data-ic]{width:15px;height:15px;color:var(--fg-3)}.shell-nav-item.is-active [data-ic]{color:var(--sage-dark)}.shell-nav-item .nav-key{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--fg-3)}
+.shell-foot{margin-top:auto;padding:10px 4px 0;border-top:1px solid color-mix(in oklab,var(--border) 70%,transparent)}.shell-foot p{font-size:10.5px;line-height:16px;color:var(--fg-3)}.shell-tokens{display:flex;gap:4px;margin:8px 0 5px}.shell-tokens i{width:14px;height:14px;border-radius:4px;border:1px solid color-mix(in oklab,var(--border) 55%,transparent)}
+.shell-work{grid-area:work;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--canvas)}.work-head{min-height:54px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--border);background:var(--canvas)}.work-crumb{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--fg-3)}.work-crumb [data-ic]{width:13px;height:13px}.work-title{font-size:15px;font-weight:600;color:var(--fg)}.work-head-actions{margin-left:auto;display:flex;gap:4px}.work-frame-wrap{position:relative;flex:1;min-height:0;overflow:hidden;background:var(--canvas)}
+.work-frame{display:block;width:100%;height:100%;border:0;background:var(--canvas);opacity:1;transform:translateY(0);transition:opacity .16s ease,transform .16s ease}.work-frame.is-switching{opacity:0;transform:translateY(8px)}.frame-loading{position:absolute;inset:0;display:grid;place-items:center;background:color-mix(in oklab,var(--canvas) 84%,transparent);opacity:0;pointer-events:none;transition:opacity .12s ease;z-index:2}.frame-loading.is-visible{opacity:1}.frame-loading span,.frame-error{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surface);font-size:12px;color:var(--fg-2);box-shadow:var(--sh-1)}.frame-error{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);display:none;flex-direction:column;align-items:flex-start;gap:10px;min-width:220px;max-width:calc(100% - 32px);z-index:3}.frame-error.is-visible{display:flex}.frame-error strong{font-size:13px;color:var(--fg)}.frame-error p{margin:0;color:var(--fg-2);line-height:17px}.frame-error .btn{align-self:flex-start}
+.shell-empty{padding:18px 10px;font-size:11.5px;line-height:17px;color:var(--fg-3)}
+@media (max-width:860px){.shell{grid-template-columns:64px minmax(0,1fr)}.shell-side-head h1,.shell-side-head span,.shell-search-wrap,.shell-nav-label,.shell-nav-item span:not([data-ic]),.nav-key,.shell-foot{display:none}.shell-side-head{justify-content:center}.shell-nav-item{justify-content:center;padding:0}.work-head{padding:0 16px}.shell-status{display:none}}
+@media (max-width:560px){.shell{grid-template-columns:1fr;grid-template-rows:46px 54px minmax(0,1fr);grid-template-areas:"top" "side" "work"}.shell-top{padding:0 8px;gap:8px}.shell-actions{gap:2px}.shell-actions .shell-icon,.work-head-actions .shell-icon{width:44px;height:44px}.shell-side{padding:0 10px;display:block;border-right:0;border-bottom:1px solid var(--border)}.shell-side-head{display:none}.shell-nav{display:flex;gap:3px;overflow:auto;height:53px;align-items:center}.shell-nav-label{display:none}.shell-nav-item{height:44px;min-width:44px;padding:0 12px}.shell-nav-item span:not([data-ic]){display:none}.shell-nav-item [data-ic]{width:16px;height:16px}.work-head{min-height:54px}.work-crumb{max-width:calc(100vw - 112px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}
+@media (prefers-reduced-motion:reduce){.work-frame{transition:none}.frame-loading{transition:none}}
+</style>
+</head>
+<body data-page="launcher">
+<div class="shell" data-od-id="app-shell" data-runtime="pyqt6" data-screen-contract="ui/pages">
+  <header class="shell-top" data-od-id="app-header">
+    <div class="shell-mark" data-od-id="brand-icon"><img class="shell-brand-icon" src="dikte.png" alt="" aria-hidden="true"></div><span class="shell-title">Dikte</span><span class="shell-context">Python / PyQt6 çalışma alanı</span>
+    <div class="shell-actions"><span class="shell-status"><span class="dot dot-ok"></span>Motor hazır · yerel</span><button class="shell-icon" id="theme-toggle" data-theme-toggle type="button" aria-label="Açık temaya geç" title="Açık temaya geç"><span data-ic="sun"></span></button><button class="shell-icon" id="reload-screen" type="button" aria-label="Ekranı yenile" title="Ekranı yenile"><span data-ic="refresh"></span></button><button class="shell-icon" id="open-home" type="button" aria-label="Genel ekranı" title="Genel ekranı"><span data-ic="sliders"></span></button></div>
+  </header>
+  <aside class="shell-side" data-od-id="app-navigation">
+    <div class="shell-side-head"><h1>Modüller</h1><span>10 ekran</span></div>
+    <div class="shell-search-wrap"><span data-ic="search"></span><input class="shell-search" id="module-search" type="search" placeholder="Modül ara" aria-label="Modül ara"></div>
+    <nav class="shell-nav" id="module-nav" aria-label="Dikte modülleri">
+      <div class="shell-nav-label">Ayarlar</div>
+      <a class="shell-nav-item is-active" href="general.html" data-screen="general" data-python-screen="general" data-label="Genel"><span data-ic="sliders"></span><span>Genel</span><span class="nav-key">1</span></a>
+      <a class="shell-nav-item" href="api-models.html" data-screen="api" data-python-screen="api" data-label="API ve Modeller"><span data-ic="plug"></span><span>API ve Modeller</span><span class="nav-key">2</span></a>
+      <a class="shell-nav-item" href="cleanup-rules.html" data-screen="cleanup" data-python-screen="cleanup" data-label="Temizlik Kuralları"><span data-ic="eraser"></span><span>Temizlik Kuralları</span><span class="nav-key">3</span></a>
+      <a class="shell-nav-item" href="agent.html" data-screen="agent" data-python-screen="agent" data-label="Ajan"><span data-ic="terminal"></span><span>Ajan</span><span class="nav-key">4</span></a>
+      <a class="shell-nav-item" href="meeting.html" data-screen="meeting" data-python-screen="meeting" data-label="Toplantı"><span data-ic="users"></span><span>Toplantı</span><span class="nav-key">5</span></a>
+      <div class="shell-nav-label">Arşiv ve araçlar</div>
+      <a class="shell-nav-item" href="minutes.html" data-screen="minutes" data-python-screen="minutes" data-label="Tutanaklar"><span data-ic="fileText"></span><span>Tutanaklar</span><span class="nav-key">6</span></a>
+      <a class="shell-nav-item" href="audio-file.html" data-screen="audio" data-python-screen="audio" data-label="Ses Dosyası"><span data-ic="fileAudio"></span><span>Ses Dosyası</span><span class="nav-key">7</span></a>
+      <a class="shell-nav-item" href="shortcuts.html" data-screen="shortcuts" data-python-screen="shortcuts" data-label="Kısayollar"><span data-ic="keyboard"></span><span>Kısayollar</span><span class="nav-key">8</span></a>
+      <a class="shell-nav-item" href="history.html" data-screen="history" data-python-screen="history" data-label="Geçmiş"><span data-ic="history"></span><span>Geçmiş</span><span class="nav-key">9</span></a>
+      <a class="shell-nav-item" href="overlay.html" data-screen="overlay" data-python-screen="overlay" data-label="Gösterge ve Tepsi"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span><span class="nav-key">0</span></a>
+    </nav>
+    <div class="shell-empty" id="search-empty" role="status" hidden>Bu aramayla eşleşen modül yok.</div>
+    <div class="shell-foot"><div class="shell-tokens" aria-label="Dikte renkleri"><i style="background:var(--canvas)"></i><i style="background:var(--surface)"></i><i style="background:var(--sage-dark)"></i><i style="background:var(--accent)"></i></div><p>Tek kabuk · gerçek Python ekran eşleşmesi</p></div>
+  </aside>
+  <main class="shell-work" data-od-id="workspace">
+    <header class="work-head" data-od-id="workspace-header"><div class="work-crumb"><span>Modüller</span><span data-ic="chevR"></span><strong class="work-title" id="work-title">Genel</strong></div><div class="work-head-actions"><button class="shell-icon" id="back-screen" type="button" aria-label="Önceki ekran" title="Önceki ekran"><span data-ic="chevL"></span></button><button class="shell-icon" id="next-screen" type="button" aria-label="Sonraki ekran" title="Sonraki ekran"><span data-ic="chevR"></span></button></div></header>
+    <div class="work-frame-wrap" data-od-id="screen-stage"><div class="frame-loading" id="frame-loading" role="status" aria-live="polite"><span><i class="spin spin-s"></i>Çalışma alanı hazırlanıyor</span></div><div class="frame-error" id="frame-error" role="alert"><strong>Ekran açılamadı</strong><p>Bu modül yüklenirken bir sorun oluştu.</p><button class="btn btn-secondary btn-sm" id="retry-frame" type="button">Yeniden dene</button></div><iframe class="work-frame" id="screen-frame" title="Dikte modülü" src="general.html"></iframe></div>
+  </main>
+</div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  var frame=document.getElementById('screen-frame'), loading=document.getElementById('frame-loading'), frameError=document.getElementById('frame-error'), retry=document.getElementById('retry-frame'), searchEmpty=document.getElementById('search-empty'), title=document.getElementById('work-title'), nav=document.getElementById('module-nav'), links=[].slice.call(nav.querySelectorAll('[data-screen]')), current='general', reduced=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var screens=links.map(function(a){return a.dataset.screen;});
+  function setActive(key){var link=links.find(function(a){return a.dataset.screen===key;});if(!link)return;current=key;links.forEach(function(a){a.classList.toggle('is-active',a===link);a.setAttribute('aria-current',a===link?'page':'false');});title.textContent=link.dataset.label;document.title='Dikte | '+link.dataset.label;try{localStorage.setItem('dikte.shell.screen',key);}catch(e){} }
+  function syncFrameTheme(){try{var doc=frame.contentDocument;if(doc)doc.documentElement.setAttribute('data-theme',window.DK&&window.DK.getTheme?window.DK.getTheme():'dark');}catch(e){}}
+  function injectFrame(){try{var doc=frame.contentDocument;if(!doc)return;var style=doc.createElement('style');style.textContent='.titlebar,.sidebar{display:none!important}.app{display:block!important;height:100vh!important;overflow:hidden!important}.main{height:100vh!important;overflow-y:auto!important}.page{max-width:1100px!important}';doc.head.appendChild(style);doc.documentElement.dataset.embedded='true';syncFrameTheme();}catch(e){}}
+  function navigate(key,write){var link=links.find(function(a){return a.dataset.screen===key;});if(!link)return;setActive(key);frameError.classList.remove('is-visible');loading.classList.add('is-visible');if(!reduced)frame.classList.add('is-switching');setTimeout(function(){frame.src=link.getAttribute('href');if(write)history.pushState({screen:key},'', '#'+key);},reduced?0:100);}
+  frame.addEventListener('load',function(){injectFrame();frameError.classList.remove('is-visible');setTimeout(function(){loading.classList.remove('is-visible');frame.classList.remove('is-switching');},reduced?0:90);});
+  frame.addEventListener('error',function(){loading.classList.remove('is-visible');frame.classList.remove('is-switching');frameError.classList.add('is-visible');});
+  document.addEventListener('dk-theme-change',syncFrameTheme);
+  links.forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();navigate(a.dataset.screen,true);});});
+  function step(dir){var i=screens.indexOf(current);navigate(screens[(i+dir+screens.length)%screens.length],true);}
+  document.getElementById('back-screen').addEventListener('click',function(){step(-1)});document.getElementById('next-screen').addEventListener('click',function(){step(1)});document.getElementById('reload-screen').addEventListener('click',function(){frameError.classList.remove('is-visible');loading.classList.add('is-visible');try{frame.contentWindow.location.reload();}catch(e){navigate(current,false);}});retry.addEventListener('click',function(){navigate(current,false);});document.getElementById('open-home').addEventListener('click',function(){navigate('general',true)});
+  document.getElementById('module-search').addEventListener('input',function(e){var q=e.target.value.trim().toLowerCase(),visible=0;links.forEach(function(a){var match=!q||a.dataset.label.toLowerCase().includes(q);a.hidden=!match;if(match)visible+=1;});searchEmpty.hidden=visible>0;});
+  window.addEventListener('popstate',function(){var key=(location.hash||'#general').slice(1);navigate(screens.includes(key)?key:'general',false);});
+  document.addEventListener('keydown',function(e){if(e.altKey&&e.key==='ArrowRight'){e.preventDefault();step(1)}else if(e.altKey&&e.key==='ArrowLeft'){e.preventDefault();step(-1)}else if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();document.getElementById('module-search').focus();}});
+  var saved='general';try{saved=location.hash?location.hash.slice(1):(localStorage.getItem('dikte.shell.screen')||'general');}catch(e){}navigate(screens.includes(saved)?saved:'general',false);
+})();
+</script>
+</body>
+</html>

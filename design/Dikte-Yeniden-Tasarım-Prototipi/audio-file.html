@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Ses Dosyası — Dikte</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+</head>
+<body data-page="audio" data-runtime="pyqt6" data-python-screen="audio">
+<div class="app" data-od-id="app-shell">
+  <div class="titlebar" data-od-id="titlebar">
+    <div class="tb-brand"><span class="tb-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>Dikte<span class="tb-sub">Ayarlar</span></div>
+    <div class="tb-controls" aria-hidden="true">
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="minus"></span></button>
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="square"></span></button>
+      <button class="tb-btn close" type="button" tabindex="-1"><span data-ic="x"></span></button>
+    </div>
+  </div>
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="side-brand">
+      <span class="brand-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>
+      <div><div class="brand-name">Dikte</div><div class="brand-sub">Yerelden dikte</div></div>
+    </div>
+    <nav class="nav" aria-label="Bölümler">
+      <a class="nav-item" data-nav="general" href="general.html"><span data-ic="sliders"></span><span>Genel</span></a>
+      <a class="nav-item" data-nav="api" href="api-models.html"><span data-ic="plug"></span><span>API ve Modeller</span></a>
+      <a class="nav-item" data-nav="cleanup" href="cleanup-rules.html"><span data-ic="eraser"></span><span>Temizlik Kuralları</span></a>
+      <a class="nav-item" data-nav="agent" href="agent.html"><span data-ic="terminal"></span><span>Ajan</span></a>
+      <a class="nav-item" data-nav="meeting" href="meeting.html"><span data-ic="users"></span><span>Toplantı</span></a>
+      <a class="nav-item" data-nav="minutes" href="minutes.html"><span data-ic="fileText"></span><span>Tutanaklar</span></a>
+      <a class="nav-item active" data-nav="audio" href="audio-file.html" aria-current="page"><span data-ic="fileAudio"></span><span>Ses Dosyası</span></a>
+      <a class="nav-item" data-nav="shortcuts" href="shortcuts.html"><span data-ic="keyboard"></span><span>Kısayollar</span></a>
+      <a class="nav-item" data-nav="history" href="history.html"><span data-ic="history"></span><span>Geçmiş</span></a>
+      <a class="nav-item" data-nav="overlay" href="overlay.html"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="engine-card" data-od-id="engine-card">
+        <div class="engine-top"><span data-ic="wave"></span><span>Whisper Small</span><span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></div>
+        <div class="engine-status"><span class="dot dot-ok"></span>Hazır<span class="engine-ver">1.0</span></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main" data-od-id="main">
+    <div class="page">
+      <header class="page-head" data-od-id="page-head">
+        <div>
+          <h1 class="page-title">Ses Dosyası</h1>
+          <p class="page-sub">Aynı modellerle, diskteki bir ses veya video dosyasını yazıya dökün. Uzun dosyalar 24 MB'lık parçalara bölünerek yüklenir.</p>
+        </div>
+      </header>
+
+      <section class="card" data-od-id="group-input">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Dosya</h2>
+            <p class="card-desc">Tek dosya seçilir; yeni seçim öncekinin yerine geçer.</p>
+          </div>
+        </div>
+        <div class="card-b" style="padding-top:14px">
+          <div style="padding:0 20px 16px">
+            <div class="drop" id="drop" data-od-id="dropzone" role="button" tabindex="0" aria-label="Dosya seç">
+              <span data-ic="upload"></span>
+              <div class="drop-t">Dosyayı buraya bırakın ya da <u>seçin</u></div>
+              <div class="drop-d">Ses ve video: <span class="mono">mp3 wav m4a ogg opus flac aac wma mp4 mkv webm mov avi</span></div>
+            </div>
+            <div class="li-row" id="file-row" style="border:1px solid var(--border);border-radius:8px;margin-top:12px" hidden data-od-id="selected-file">
+              <span class="li-ic" data-ic="fileAudio"></span>
+              <div class="li-main">
+                <div class="li-title" id="file-name">roportaj-kaydi.mp3</div>
+                <div class="li-sub" id="file-meta">184 MB · 1 sa 12 dk</div>
+              </div>
+              <div class="li-side">
+                <button class="btn btn-ghost btn-sm" data-busy-demo="Açılıyor…"><span data-ic="folder"></span>Klasör</button>
+                <button class="btn btn-ghost btn-sm" id="file-remove" style="color:var(--err)"><span data-ic="x"></span>Kaldır</button>
+              </div>
+            </div>
+            <div class="field-error" id="no-file-err" hidden style="margin-top:10px"><span data-ic="alert"></span>Önce bir dosya seçin.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-options">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Seçenekler</h2>
+            <p class="card-desc">Bu çalıştırmaya özgü ayarlar; değiştirir değiştirmez uygulanır.</p>
+          </div>
+        </div>
+        <div class="card-b">
+          <div class="row" data-od-id="row-timestamps">
+            <div class="row-main">
+              <div class="row-label">Zaman damgaları ekle</div>
+              <div class="row-help">Her satır <span class="mono">[dd:ss]</span> ile başlar. whisper-1 kullanılır — segment zamanı döndüren tek model. SRT çıktısı bu seçeneği gerektirir.</div>
+            </div>
+            <div class="row-control">
+              <label class="toggle"><input type="checkbox" id="ts-toggle" checked><span class="tr"></span></label>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-cleanup-after">
+            <div class="row-main">
+              <div class="row-label">Sonrasında temizlik modelini çalıştır</div>
+              <div class="row-help">Kendi kurallarıyla, <a href="cleanup-rules.html">Temizlik Kuralları</a> altında: altyazı için yazıldı — satırlar yerinde kalır, hiçbir şey kısaltılmaz.</div>
+            </div>
+            <div class="row-control">
+              <label class="toggle"><input type="checkbox" checked><span class="tr"></span></label>
+            </div>
+          </div>
+          <div class="row" data-od-id="row-run">
+            <div class="row-main">
+              <div class="row-label">Çalıştır</div>
+              <div class="row-help" id="run-help">Hazır. Konuşma dili Genel'deki ayarınızdan alınır.</div>
+            </div>
+            <div class="row-control">
+              <button class="btn btn-ink" type="button" id="transcribe"><span data-ic="play"></span>Yazıya dök</button>
+              <button class="btn btn-secondary" type="button" id="stop-run" disabled><span data-ic="stop"></span>Durdur</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-progress" hidden id="progress-card">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">İlerleme</h2>
+            <p class="card-desc" id="prog-desc">roportaj-kaydi.mp3 · 4 parça</p>
+          </div>
+          <div class="h-control"><span class="status-line" id="prog-status"><span class="spin sm"></span> Hazırlanıyor…</span></div>
+        </div>
+        <div class="card-b" style="padding-top:12px">
+          <div style="padding:0 20px 8px"><span class="progress" style="height:5px"><i id="prog-bar" style="width:0%"></i></span></div>
+          <div style="padding:0 20px 14px">
+            <div class="stage-list" data-od-id="stage-list">
+              <div class="stage" data-stage="convert"><span data-ic="checkC"></span>Ses dönüştürülüyor — <span class="mono">16 kHz mono WAV</span></div>
+              <div class="stage" data-stage="chunks"><span data-ic="checkC"></span>Parçalara bölünüyor — <span class="mono">4 parça · 24 MB sınırı</span></div>
+              <div class="stage" data-stage="t1"><span data-ic="checkC"></span>Parça 1/4 yazıya dökülüyor</div>
+              <div class="stage" data-stage="t2"><span data-ic="checkC"></span>Parça 2/4 yazıya dökülüyor</div>
+              <div class="stage" data-stage="t3"><span data-ic="checkC"></span>Parça 3/4 yazıya dökülüyor</div>
+              <div class="stage" data-stage="t4"><span data-ic="checkC"></span>Parça 4/4 yazıya dökülüyor</div>
+              <div class="stage" data-stage="clean"><span data-ic="checkC"></span>Temizlik çalışıyor — <span class="mono">12.000 karakterlik bloklar</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="group-output">
+        <div class="card-h">
+          <div>
+            <h2 class="card-title">Çıktı</h2>
+            <p class="card-desc" id="out-desc">Önceki çalıştırma: roportaj-kaydi.mp3 — tamamlandı · 18.432 karakter</p>
+          </div>
+          <div class="h-control">
+            <span class="chip chip-ok" id="out-chip" hidden><span data-ic="check" style="width:11px;height:11px"></span>Tamamlandı</span>
+          </div>
+        </div>
+        <div class="card-b" style="padding-top:12px">
+          <div style="padding:0 20px 14px">
+            <textarea class="output" id="out-box" readonly aria-label="Transkript çıktısı" data-od-id="output-box">[00:00] Hoş geldiniz, bugünkü röportajımızda ürün ekibiyle konuşacağız.
+[00:14] Öncelikle kendinizi tanıtır mısınız?
+[00:21] Ben Deniz, üç yıldır ürün ekibinde çalışıyorum.
+[01:02] Bu sürümde odaklandığımız üç konu vardı: hız, doğruluk ve gizlilik.
+[01:47] Hız için yerel modelleri ön yüklemeyle açtık.
+[03:15] Doğruluk tarafında en çok şikâyet yanlış isimlerdi; sözlük özelliği bunu çözdü.
+[05:30] Gizlilikte hiçbir ses cihazdan çıkmıyor; bulut kullanırsanız yalnızca metin değil, kaydın kendisi de şifreli gidiyor.
+[08:12] Sıradaki sürümde toplantı tutanaklarını canlı görmeyi planlıyoruz.
+[11:40] Teşekkürler, biz de heyecanlıyız.</textarea>
+          </div>
+          <div class="card-f" data-od-id="output-actions">
+            <button class="btn btn-secondary btn-sm" type="button" id="copy-out"><span data-ic="copy"></span>Kopyala</button>
+            <button class="btn btn-secondary btn-sm" type="button" id="save-txt"><span data-ic="save"></span>.txt olarak kaydet</button>
+            <button class="btn btn-secondary btn-sm" type="button" id="save-srt" title="SRT, zaman damgalı satırlardan üretilir"><span data-ic="type"></span>.srt olarak kaydet</button>
+            <span class="meta" style="margin-left:auto" id="srt-hint">SRT, zaman damgalı satırlardan üretilir.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast-stack" aria-live="polite"></div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  const drop=document.getElementById("drop");
+  const fileRow=document.getElementById("file-row");
+  const noFileErr=document.getElementById("no-file-err");
+  const transBtn=document.getElementById("transcribe");
+  const stopBtn=document.getElementById("stop-run");
+  const card=document.getElementById("progress-card");
+  const progBar=document.getElementById("prog-bar");
+  const progStatus=document.getElementById("prog-status");
+  const stages=[...document.querySelectorAll(".stage")];
+  const runHelp=document.getElementById("run-help");
+  const outBox=document.getElementById("out-box");
+  const outDesc=document.getElementById("out-desc");
+  const outChip=document.getElementById("out-chip");
+  const ts=document.getElementById("ts-toggle");
+  const srtBtn=document.getElementById("save-srt");
+  const srtHint=document.getElementById("srt-hint");
+  let hasFile=true,running=false,stopping=false,timer=null;
+
+  function setFile(on){
+    hasFile=on;
+    drop.hidden=on;
+    fileRow.hidden=!on;
+    if(!on)noFileErr.hidden=false;else noFileErr.hidden=true;
+  }
+  setFile(true);
+  drop.addEventListener("click",()=>setFile(true));
+  drop.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setFile(true);}});
+  ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+  drop.addEventListener("drop",e=>{setFile(true);DK.toast("Dosya seçildi: roportaj-kaydi.mp3");});
+  document.getElementById("file-remove").addEventListener("click",()=>{setFile(false);});
+
+  function srtState(){
+    const ok=ts.checked&&outBox.value.indexOf("[0")===0;
+    srtBtn.disabled=!ok;
+    if(!ts.checked){srtHint.textContent="Zaman damgaları kapalı — SRT için [dd:ss] satırları gerekir.";srtBtn.title="Önce 'Zaman damgaları ekle'yi açın.";}
+    else if(!ok){srtHint.textContent="Zaman damgalı satır bekleniyor — yazıya dökme bitince SRT açılır.";srtBtn.title="Bu çalıştırma bitince kullanılabilir.";}
+    else{srtHint.textContent="SRT hazır — zamanlamalar segmentlerden üretilir.";srtBtn.title="";}
+  }
+  ts.addEventListener("change",srtState);
+  srtState();
+
+  function stage(name,state){
+    stages.forEach(s=>{
+      if(s.dataset.stage!==name)return;
+      s.classList.remove("done","now");
+      let ic=s.querySelector("[data-ic],.spin");
+      if(!ic){ic=document.createElement("span");s.prepend(ic);}
+      if(state==="now"){
+        s.classList.add("now");
+        ic.className="spin sm";
+        ic.removeAttribute("data-ic");
+        ic.innerHTML="";
+        ic.style.color="";
+      }else{
+        ic.className="";
+        ic.setAttribute("data-ic","checkC");
+        ic.style.color=state==="done"?"var(--ok)":"";
+      }
+    });
+    DK.inject(card);
+  }
+  function resetStages(){
+    stages.forEach(s=>{
+      s.classList.remove("done","now");
+      const ic=s.querySelector("[data-ic],.spin");
+      if(ic){
+        ic.className="";
+        ic.setAttribute("data-ic","checkC");
+        ic.style.color="";
+      }
+    });
+    DK.inject(card);
+  }
+  function setProg(pct,msg){
+    progBar.style.width=pct+"%";
+    progStatus.innerHTML='<span class="spin sm"></span> '+msg;
+  }
+  transBtn.addEventListener("click",()=>{
+    if(!hasFile){noFileErr.hidden=false;DK.toast("Önce bir dosya seçin.","warn");return;}
+    if(running)return;
+    running=true;stopping=false;
+    transBtn.disabled=true;
+    stopBtn.disabled=false;
+    card.hidden=false;
+    resetStages();
+    outChip.hidden=true;
+    const plan=[
+      ["convert","Ses dönüştürülüyor…",8,700],
+      ["chunks","Parçalara bölünüyor: 4 parça…",16,700],
+      ["t1","Parça 1/4 yazıya dökülüyor…",34,1100],
+      ["t2","Parça 2/4 yazıya dökülüyor…",52,1100],
+      ["t3","Parça 3/4 yazıya dökülüyor…",70,1100],
+      ["t4","Parça 4/4 yazıya dökülüyor…",84,1100],
+      ["clean","Temizlik çalışıyor…",96,1200]
+    ];
+    let i=0;
+    function next(){
+      if(stopping){finishStop();return;}
+      if(i>=plan.length){
+        progBar.style.width="100%";
+        progStatus.innerHTML='<span data-ic="checkC" style="color:var(--ok);width:14px;height:14px"></span> Bitti: 18.432 karakter.';
+        DK.inject(progStatus);
+        stages.forEach(s=>stage(s.dataset.stage,"done"));
+        outDesc.textContent="Bu çalıştırma: roportaj-kaydi.mp3 — tamamlandı · 18.432 karakter";
+        outChip.hidden=false;
+        runHelp.textContent="Bitti. Çıktıyı kopyalayabilir ya da .txt / .srt olarak kaydedebilirsiniz.";
+        transBtn.disabled=false;stopBtn.disabled=true;running=false;
+        srtState();
+        DK.toast("Yazıya dökme tamamlandı.");
+        return;
+      }
+      const [st,msg,pct,ms]=plan[i];
+      stage(st,"now");
+      setProg(pct,msg);
+      setTimeout(()=>{
+        stage(st,"done");
+        i++;
+        next();
+      },ms);
+    }
+    next();
+  });
+  function finishStop(){
+    clearInterval(timer);
+    running=false;
+    stopBtn.disabled=true;
+    transBtn.disabled=false;
+    progStatus.innerHTML='<span data-ic="x" style="color:var(--fg-3);width:13px;height:13px"></span> Durdu.';
+    DK.inject(progStatus);
+    runHelp.textContent="Durdu. Kısmi çıktı yok; yeniden başlatabilirsiniz.";
+    DK.toast("Yazıya dökme durduruldu.","warn");
+  }
+  stopBtn.addEventListener("click",()=>{
+    if(!running)return;
+    stopping=true;
+    stopBtn.disabled=true;
+    stopBtn.innerHTML="Durduruluyor…";
+    progStatus.innerHTML='<span class="spin sm"></span> Durduruluyor…';
+    setTimeout(()=>{
+      stopBtn.innerHTML='<span data-ic="stop"></span>Durdur';
+      DK.inject(stopBtn);
+      finishStop();
+    },900);
+  });
+  document.getElementById("copy-out").addEventListener("click",()=>DK.toast("Transkript panoya kopyalandı."));
+  document.getElementById("save-txt").addEventListener("click",()=>DK.toast("Kaydedildi: roportaj-kaydi.txt"));
+  srtBtn.addEventListener("click",()=>{if(!srtBtn.disabled)DK.toast("Kaydedildi: roportaj-kaydi.srt");});
+  document.querySelectorAll("[data-busy-demo]").forEach(b=>{
+    b.addEventListener("click",()=>{
+      const old=b.textContent;
+      b.disabled=true;b.textContent=b.dataset.busyDemo;
+      setTimeout(()=>{b.disabled=false;b.textContent=old;},800);
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -38,6 +38,53 @@ CHUNK_BYTES = CHUNK_FRAMES * SAMPLE_WIDTH * CHANNELS
 CHUNK_LATENCY_MS = round(CHUNK_FRAMES / RATE * 1000)
 MIN_FRAMES = int(RATE * 0.25)
 
+# --- module-level cache for Settings first open <300ms -----------------
+# Subprocess probes (pactl json, ffmpeg dshow/avfoundation) cost 5-8s each
+# and were run 3× per SettingsWindow (general + meeting). Cache so the
+# second call is <1ms. Which lookups are memoized too.
+_audio_cache_lock = threading.Lock()
+_cached_pactl_json = None
+_cached_pactl_platform = None
+_cached_sources = None
+_cached_monitors = None
+_cached_dshow_devices = None
+_cached_dshow_platform = None
+_cached_av_devices = None
+_cached_av_platform = None
+_which_cache = {}
+_real_which = shutil.which
+_real_run = subprocess.run
+
+
+def _cached_which(name):
+    """Memoized shutil.which; bypassed when shutil.which is patched (tests)."""
+    if shutil.which is not _real_which:
+        return shutil.which(name)
+    with _audio_cache_lock:
+        if name in _which_cache:
+            return _which_cache[name]
+    result = _real_which(name)
+    with _audio_cache_lock:
+        _which_cache[name] = result
+    return result
+
+
+def invalidate_audio_cache():
+    """Clear all cached audio probes and which lookups."""
+    global _cached_pactl_json, _cached_pactl_platform, _cached_sources
+    global _cached_monitors, _cached_dshow_devices, _cached_dshow_platform
+    global _cached_av_devices, _cached_av_platform
+    with _audio_cache_lock:
+        _cached_pactl_json = None
+        _cached_pactl_platform = None
+        _cached_sources = None
+        _cached_monitors = None
+        _cached_dshow_devices = None
+        _cached_dshow_platform = None
+        _cached_av_devices = None
+        _cached_av_platform = None
+        _which_cache.clear()
+
 
 class Recorder(QObject):
     """Runs the available sound-server recorder and reads raw PCM from stdout."""
@@ -55,18 +102,46 @@ class Recorder(QObject):
         self._cancelled = False
         self._stopping = False
         self._lock = threading.Lock()
+        self._gen = 0
+        self._session_active = False
+        self._paused = False
+        self._target = ""
+        self._max_bytes = 0
 
     @property
     def active(self):
         return self._thread is not None and self._thread.is_alive()
 
+    @property
+    def capturing(self):
+        return self.active
+
+    @property
+    def paused(self):
+        return self._session_active and self._paused
+
+    @property
+    def session_active(self):
+        return self._session_active
+
     def start(self, target="", max_seconds=300):
-        if self.active:
+        if self._session_active:
             return
         cmd = recording_command(target)
         if not cmd:
             self.failed.emit(t(sound().missing))
             return
+
+        self._target = target
+        self._gen += 1
+        gen = self._gen
+        self._session_active = True
+        self._paused = False
+        self._buffer = bytearray()
+        self._rms = []
+        self._cancelled = False
+        self._stopping = False
+        self._max_bytes = int(max_seconds * RATE * SAMPLE_WIDTH * CHANNELS)
 
         try:
             self._proc = subprocess.Popen(
@@ -75,23 +150,28 @@ class Recorder(QObject):
             )
         except OSError as exc:
             self.failed.emit(t("Could not start recording: {error}", error=exc))
+            self._session_active = False
+            self._proc = None
             return
 
-        self._buffer = bytearray()
-        self._rms = []
-        self._cancelled = False
-        self._stopping = False
-        self._max_bytes = int(max_seconds * RATE * SAMPLE_WIDTH * CHANNELS)
-        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread = threading.Thread(target=self._pump, args=(gen,), daemon=True)
         self._thread.start()
 
-    def _pump(self):
+    def _pump(self, gen=None):
+        if gen is None:
+            gen = self._gen
         proc = self._proc
+        if proc is None:
+            return
         stdout = proc.stdout
         try:
             while True:
+                if gen != self._gen:
+                    break
                 chunk = stdout.read(CHUNK_BYTES)
                 if not chunk:
+                    break
+                if gen != self._gen:
                     break
                 peak, rms = chunk_levels(chunk)
                 with self._lock:
@@ -104,6 +184,8 @@ class Recorder(QObject):
                     break
         except (OSError, ValueError):
             pass
+        if gen != self._gen:
+            return
         # Nobody asked it to end and it captured nothing: the recorder is not
         # installed properly, or the device was refused. Said out loud here,
         # because stop() would otherwise report it as a recording that was too
@@ -127,32 +209,106 @@ class Recorder(QObject):
         if proc and proc.poll() is None:
             _terminate_process(proc, timeout=1.5)
 
+    def pause(self):
+        if not self._session_active or self._paused:
+            return False
+        if not self.active:
+            return False
+        proc = self._proc
+        if proc is None:
+            return False
+        self._stopping = True
+        self._gen += 1
+        if proc.poll() is None:
+            _terminate_process(proc, timeout=1.5)
+        if self._thread:
+            self._thread.join(timeout=2)
+        self._thread = None
+        self._proc = None
+        self._stopping = False
+        self._paused = True
+        return True
+
+    def resume(self):
+        if not self._session_active or not self._paused:
+            return False
+        with self._lock:
+            buffered = len(self._buffer)
+        remaining = self._max_bytes - buffered
+        if remaining <= 0:
+            self.failed.emit(t("max duration reached"))
+            return False
+        cmd = recording_command(self._target)
+        if not cmd:
+            self.failed.emit(t(sound().missing))
+            return False
+        try:
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                **_popen_kwargs()
+            )
+        except OSError as exc:
+            self.failed.emit(t("Could not start recording: {error}", error=exc))
+            return False
+        self._gen += 1
+        gen = self._gen
+        self._paused = False
+        self._stopping = False
+        self._cancelled = False
+        self._thread = threading.Thread(target=self._pump, args=(gen,), daemon=True)
+        self._thread.start()
+        return True
+
     def cancel(self):
+        if not self._session_active:
+            return
         self._cancelled = True
-        self._terminate()
+        self._stopping = True
+        self._gen += 1
+        proc = self._proc
+        if proc and proc.poll() is None:
+            _terminate_process(proc, timeout=1.5)
         if self._thread:
             self._thread.join(timeout=2)
         self._thread = None
         self._proc = None
         with self._lock:
             self._buffer = bytearray()
+            self._rms = []
+        self._session_active = False
+        self._paused = False
+        self._stopping = False
+        self._cancelled = False
 
     def stop(self):
         """End the recording and write the WAV file."""
-        if not self._proc:
+        if not self._session_active:
             return
-        self._terminate()
-        if self._thread:
-            self._thread.join(timeout=2)
-        self._thread = None
-        self._proc = None
+        if self.active:
+            self._terminate()
+            if self._thread:
+                self._thread.join(timeout=2)
+            self._thread = None
+            self._proc = None
+        else:
+            # paused: nothing to terminate, just clear handles
+            self._thread = None
+            self._proc = None
 
         with self._lock:
             pcm = bytes(self._buffer)
             rms = list(self._rms)
             self._buffer = bytearray()
+            self._rms = []
 
-        if self._cancelled:
+        was_cancelled = self._cancelled
+        self._gen += 1
+        self._session_active = False
+        self._paused = False
+        self._stopping = False
+        self._cancelled = False
+
+        if was_cancelled:
             return
 
         frames = len(pcm) // (SAMPLE_WIDTH * CHANNELS)
@@ -218,7 +374,7 @@ class MeetingRecorder(QObject):
     def start(self, path, mic_target="", system_target="", max_seconds=14400):
         if self.active:
             return
-        if not shutil.which("ffmpeg"):
+        if not _cached_which("ffmpeg"):
             self.failed.emit(t("ffmpeg not found. Install it to record a meeting."))
             return
         if not system_target:
@@ -454,7 +610,7 @@ def _pulse_record(target):
     service, and its source names are the same ones shown by list_sources().
     Keep pw-record as the fallback for minimal native-PipeWire installations.
     """
-    if shutil.which("parec"):
+    if _cached_which("parec"):
         cmd = [
             "parec", "--record", "--raw", f"--rate={RATE}",
             f"--channels={CHANNELS}", "--format=s16le",
@@ -468,7 +624,7 @@ def _pulse_record(target):
         if target:
             cmd.append(f"--device={target}")
         return cmd
-    if shutil.which("pw-record"):
+    if _cached_which("pw-record"):
         cmd = [
             "pw-record", *_pw_record_raw_option(), f"--rate={RATE}",
             f"--channels={CHANNELS}", "--format=s16",
@@ -512,37 +668,58 @@ def _pulse_meeting(mic_target, system_target):
     ]
 
 
-def _pactl_sources():
-    if not shutil.which("pactl"):
+def _pactl_sources(refresh=False):
+    """Parsed pactl JSON, cached. refresh=True forces re-probe (5s timeout)."""
+    global _cached_pactl_json, _cached_pactl_platform
+    # Tests patch subprocess/shutil: bypass cache to keep mocks honest
+    if subprocess.run is not _real_run or shutil.which is not _real_which:
+        if not shutil.which("pactl"):
+            return []
+        try:
+            out = subprocess.run(
+                ["pactl", "-f", "json", "list", "sources"],
+                capture_output=True, text=True, timeout=5, check=True,
+            ).stdout
+            return json.loads(out)
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
+            return []
+    with _audio_cache_lock:
+        if not refresh and _cached_pactl_json is not None and _cached_pactl_platform == sys.platform:
+            return list(_cached_pactl_json)
+    if not _cached_which("pactl"):
         return []
     try:
         out = subprocess.run(
             ["pactl", "-f", "json", "list", "sources"],
             capture_output=True, text=True, timeout=5, check=True,
         ).stdout
-        return json.loads(out)
+        data = json.loads(out)
     except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
         return []
+    with _audio_cache_lock:
+        _cached_pactl_json = data
+        _cached_pactl_platform = sys.platform
+    return list(data)
 
 
-def _pulse_inputs():
+def _pulse_inputs(refresh=False):
     return [
         (src.get("name", ""), src.get("description") or src.get("name", ""))
-        for src in _pactl_sources()
+        for src in _pactl_sources(refresh=refresh)
         if not src.get("name", "").endswith(".monitor")
     ]
 
 
-def _pulse_outputs():
+def _pulse_outputs(refresh=False):
     return [
         (src.get("name", ""), src.get("description") or src.get("name", ""))
-        for src in _pactl_sources()
+        for src in _pactl_sources(refresh=refresh)
         if src.get("name", "").endswith(".monitor")
     ]
 
 
 def _pulse_default_output():
-    if not shutil.which("pactl"):
+    if not _cached_which("pactl"):
         return ""
     try:
         sink = subprocess.run(
@@ -565,7 +742,7 @@ LOOPBACK_DEVICES = ("blackhole", "loopback", "soundflower")
 
 
 def _avfoundation_record(target):
-    if not shutil.which("ffmpeg"):
+    if not _cached_which("ffmpeg"):
         return []
     return [
         "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
@@ -588,13 +765,40 @@ def _avfoundation_meeting(mic_target, system_target):
     ]
 
 
-def _avfoundation_inputs():
+def _avfoundation_inputs(refresh=False):
     """[(index, name)] for every capture device AVFoundation offers.
 
     The index is what the recorder is given, because that is what ffmpeg takes;
     it changes when devices are plugged in, which is why the name is shown.
+    Cached (8s probe) unless refresh=True.
     """
-    if not shutil.which("ffmpeg"):
+    global _cached_av_devices, _cached_av_platform
+    if subprocess.run is not _real_run or shutil.which is not _real_which:
+        if not shutil.which("ffmpeg"):
+            return []
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-f", "avfoundation",
+                 "-list_devices", "true", "-i", ""],
+                capture_output=True, text=True, timeout=8, check=False,
+            )
+        except (subprocess.SubprocessError, OSError):
+            return []
+        devices, listing = [], False
+        for line in result.stderr.splitlines():
+            if "AVFoundation audio devices:" in line:
+                listing = True
+                continue
+            if not listing:
+                continue
+            match = re.search(r"\[(\d+)\]\s+(.+)$", line)
+            if match:
+                devices.append((match.group(1), match.group(2).strip()))
+        return devices
+    with _audio_cache_lock:
+        if not refresh and _cached_av_devices is not None and _cached_av_platform == sys.platform:
+            return list(_cached_av_devices)
+    if not _cached_which("ffmpeg"):
         return []
     try:
         # Listing devices is not a thing ffmpeg can do without an input, so it
@@ -618,7 +822,10 @@ def _avfoundation_inputs():
         match = re.search(r"\[(\d+)\]\s+(.+)$", line)
         if match:
             devices.append((match.group(1), match.group(2).strip()))
-    return devices
+    with _audio_cache_lock:
+        _cached_av_devices = devices
+        _cached_av_platform = sys.platform
+    return list(devices)
 
 
 def _avfoundation_default_output():
@@ -661,7 +868,7 @@ COREAUDIO = Sound(
 # --- Windows (DirectShow via ffmpeg) -----------------------------------
 
 
-def _dshow_audio_devices():
+def _dshow_audio_devices(refresh=False):
     """[(name, description)] of every DirectShow audio capture device.
 
     ffmpeg DirectShow enumeration goes to stderr and the command exits non-zero;
@@ -669,10 +876,36 @@ def _dshow_audio_devices():
     Typical lines look like:
       [dshow @ 000...]  "Microphone (Realtek Audio)" (audio)
       [dshow @ 000...]  "Stereo Mix (Realtek Audio)" (audio)
+    Cached (8s probe) unless refresh=True.
     """
+    global _cached_dshow_devices, _cached_dshow_platform
+    if subprocess.run is not _real_run or shutil.which is not _real_which:
+        if sys.platform != "win32":
+            return []
+        if not shutil.which("ffmpeg"):
+            return []
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-list_devices", "true",
+                 "-f", "dshow", "-i", "dummy"],
+                capture_output=True, text=True, timeout=8, check=False,
+                **_run_kwargs(),
+            )
+        except (subprocess.SubprocessError, OSError):
+            return []
+        devices = []
+        for line in result.stderr.splitlines():
+            m = re.search(r'"([^"]+)"\s*\(audio\)', line)
+            if m:
+                name = m.group(1).strip()
+                devices.append((name, name))
+        return devices
+    with _audio_cache_lock:
+        if not refresh and _cached_dshow_devices is not None and _cached_dshow_platform == sys.platform:
+            return list(_cached_dshow_devices)
     if sys.platform != "win32":
         return []
-    if not shutil.which("ffmpeg"):
+    if not _cached_which("ffmpeg"):
         return []
     try:
         result = subprocess.run(
@@ -692,11 +925,14 @@ def _dshow_audio_devices():
         if m:
             name = m.group(1).strip()
             devices.append((name, name))
-    return devices
+    with _audio_cache_lock:
+        _cached_dshow_devices = devices
+        _cached_dshow_platform = sys.platform
+    return list(devices)
 
 
 def _dshow_record(target):
-    if not shutil.which("ffmpeg"):
+    if not _cached_which("ffmpeg"):
         return []
     devices = _dshow_audio_devices()
     chosen = target or (devices[0][0] if devices else "")
@@ -739,16 +975,16 @@ def _dshow_meeting(mic_target, system_target):
     ]
 
 
-def _dshow_inputs():
-    return _dshow_audio_devices()
+def _dshow_inputs(refresh=False):
+    return _dshow_audio_devices(refresh=refresh)
 
 
-def _dshow_outputs():
+def _dshow_outputs(refresh=False):
     # Only expose obvious loopback / what-you-hear devices on Windows.
     keywords = ("stereo mix", "what u hear", "loopback", "vb-cable",
                 "virtual", "cable output", "wave out mix")
     out = []
-    for name, desc in _dshow_audio_devices():
+    for name, desc in _dshow_audio_devices(refresh=refresh):
         low = name.lower()
         if any(kw in low for kw in keywords):
             out.append((name, desc))
@@ -782,9 +1018,75 @@ def sound():
     return PULSE
 
 
+def cached_list_sources(refresh=False):
+    """Cached [(name, description)] for every real input source.
+
+    Reuses the pactl/dshow/avfoundation JSON when available; 5-8s probe
+    runs once, subsequent calls are <1ms. Pass refresh=True to re-probe.
+    Thread-safe via _audio_cache_lock.
+    """
+    global _cached_sources
+    # Tests patch shutil.which/subprocess.run: bypass generic cache there
+    if subprocess.run is not _real_run or shutil.which is not _real_which:
+        if sys.platform == "darwin":
+            return _avfoundation_inputs(refresh=refresh)
+        if sys.platform == "win32":
+            return _dshow_inputs(refresh=refresh)
+        return _pulse_inputs(refresh=refresh)
+    with _audio_cache_lock:
+        if not refresh and _cached_sources is not None:
+            return list(_cached_sources)
+    if sys.platform == "darwin":
+        result = _avfoundation_inputs(refresh=refresh)
+    elif sys.platform == "win32":
+        result = _dshow_inputs(refresh=refresh)
+    else:
+        result = _pulse_inputs(refresh=refresh)
+    with _audio_cache_lock:
+        _cached_sources = result
+    return list(result)
+
+
+def cached_list_monitors(refresh=False):
+    """Cached [(name, description)] for the other side (monitors/loopback)."""
+    global _cached_monitors
+    if subprocess.run is not _real_run or shutil.which is not _real_which:
+        if sys.platform == "darwin":
+            return _avfoundation_inputs(refresh=refresh)
+        if sys.platform == "win32":
+            return _dshow_outputs(refresh=refresh)
+        return _pulse_outputs(refresh=refresh)
+    with _audio_cache_lock:
+        if not refresh and _cached_monitors is not None:
+            return list(_cached_monitors)
+    if sys.platform == "darwin":
+        result = _avfoundation_inputs(refresh=refresh)
+    elif sys.platform == "win32":
+        result = _dshow_outputs(refresh=refresh)
+    else:
+        result = _pulse_outputs(refresh=refresh)
+    with _audio_cache_lock:
+        _cached_monitors = result
+    return list(result)
+
+
+def list_sources_cached(refresh=False):
+    """Wrapper for settings_ui deferral; same as cached_list_sources."""
+    return cached_list_sources(refresh=refresh)
+
+
+def list_monitors_cached(refresh=False):
+    """Wrapper for settings_ui deferral; same as cached_list_monitors."""
+    return cached_list_monitors(refresh=refresh)
+
+
 def list_sources():
-    """[(name, description)] for every real input source."""
-    return sound().inputs()
+    """[(name, description)] for every real input source.
+
+    Thin wrapper for backwards compat; prefers cached value when present
+    to avoid 5-8s subprocess probe on Settings open.
+    """
+    return cached_list_sources(refresh=False)
 
 
 def list_monitors():
@@ -793,8 +1095,9 @@ def list_monitors():
     On Linux that is the monitor of an output, and recording it is recording
     whatever is being played: in a meeting the other participants, and nothing
     of your own microphone.
+    Thin wrapper over cached_list_monitors.
     """
-    return sound().outputs()
+    return cached_list_monitors(refresh=False)
 
 
 def default_monitor():

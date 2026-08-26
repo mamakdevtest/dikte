@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Geçmiş — Dikte</title>
+<link rel="icon" type="image/png" href="dikte.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/dikte.css">
+</head>
+<body data-page="history" data-runtime="pyqt6" data-python-screen="history">
+<div class="app" data-od-id="app-shell">
+  <div class="titlebar" data-od-id="titlebar">
+    <div class="tb-brand"><span class="tb-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>Dikte<span class="tb-sub">Ayarlar</span></div>
+    <div class="tb-controls" aria-hidden="true">
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="minus"></span></button>
+      <button class="tb-btn" type="button" tabindex="-1"><span data-ic="square"></span></button>
+      <button class="tb-btn close" type="button" tabindex="-1"><span data-ic="x"></span></button>
+    </div>
+  </div>
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="side-brand">
+      <span class="brand-badge"><img src="dikte.png" alt="" aria-hidden="true"></span>
+      <div><div class="brand-name">Dikte</div><div class="brand-sub">Yerelden dikte</div></div>
+    </div>
+    <nav class="nav" aria-label="Bölümler">
+      <a class="nav-item" data-nav="general" href="general.html"><span data-ic="sliders"></span><span>Genel</span></a>
+      <a class="nav-item" data-nav="api" href="api-models.html"><span data-ic="plug"></span><span>API ve Modeller</span></a>
+      <a class="nav-item" data-nav="cleanup" href="cleanup-rules.html"><span data-ic="eraser"></span><span>Temizlik Kuralları</span></a>
+      <a class="nav-item" data-nav="agent" href="agent.html"><span data-ic="terminal"></span><span>Ajan</span></a>
+      <a class="nav-item" data-nav="meeting" href="meeting.html"><span data-ic="users"></span><span>Toplantı</span></a>
+      <a class="nav-item" data-nav="minutes" href="minutes.html"><span data-ic="fileText"></span><span>Tutanaklar</span></a>
+      <a class="nav-item" data-nav="audio" href="audio-file.html"><span data-ic="fileAudio"></span><span>Ses Dosyası</span></a>
+      <a class="nav-item" data-nav="shortcuts" href="shortcuts.html"><span data-ic="keyboard"></span><span>Kısayollar</span></a>
+      <a class="nav-item active" data-nav="history" href="history.html" aria-current="page"><span data-ic="history"></span><span>Geçmiş</span></a>
+      <a class="nav-item" data-nav="overlay" href="overlay.html"><span data-ic="pip"></span><span>Gösterge ve Tepsi</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="engine-card" data-od-id="engine-card">
+        <div class="engine-top"><span data-ic="wave"></span><span>Whisper Small</span><span class="chip chip-sage"><span class="dot dot-sage"></span>Yerel</span></div>
+        <div class="engine-status"><span class="dot dot-ok"></span>Hazır<span class="engine-ver">1.0</span></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main" data-od-id="main">
+    <div class="page">
+      <header class="page-head" data-od-id="page-head">
+        <div>
+          <h1 class="page-title">Geçmiş</h1>
+          <p class="page-sub">Her dikte ve ajan komutu burada birikir. Kayıtlar bilgisayarınızdan çıkmaz; limit dolduğunda en eskisi atılır.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-ghost" type="button" id="reload"><span data-ic="refresh"></span>Yeniden yükle</button>
+        </div>
+      </header>
+
+      <section class="card" data-od-id="history-card">
+        <div class="card-f" style="border-top:0;border-bottom:1px solid color-mix(in srgb,var(--border) 62%,transparent)" data-od-id="history-toolbar">
+          <span class="search" style="flex:1;max-width:320px"><span data-ic="search"></span><input class="field" id="q" type="search" placeholder="Transkriptlerde ara…" aria-label="Geçmişte ara"></span>
+          <span class="seg" id="type-filter" role="group" aria-label="Tür filtresi">
+            <button class="seg-btn active" data-f="all">Tümü</button>
+            <button class="seg-btn" data-f="dictation">Dikte</button>
+            <button class="seg-btn" data-f="ask">Ajan</button>
+          </span>
+          <span class="spacer"></span>
+          <span class="meta" id="sel-count">Seçili yok</span>
+          <button class="btn btn-secondary btn-sm" id="copy-sel" disabled><span data-ic="copy"></span>Seçilenleri kopyala</button>
+          <button class="btn btn-danger btn-sm" id="del-sel" disabled><span data-ic="trash"></span>Seçilenleri sil</button>
+        </div>
+        <div class="list" id="hist-list" data-od-id="history-list"></div>
+        <div class="card-f" data-od-id="history-footer">
+          <span class="row-label" style="font-size:12.5px">En fazla tut</span>
+          <span class="num"><button type="button" class="nbtn" data-step="-10">−</button><input id="limit" type="number" value="200" min="0" max="10000"><span class="suffix">kayıt</span><button type="button" class="nbtn" data-step="10">+</button></span>
+          <span class="meta">0 = sınırsız. Limit düşünce fazlası hemen silinir.</span>
+          <span class="spacer"></span>
+          <button class="btn btn-danger btn-sm" id="clear-all"><span data-ic="trash"></span>Tümünü temizle</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="dlg-details" role="dialog" aria-modal="true" aria-labelledby="dlg-det-t">
+  <div class="dialog wide" data-od-id="dialog-history-details" style="max-height:calc(100vh - 60px);display:flex;flex-direction:column">
+    <div class="dialog-h" id="dlg-det-t"><span data-ic="fileText"></span>Dikte ayrıntıları <span class="chip chip-gray" id="det-mode" style="margin-left:6px">Dikte</span></div>
+    <div class="dialog-b" style="flex:1;overflow-y:auto;padding-bottom:12px">
+      <dl class="prop-grid" id="det-props"></dl>
+      <div class="tabs" style="margin:8px -20px 0;padding:0 20px" role="tablist">
+        <button class="tab active" data-t="final" role="tab">Son metin</button>
+        <button class="tab" data-t="raw" role="tab">Ham transkript</button>
+        <button class="tab" data-t="question" role="tab" id="tab-question" hidden>Soru</button>
+        <button class="tab" data-t="json" role="tab">Meta veri</button>
+      </div>
+      <div class="output" id="det-content" style="margin-top:12px;min-height:150px"></div>
+    </div>
+    <div class="dialog-f" style="border-top:1px solid var(--border)">
+      <button class="btn btn-secondary btn-sm" id="copy-final"><span data-ic="copy"></span>Son metni kopyala</button>
+      <button class="btn btn-secondary btn-sm" id="copy-raw">Ham transkripti kopyala</button>
+      <button class="btn btn-secondary btn-sm" id="copy-json">JSON kopyala</button>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" data-dialog-close="dlg-details">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-del-sel" role="dialog" aria-modal="true" aria-labelledby="dlg-ds-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-ds-t"><span data-ic="trash" style="color:var(--err)"></span>Kayıtlar silinsin mi?</div>
+    <div class="dialog-b"><p id="dlg-ds-body">Seçili kayıtlar geçmişten silinir. Ses dosyası saklandıysa diskte kalır.</p></div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-del-sel">Vazgeç</button>
+      <button class="btn btn-danger solid" type="button" id="del-sel-confirm">Sil</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-clear-all" role="dialog" aria-modal="true" aria-labelledby="dlg-ca-t">
+  <div class="dialog">
+    <div class="dialog-h" id="dlg-ca-t"><span data-ic="trash" style="color:var(--err)"></span>Tüm geçmiş silinsin mi?</div>
+    <div class="dialog-b"><p>Bütün geçmiş silinir. <b>Bu işlem geri alınamaz.</b> Saklanan ses dosyaları diskte kalır.</p></div>
+    <div class="dialog-f">
+      <button class="btn btn-ghost" type="button" data-dialog-close="dlg-clear-all">Vazgeç</button>
+      <button class="btn btn-danger solid" type="button" id="clear-confirm">Tümünü sil</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" aria-live="polite"></div>
+<script src="assets/dikte.js"></script>
+<script>
+(function(){
+  const ENTRIES=[
+    {id:1,day:"Bugün",time:"09:41",mode:"dictation",dur:"12,4 sn",proc:"3,1 sn",lang:"Türkçe",status:"ok",
+     tr:"Deepgram (nova-3)",cl:"OpenRouter (google/gemini-3.5-flash-lite)",
+     text:"Toplantı notları: tasarı incelemesinde gösterge köşesi ve yapıştırma davranışı kararlaştırıldı; ses dosyası kuyruğu sonraki sürüme bırakıldı.",
+     raw:"toplantı notlarıı tasarı incelemesinde gösterge köşesi ve, yapıştırma davranışıı kararlaştırıldı ses dosyası kuyruğu sonraki sürüme bırakıldı",
+     meta:'{"ts":"2026-08-25 09:41:12","mode":"dictation","duration":12.4,"elapsed":3.1,"transcribe_provider":"deepgram","model":"nova-3","cleanup_provider":"openrouter","cleanup_model":"google/gemini-3.5-flash-lite","language":"tr"}'},
+    {id:2,day:"Bugün",time:"09:12",mode:"ask",dur:"6,8 sn",proc:"41,7 sn",lang:"Türkçe",status:"ok",
+     tr:"whisper-large-v3-turbo-q5_0",cl:"kapalı",agent:"Claude Code (sonnet)",
+     question:"Faturadaki tutarı kontrol et; geçen aykine göre farkı söyle, tabloyu masaüstündeki rapor.xlsx'e yaz.",
+     text:"Fark +412,50 TL (geçen ay 8.930,00 TL → bu ay 9.342,50 TL). Tablo masaüstündeki rapor.xlsx'e yazıldı, iki satır eklendi.",
+     raw:"faturadaki tutarıı kontrol et geçen aykine göre farkı söyle tabloyu masaüstündeki rapor nokta xlsx e yaz",
+     meta:'{"ts":"2026-08-25 09:12:03","mode":"ask","duration":6.8,"elapsed":41.7,"assistant_provider":"claude","assistant_model":"sonnet","session":"carried (12 dk önce)"}'},
+    {id:3,day:"Dün",time:"17:48",mode:"dictation",dur:"8,1 sn",proc:"—",lang:"Türkçe",status:"error",
+     err:"Anahtar reddedildi (401) — Deepgram anahtarı geçersiz",
+     tr:"Deepgram (nova-3)",cl:"—",
+     text:"(yazıya dökme başarısız) toplantı yarın dörde erken başlıyor lütfen notları önceden gönderin",
+     raw:"toplantı yarın dörde erken başlıyor lütfen notları önceden gönderin",
+     meta:'{"ts":"2026-08-24 17:48:55","mode":"dictation","duration":8.1,"status":"error","error":"401 Unauthorized","transcribe_provider":"deepgram"}'},
+    {id:4,day:"Dün",time:"14:03",mode:"dictation",dur:"21,7 sn",proc:"5,4 sn",lang:"Türkçe",status:"ok",
+     tr:"whisper-large-v3-turbo-q5_0 (yerel)",cl:"llama.cpp (gemma-3-4b-it)",
+     text:"Yarınki demo için üç şey lazım: ikinci mikrofon, uzun kabloyu ve yedek dizüstü. Toplantı odasını da 13:00 için ayırt.",
+     raw:"yarınki demo için üç şey laızm ikinci mikrofon uzun kabloyu ve yedek diz üstü toplantı odasını da onüç için ayırt",
+     meta:'{"ts":"2026-08-24 14:03:21","mode":"dictation","duration":21.7,"elapsed":5.4,"transcribe_provider":"local","model":"ggml-large-v3-turbo-q5_0.bin"}'},
+    {id:5,day:"22 Ağustos",time:"11:26",mode:"ask",dur:"9,3 sn",proc:"12,2 sn",lang:"Türkçe",status:"ok",
+     tr:"whisper-large-v3-turbo-q5_0",cl:"kapalı",agent:"OpenRouter (google/gemini-3.5-flash)",
+     question:"Peru'nun başkenti neresi ve yerel saat kaçıdır?",
+     text:"Peru'nun başkenti Lima'dır. Yerel saat Türkiye'den 8 saat geridedir (UTC−5).",
+     raw:"peru nun başkenti neresi ve yerel saat kaçıdır",
+     meta:'{"ts":"2026-08-22 11:26:40","mode":"ask","duration":9.3,"elapsed":12.2,"assistant_provider":"openrouter"}'},
+    {id:6,day:"22 Ağustos",time:"10:58",mode:"dictation",dur:"4,2 sn",proc:"1,9 sn",lang:"Türkçe",status:"ok",
+     tr:"whisper-large-v3-turbo-q5_0 (yerel)",cl:"llama.cpp (gemma-3-4b-it)",
+     text:"Hatırlatma: cuma günü sunucu bakımı, akşam sekize kadar.",
+     raw:"hatırlatma cuma günü sunucu bakımı akşam sekize kadar",
+     meta:'{"ts":"2026-08-22 10:58:07","mode":"dictation","duration":4.2,"elapsed":1.9}'}
+  ];
+  const list=document.getElementById("hist-list");
+  const sel=new Set();
+  let filter="all",query="";
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function render(){
+    list.innerHTML="";
+    const visible=ENTRIES.filter(e=>{
+      if(filter!=="all"&&e.mode!==filter)return false;
+      if(query&&!(e.text+e.raw+(e.question||"")).toLowerCase().includes(query))return false;
+      return true;
+    });
+    if(ENTRIES.length===0){
+      list.innerHTML='<div class="empty"><span class="empty-ic" data-ic="history"></span><div class="empty-t">Geçmiş boş</div><div class="empty-d">İlk dikteniz ya da ajan komutunuz burada görünür. Kısayolla ya da tepsi menüsünden başlayın.</div></div>';
+      DK.inject(list);
+      updateSel();
+      return;
+    }
+    if(visible.length===0){
+      list.innerHTML='<div class="empty"><span class="empty-ic" data-ic="search"></span><div class="empty-t">Eşleşen kayıt yok</div><div class="empty-d">Aramanızı veya tür filtresini değiştirin.</div></div>';
+      DK.inject(list);
+      updateSel();
+      return;
+    }
+    let lastDay="";
+    visible.forEach(e=>{
+      if(e.day!==lastDay){
+        lastDay=e.day;
+        const d=document.createElement("div");
+        d.className="li-date";
+        d.textContent=e.day;
+        list.appendChild(d);
+      }
+      const row=document.createElement("div");
+      row.className="li-row";
+      row.setAttribute("data-od-id","history-"+e.id);
+      row.tabIndex=0;
+      const icon=e.mode==="ask"?"terminal":"mic";
+      const title=e.mode==="ask"?'<span class="muted">Claude\'a soruldu:</span> '+esc(e.question):esc(e.text);
+      const sub=e.status==="error"?'<span style="color:var(--err)">Hata: '+esc(e.err)+"</span>":esc(e.text);
+      const meta=(e.mode==="ask"?e.agent:e.tr)+" · temizlik: "+e.cl;
+      row.innerHTML='<input type="checkbox" class="radio selbox" style="width:15px;height:15px" aria-label="Seç">'+
+        '<span class="li-ic" data-ic="'+icon+'"></span>'+
+        '<div class="li-main"><div class="li-title">'+title+'</div><div class="li-sub">'+sub+'</div>'+
+        '<div class="li-sub mono" style="font-size:10.5px">'+meta+"</div></div>"+
+        '<div class="li-side"><div class="li-meta">'+e.time+"<br>"+e.dur+'</div><div class="li-actions">'+
+        '<button class="icon-ghost" data-details aria-label="Ayrıntılar"><span data-ic="search"></span></button>'+
+        '<button class="icon-ghost danger" data-del aria-label="Sil"><span data-ic="trash"></span></button></div></div>';
+      if(sel.has(e.id))row.classList.add("selected");
+      const box=row.querySelector(".selbox");
+      box.checked=sel.has(e.id);
+      box.addEventListener("click",ev=>ev.stopPropagation());
+      box.addEventListener("change",()=>{box.checked?sel.add(e.id):sel.delete(e.id);row.classList.toggle("selected",box.checked);updateSel();});
+      row.addEventListener("click",ev=>{
+        if(ev.target.closest("button,input"))return;
+        openDetails(e);
+      });
+      row.addEventListener("keydown",ev=>{if(ev.key==="Enter"){openDetails(e);}});
+      row.addEventListener("contextmenu",ev=>{
+        ev.preventDefault();
+        if(!sel.has(e.id)){sel.add(e.id);render();}
+        openCtx(ev,e);
+      });
+      row.querySelector("[data-details]").addEventListener("click",()=>openDetails(e));
+      row.querySelector("[data-del]").addEventListener("click",()=>{
+        if(sel.size===0){sel.add(e.id);}
+        document.getElementById("dlg-ds-body").innerHTML=(sel.size>1?sel.size+" kayıt":"<b>"+esc(e.text.slice(0,48))+"…</b>")+" geçmişten silinir. Bu işlem geri alınamaz.";
+        DK.openDialog("dlg-del-sel");
+      });
+      list.appendChild(row);
+    });
+    DK.inject(list);
+    updateSel();
+  }
+  function updateSel(){
+    document.getElementById("sel-count").textContent=sel.size?("Seçili: "+sel.size):"Seçili yok";
+    document.getElementById("copy-sel").disabled=sel.size===0;
+    document.getElementById("del-sel").disabled=sel.size===0;
+  }
+  let ctxMenu=null;
+  function openCtx(ev,entry){
+    closeCtx();
+    ctxMenu=document.createElement("div");
+    ctxMenu.className="menu";
+    ctxMenu.style.position="fixed";
+    ctxMenu.style.left=Math.min(ev.clientX,window.innerWidth-240)+"px";
+    ctxMenu.style.top=Math.min(ev.clientY,window.innerHeight-220)+"px";
+    ctxMenu.style.zIndex=70;
+    ctxMenu.innerHTML=
+      '<button class="menu-item" data-ctx="details"><span data-ic="search"></span>Ayrıntılar…</button>'+
+      '<button class="menu-item" data-ctx="copy"><span data-ic="copy"></span>Seçilenleri kopyala</button>'+
+      '<button class="menu-item danger" data-ctx="del"><span data-ic="trash"></span>Seçilenleri sil</button>'+
+      '<div class="menu-sep"></div>'+
+      '<button class="menu-item danger" data-ctx="clear"><span data-ic="trash"></span>Tümünü temizle</button>';
+    document.body.appendChild(ctxMenu);
+    DK.inject(ctxMenu);
+    ctxMenu.addEventListener("click",e=>{
+      const a=e.target.closest("[data-ctx]");
+      if(!a)return;
+      closeCtx();
+      if(a.dataset.ctx==="details")openDetails(entry);
+      if(a.dataset.ctx==="copy"){DK.toast(sel.size+" kayıt panoya kopyalandı.");}
+      if(a.dataset.ctx==="del"){DK.openDialog("dlg-del-sel");}
+      if(a.dataset.ctx==="clear"){DK.openDialog("dlg-clear-all");}
+    });
+  }
+  function closeCtx(){if(ctxMenu){ctxMenu.remove();ctxMenu=null;}}
+  document.addEventListener("click",e=>{if(!e.target.closest(".menu"))closeCtx();});
+  let current=null,curTab="final";
+  function openDetails(e){
+    current=e;
+    curTab="final";
+    document.getElementById("det-mode").textContent=e.mode==="ask"?"Ajan komutu":"Dikte";
+    const props=[
+      ["Zaman",e.day+", "+e.time],
+      ["Tür",e.mode==="ask"?"Ajan komutu":"Dikte"],
+      ["Ses süresi",e.dur],
+      ["İşlem süresi",e.proc],
+      ["Konuşma dili",e.lang],
+      ["Durum",e.status==="error"?'<span style="color:var(--err)">Hata — '+esc(e.err)+"</span>":'<span style="color:var(--ok)">Başarılı</span>'],
+      ["Transkripsiyon",'<span class="mono">'+esc(e.tr)+"</span>"],
+      ["Temizlik",'<span class="mono">'+esc(e.cl)+"</span>"]
+    ];
+    if(e.agent)props.push(["Ajan",'<span class="mono">'+esc(e.agent)+"</span>"]);
+    document.getElementById("det-props").innerHTML=props.map(p=>"<dt>"+p[0]+"</dt><dd>"+p[1]+"</dd>").join("");
+    document.getElementById("tab-question").hidden=e.mode!=="ask";
+    document.querySelectorAll("#dlg-details .tab").forEach(t=>t.classList.toggle("active",t.dataset.t==="final"));
+    renderTab();
+    DK.openDialog("dlg-details");
+  }
+  function renderTab(){
+    const c=document.getElementById("det-content");
+    if(curTab==="final")c.textContent=current.text;
+    else if(curTab==="raw")c.textContent=current.raw;
+    else if(curTab==="question")c.textContent=current.question||"";
+    else c.textContent=current.meta;
+  }
+  document.querySelectorAll("#dlg-details .tab").forEach(t=>{
+    t.addEventListener("click",()=>{
+      document.querySelectorAll("#dlg-details .tab").forEach(x=>x.classList.remove("active"));
+      t.classList.add("active");
+      curTab=t.dataset.t;
+      renderTab();
+    });
+  });
+  document.getElementById("copy-final").addEventListener("click",()=>DK.toast("Son metin panoya kopyalandı."));
+  document.getElementById("copy-raw").addEventListener("click",()=>DK.toast("Ham transkript panoya kopyalandı."));
+  document.getElementById("copy-json").addEventListener("click",()=>DK.toast("Meta veri panoya kopyalandı."));
+  document.getElementById("q").addEventListener("input",e=>{query=e.target.value.trim().toLowerCase();render();});
+  document.querySelectorAll("#type-filter .seg-btn").forEach(b=>{
+    b.addEventListener("click",()=>{
+      document.querySelectorAll("#type-filter .seg-btn").forEach(x=>x.classList.remove("active"));
+      b.classList.add("active");
+      filter=b.dataset.f;
+      render();
+    });
+  });
+  document.getElementById("copy-sel").addEventListener("click",()=>DK.toast(sel.size+" kayıt panoya kopyalandı."));
+  document.getElementById("del-sel").addEventListener("click",()=>{
+    document.getElementById("dlg-ds-body").innerHTML=sel.size+" kayıt geçmişten silinir. Bu işlem geri alınamaz.";
+    DK.openDialog("dlg-del-sel");
+  });
+  document.getElementById("del-sel-confirm").addEventListener("click",()=>{
+    sel.forEach(id=>{const i=ENTRIES.findIndex(e=>e.id===id);if(i>-1)ENTRIES.splice(i,1);});
+    sel.clear();
+    DK.closeDialog("dlg-del-sel");
+    render();
+    DK.toast("Seçili kayıtlar silindi.","warn");
+  });
+  document.getElementById("clear-all").addEventListener("click",()=>DK.openDialog("dlg-clear-all"));
+  document.getElementById("clear-confirm").addEventListener("click",()=>{
+    ENTRIES.length=0;sel.clear();
+    DK.closeDialog("dlg-clear-all");
+    render();
+    DK.toast("Geçmiş temizlendi.","warn");
+  });
+  document.getElementById("reload").addEventListener("click",e=>{
+    const btn=e.currentTarget;
+    btn.disabled=true;btn.innerHTML='<span class="spin sm"></span> Yeniden yükleniyor…';
+    setTimeout(()=>{btn.disabled=false;btn.innerHTML="Yeniden yükle";render();DK.toast("Geçmiş yenilendi.");},900);
+  });
+  render();
+})();
+</script>
+</body>
+</html>
