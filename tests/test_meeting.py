@@ -436,11 +436,15 @@ class Pipeline(DikteTest):
         _, failures = self.run_pipeline()
         self.assertIn("gone", failures[0][1])
 
-    def test_a_meeting_where_nobody_said_anything(self):
+    def test_the_silence_gate_gets_a_second_opinion(self):
+        """Every chunk judged quiet, yet the file carries sound: the loudest
+        part of each side gets one call before an hour is declared speechless."""
         with mock.patch.object(meeting.MeetingPipeline, "_silent",
                                return_value=True):
-            _, failures = self.run_pipeline()
-        self.assertIn("speech", failures[0][1])
+            done, failures = self.run_pipeline()
+        self.assertEqual(failures, [])
+        self.assertEqual(done[0][0], self.base)
+        self.assertTrue(self.doc.exists())
 
     def test_a_silent_recording_names_the_devices(self):
         """A wrong device records a faithful file full of nothing, and the

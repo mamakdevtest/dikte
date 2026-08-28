@@ -312,6 +312,7 @@ class Overlay(QWidget):
     pauseRequested = pyqtSignal()
     resumeRequested = pyqtSignal()
     stopRequested = pyqtSignal()
+    livePopupRequested = pyqtSignal()
     thinkingChanged = pyqtSignal(str)
     liveTranscriptChanged = pyqtSignal(str)
     liveExpandedChanged = pyqtSignal(bool)
@@ -354,6 +355,9 @@ class Overlay(QWidget):
         self._stop_rect = QRectF()
         self._hover_stop = False
         self._stop_pressed = False
+        # the wider-live-view button: recording and meeting states
+        self._live_button_rect = QRectF()
+        self._hover_live_button = False
         # live transcript preview (optional, bounded)
         self._live_text = ""
         self._live_expanded = False
@@ -736,6 +740,20 @@ class Overlay(QWidget):
         self._conceal()
 
     def mousePressEvent(self, event):
+        # The wider live view is offered wherever a recording is running —
+        # dictation or a meeting. Checked first: it shares the pill with the
+        # meeting's collapse toggle and the pause/stop buttons.
+        try:
+            pos = event.position() if hasattr(event, "position") else event.pos()
+            pt = QPointF(pos.x(), pos.y())
+        except Exception:
+            pt = QPointF(float(event.pos().x()), float(event.pos().y()))
+        if (self.state in LIVE or self.state == PAUSED_STATE) \
+                and self._live_button_rect.isValid() \
+                and self._live_button_rect.contains(pt):
+            self.livePopupRequested.emit()
+            event.accept()
+            return
         # A meeting card expands or collapses where it stands; it has no
         # pause API and nothing else to offer a click.
         if self.interactive_live and self.state == "meeting":
@@ -791,6 +809,19 @@ class Overlay(QWidget):
         event.accept()
 
     def mouseMoveEvent(self, event):
+        # hover for the wider-live-view button
+        try:
+            pos = event.position() if hasattr(event, "position") else event.pos()
+            pt = QPointF(pos.x(), pos.y())
+        except Exception:
+            pt = QPointF(float(event.pos().x()), float(event.pos().y()))
+        live_rect = self._layout()["live_button"]
+        hover_live = (live_rect.isValid() and live_rect.contains(pt)
+                      and (self.state in LIVE or self.state == PAUSED_STATE))
+        if hover_live != self._hover_live_button:
+            self._hover_live_button = hover_live
+            if live_rect.isValid():
+                self.update(live_rect.toRect().adjusted(-2, -2, 2, 2))
         # hover for expand inside live panel
         if self.interactive_live and self._should_show_live():
             try:
@@ -838,6 +869,9 @@ class Overlay(QWidget):
         event.accept()
 
     def leaveEvent(self, event):
+        if self._hover_live_button:
+            self._hover_live_button = False
+            self._update_region("live_button")
         if self._hover_pause:
             self._hover_pause = False
             self.update(self._pause_button_rect().toRect())
@@ -946,6 +980,12 @@ class Overlay(QWidget):
         action = self._action_group_rect() if show_action else QRectF()
         timer_right = self.width() - 20.0 - (_ACTION_SLOT if show_action else 0.0)
         timer = QRectF(timer_right - _TIMER_WIDTH, offset, _TIMER_WIDTH, main_h)
+        live_button = QRectF()
+        if (self.state in LIVE or self.state == PAUSED_STATE) \
+                and not (self.state == "meeting" and self._meeting_collapsed):
+            size = 36.0
+            live_button = QRectF(timer.left() - _WAVE_GAP - size,
+                                 offset + (HEIGHT - size) / 2.0, size, size)
         wave_right = timer.left() - _WAVE_GAP
         wave_left = min(_WAVE_LEFT, max(0.0, wave_right))
         available = max(1.0, min(float(self.width()) - wave_left,
@@ -977,6 +1017,7 @@ class Overlay(QWidget):
             "indicator": QRectF(18.0, offset, 24.0, main_h),
             "waveform": QRectF(wave_left, offset, available, main_h),
             "timer_rect": timer,
+            "live_button": live_button,
             "action": action,
             "pause": self._pause_button_rect(),
             "stop": self._stop_button_rect(),
@@ -1269,6 +1310,7 @@ class Overlay(QWidget):
             else:
                 self._draw_waveform(painter, accent)
                 self._draw_time(painter)
+                self._draw_live_button(painter, cols)
                 if self.state == "meeting":
                     self._draw_meeting_footer(painter, cols)
             if self._should_show_pause_button():
@@ -1278,6 +1320,31 @@ class Overlay(QWidget):
             self._draw_message(painter)
             if self._can_dismiss:
                 self._draw_dismiss(painter)
+
+    def _draw_live_button(self, painter, cols):
+        """The doorway to the wider live view: lines of text in a frame."""
+        rect = self._layout()["live_button"]
+        if not rect.isValid():
+            return
+        if self._hover_live_button:
+            painter.setPen(Qt.PenStyle.NoPen)
+            hover = QColor(cols["SURFACE2"])
+            hover.setAlpha(200)
+            painter.setBrush(hover)
+            painter.drawRoundedRect(rect, 8, 8)
+        pen = QPen(QColor(cols["TEXT"] if self._hover_live_button
+                          else cols["MUTED"]), 1.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(rect.adjusted(6.5, 6.5, -6.5, -6.5), 6, 6)
+        inner = rect.adjusted(11, 11, -11, -11)
+        step = inner.height() / 3.0
+        for row in range(3):
+            y = inner.top() + step * (row + 0.5)
+            width = inner.width() if row < 2 else inner.width() * 0.55
+            painter.drawLine(QPointF(inner.left(), y),
+                             QPointF(inner.left() + width, y))
 
     def _draw_meeting_footer(self, painter, cols):
         """Status line over a legend of the two channels — or the warning.

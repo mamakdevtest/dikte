@@ -2154,6 +2154,7 @@ class SettingsWindow(QDialog):
         self._select_data(self.corner, conf["overlay_corner"])
         self.max_seconds.setValue(conf["max_seconds"])
         self.skip_silent.setChecked(conf["skip_silent"])
+        self.live_transcript.setChecked(conf["live_transcript"])
         self.silence_db.setValue(int(conf["silence_db"]))
         self.filter_hallucinations.setChecked(conf["filter_hallucinations"])
         self.keep_audio.setChecked(conf["keep_audio"])
@@ -2385,6 +2386,7 @@ class SettingsWindow(QDialog):
         conf["overlay_corner"] = self.corner.currentData() or "bottom-left"
         conf["max_seconds"] = self.max_seconds.value()
         conf["skip_silent"] = self.skip_silent.isChecked()
+        conf["live_transcript"] = self.live_transcript.isChecked()
         conf["silence_db"] = float(self.silence_db.value())
         conf["filter_hallucinations"] = self.filter_hallucinations.isChecked()
         conf["keep_audio"] = self.keep_audio.isChecked()

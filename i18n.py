@@ -614,6 +614,21 @@ TR = {
     "Delete recordings after": "Ses kayıtları silinsin",
     " days": " gün",
     "Never": "Asla",
+    "The silence check may have missed the speech; trying the loudest parts…":
+        "Sessizlik denetimi konuşmayı kaçırmış olabilir; en yüksek sesli "
+        "bölümler deneniyor…",
+    "Live speech": "Canlı konuşma",
+    "Words will appear here as they are heard…":
+        "Duyuldukça kelimeler burada görünür…",
+    "Live transcript preview": "Canlı transkript önizleme",
+    "While recording, the words are shown as they are heard — the small "
+    "lines button on the indicator opens a wider view. It transcribes the "
+    "newest seconds with the same provider dictation uses, so a hosted "
+    "provider makes a few extra small calls.":
+        "Kayıt sırasında kelimeler duyulduğu anda görünür — göstergedeki küçük "
+        "çizgi düğmesi daha geniş bir görünüm açar. En yeni saniyeler dikteyle "
+        "aynı sağlayıcıyla yazıya çevrilir; barındırılan bir sağlayıcı birkaç "
+        "ekstra küçük çağrı yapar.",
     "This recording is not a two-channel meeting.":
         "Bu kayıt iki kanallı bir toplantı kaydı değil.",
     "The recording is gone: {path}": "Ses kaydı yerinde yok: {path}",

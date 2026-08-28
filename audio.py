@@ -115,6 +115,18 @@ class Recorder(QObject):
         self._paused = False
         self._target = ""
         self._max_bytes = 0
+        self._drained = 0
+
+    def pending_bytes(self):
+        """The raw PCM recorded since the last call, for the live preview.
+
+        A peek, not a take: stop() still writes the whole session, this only
+        hands out what has arrived since the last hand-out.
+        """
+        with self._lock:
+            chunk = bytes(self._buffer[self._drained:])
+            self._drained = len(self._buffer)
+        return chunk
 
     @property
     def active(self):
@@ -157,6 +169,7 @@ class Recorder(QObject):
         self._session_active = True
         self._paused = False
         self._buffer = bytearray()
+        self._drained = 0
         self._rms = []
         self._cancelled = False
         self._stopping = False
@@ -465,6 +478,8 @@ class MeetingRecorder(QObject):
         self._sources = ()
         self._queues = ()
         self._readers = ()
+        self._mic_tap = bytearray()
+        self._tap_drained = 0
 
     @property
     def active(self):
@@ -502,6 +517,19 @@ class MeetingRecorder(QObject):
         self._stopping = False
         self._wasapi_mode = False
         self._max_frames = int(max_seconds * RATE)
+        with self._lock:
+            self._mic_tap = bytearray()
+            self._tap_drained = 0
+
+    def pending_mic(self):
+        """The microphone's half recorded since the last call, for the live
+        preview during a meeting. The other side is not previewed: its words
+        arrive with the minutes anyway, and doubling the probe cost for a
+        rough look is not a trade worth making."""
+        with self._lock:
+            chunk = bytes(self._mic_tap[self._tap_drained:])
+            self._tap_drained = len(self._mic_tap)
+        return chunk
 
     def _start_wasapi(self, path, mic_target, system_target, max_seconds):
         """Both sides straight from WASAPI, no subprocess in the middle.
@@ -524,8 +552,8 @@ class MeetingRecorder(QObject):
         self._sources = (mic_src, loop_src)
         self._queues = (collections.deque(), collections.deque())
         self._readers = tuple(
-            threading.Thread(target=self._reader, args=(src, queue), daemon=True)
-            for src, queue in zip(self._sources, self._queues)
+            threading.Thread(target=self._reader, args=(src, queue, side), daemon=True)
+            for side, (src, queue) in enumerate(zip(self._sources, self._queues))
         )
         for reader in self._readers:
             reader.start()
@@ -568,11 +596,12 @@ class MeetingRecorder(QObject):
         self._thread = threading.Thread(target=self._pump, daemon=True)
         self._thread.start()
 
-    def _reader(self, src, queue):
+    def _reader(self, src, queue, side):
         """Drain one WASAPI endpoint into its queue until told to stop.
 
         A failing read means the device went away mid-meeting; the queue
         ends and the pump reports it, the same way a vanished ffmpeg did.
+        The microphone's half is also tapped for the live preview.
         """
         while not self._stopping:
             try:
@@ -581,6 +610,9 @@ class MeetingRecorder(QObject):
                 queue.append(None)
                 return
             if chunk:
+                if side == 0:
+                    with self._lock:
+                        self._mic_tap += chunk
                 queue.append(chunk)
             else:
                 time.sleep(0.01)

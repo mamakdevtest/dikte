@@ -43,6 +43,7 @@ import ggml  # noqa: E402
 import hotkey  # noqa: E402
 import i18n  # noqa: E402
 import ipc  # noqa: E402
+import livetext  # noqa: E402
 import meeting  # noqa: E402
 from i18n import t  # noqa: E402
 from meeting import MeetingPipeline  # noqa: E402
@@ -157,6 +158,11 @@ class Dikte:
         self.ask_pipeline = Pipeline(self.conf)
         self.meeting_recorder = audio.MeetingRecorder()
         self.meetings = MeetingPipeline(self.conf)
+        # The rolling preview of the words, for the pill's wider live view.
+        self.live = livetext.LiveTranscriber(self.conf)
+        self.live.partial.connect(self._on_live_partial)
+        self.live_popup = None
+        self.overlay.livePopupRequested.connect(self._toggle_live_popup)
         # Recordings are a second chance at the minutes, not an archive.
         try:
             meeting.prune_audio(self.conf["meeting_audio_retention_days"])
@@ -637,7 +643,26 @@ class Dikte:
         self._segment_clock.restart()
         self.elapsed.restart()
         self.ticker.start()
+        if self.conf["live_transcript"]:
+            self.live.begin(language=self.conf["language"],
+                            prompt=self.conf["transcribe_prompt"])
         self.recorder.start(self.conf["mic_target"], self.conf["max_seconds"])
+
+    def _on_live_partial(self, text):
+        self.overlay.set_live_transcript(text)
+        if self.live_popup is not None and self.live_popup.isVisible():
+            self.live_popup.set_text(text)
+
+    def _toggle_live_popup(self):
+        if self.live_popup is None:
+            try:
+                from ui.live_popup import LivePopup
+                self.live_popup = LivePopup(self.conf["overlay_corner"],
+                                            below=self.overlay)
+            except Exception:
+                self.live_popup = None
+                return
+        self.live_popup.toggle()
 
     def pause_recording(self):
         """Pause the active logical recording (dictation or ask)."""
@@ -746,6 +771,7 @@ class Dikte:
         asking = self.ask_state in (RECORDING, PAUSED)
         self.ticker.stop()
         self.recorder.cancel()
+        self.live.end()
         self._accumulated_ms = 0
         self.recorder_owner = None
         # What goes over the socket is read by a program as often as by a
@@ -826,6 +852,8 @@ class Dikte:
     def _tick(self):
         seconds = self._current_seconds()
         self._recording_overlay().set_seconds(seconds)
+        if self.capturing and self.recorder_owner is not None:
+            self.live.feed(self.recorder.pending_bytes())
         # Only auto-stop while actively capturing, not while paused
         if self.capturing and seconds >= self.conf["max_seconds"]:
             (self.stop_ask if self.recorder_owner == ASK else self.stop)()
@@ -855,6 +883,9 @@ class Dikte:
         self._meeting_last_sound = 0.0
         self.meeting_elapsed.restart()
         self.meeting_ticker.start()
+        if self.conf["live_transcript"]:
+            self.live.begin(language=self.conf["meeting_language"]
+                            or self.conf["language"])
         self.overlay.show_meeting()
         self._set_meeting_state(M_RECORDING)
 
@@ -871,6 +902,7 @@ class Dikte:
             return
         self.meeting_ticker.stop()
         self.meeting_recorder.cancel()
+        self.live.end()
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
         self._set_meeting_state(M_IDLE)
@@ -888,6 +920,8 @@ class Dikte:
             self.overlay.set_meeting_warning(
                 meeting_remote_silent(seconds, seconds - self._meeting_last_sound)
             )
+        if self.meeting_state == M_RECORDING:
+            self.live.feed(self.meeting_recorder.pending_mic())
         if self.state == IDLE:
             self.tray.setToolTip(
                 t("Dikte: in a meeting ({time})", time=_clock(seconds))
@@ -896,6 +930,7 @@ class Dikte:
             self.stop_meeting()
 
     def _on_meeting_recorded(self, path, duration):
+        self.live.end()
         entry = meeting.new_entry(self.meeting_base, duration)
         try:
             cfg.save_meeting(entry)
@@ -958,6 +993,7 @@ class Dikte:
     def _on_meeting_error(self, message):
         """The recorder itself could not run."""
         self.meeting_ticker.stop()
+        self.live.end()
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
         self._set_meeting_state(M_IDLE)
@@ -977,6 +1013,7 @@ class Dikte:
 
     def _on_recorded(self, wav_path, duration, rms_values):
         owner, self.recorder_owner = self.recorder_owner, None
+        self.live.end()
         wants_paste = self.paste_override.pop(owner, None)
         if owner == ASK:
             self.ask_pipeline.run(wav_path, duration, rms_values, ask=True,

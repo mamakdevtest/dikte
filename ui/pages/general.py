@@ -166,6 +166,13 @@ def build(window):
     recording.add(SettingRow(t("Longest recording"),
                              t("A recording that reaches this stops on its own and "
                                "is still transcribed."), window.max_seconds))
+    live_row, window.live_transcript = switch_row(
+        t("Live transcript preview"),
+        t("While recording, the words are shown as they are heard — the small "
+          "lines button on the indicator opens a wider view. It transcribes "
+          "the newest seconds with the same provider dictation uses, so a "
+          "hosted provider makes a few extra small calls."))
+    recording.add(live_row)
 
     # --- silence ----------------------------------------------------------
     silence = SectionCard(t("Silence detection"))

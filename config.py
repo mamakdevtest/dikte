@@ -498,6 +498,9 @@ DEFAULTS = {
     "cancel_shortcut": "Ctrl+Alt+Space",
     "evdev_hotkey": False,
     "overlay_corner": "bottom-left",
+    # While recording, the newest seconds are transcribed on a roll so the
+    # words show up as they are spoken. Same provider as dictation.
+    "live_transcript": True,
     "keep_audio": False,
     "history_limit": 200,
     "file_timestamps": False,

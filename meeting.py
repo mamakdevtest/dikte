@@ -190,6 +190,7 @@ class MeetingPipeline(QObject):
         hint = conf.meeting_hint()
 
         segments = []
+        skipped = []
         for path, speaker in ((mine, "mine"), (theirs, "theirs")):
             side = t("you") if speaker == "mine" else t("the others")
             # A directory each: the chunk files are named by their index, and
@@ -205,6 +206,7 @@ class MeetingPipeline(QObject):
                 # Nobody spoke on this side for these ten minutes: an API call
                 # would cost money to be told so, and can invent a sentence.
                 if self._silent(chunk_path):
+                    skipped.append((speaker, chunk_path, offset))
                     continue
                 # The chunks overlap, so what the cut fell in the middle of is
                 # in two of them; stitch keeps the one that heard it whole.
@@ -215,6 +217,30 @@ class MeetingPipeline(QObject):
                     )
                 ])
             segments.extend((start, end, text, speaker) for start, end, text in heard)
+        if not segments and skipped and not self._both_silent(mine, theirs):
+            # The silence gate judged every chunk quiet, yet the file carries
+            # sound — a quiet microphone or a low system volume reads as
+            # silence to the thresholds. An hour of meeting does not get to
+            # die on a guess: the loudest skipped part of each side gets one
+            # call, and whatever the model hears there is the truth that
+            # counts.
+            self._say(t("The silence check may have missed the speech; trying "
+                        "the loudest parts…"))
+            by_side = {}
+            for speaker, chunk_path, offset in skipped:
+                loudness = self._loudness(chunk_path)
+                if speaker not in by_side or loudness > by_side[speaker][0]:
+                    by_side[speaker] = (loudness, chunk_path, offset)
+            for speaker, (_, chunk_path, offset) in sorted(by_side.items()):
+                self._check()
+                heard = filetranscribe.stitch([], [
+                    (start + offset, end + offset, text)
+                    for start, end, text in api.transcribe_segments(
+                        target, chunk_path, language=language, prompt=hint
+                    )
+                ])
+                segments.extend((start, end, text, speaker)
+                                for start, end, text in heard)
         if not segments:
             if self._both_silent(mine, theirs):
                 raise api.ApiError(t(
@@ -224,6 +250,12 @@ class MeetingPipeline(QObject):
 
         names = conf.speaker_names()
         return render_turns(merge_turns(segments), *names)
+
+    def _loudness(self, path):
+        try:
+            return max(rms_series(path), default=0.0)
+        except (OSError, wave.Error):
+            return 0.0
 
     def _both_silent(self, mine, theirs):
         """Was anything captured at all?
