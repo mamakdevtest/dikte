@@ -73,6 +73,14 @@ class LiveTranscriber(DikteTest):
         call.assert_not_called()
         self.assertEqual([p for p in self.parts if p], [])
 
+    def test_bytes_fed_without_a_session_are_not_stockpiled(self):
+        self.transcriber.feed(pcm([100] * livetext.RATE * 30))
+        self.assertEqual(self.transcriber._pending, bytearray())
+        self.transcriber.begin()
+        self.transcriber.feed(pcm([100] * 100))
+        self.assertGreater(len(self.transcriber._pending), 0)
+        self.transcriber.stop()
+
     def test_begin_clears_and_end_forgets(self):
         self.transcriber.feed(b"\x00\x00")
         self.transcriber.begin()

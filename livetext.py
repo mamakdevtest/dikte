@@ -68,9 +68,15 @@ class LiveTranscriber(QObject):
             self._text = ""
 
     def feed(self, pcm):
-        if pcm:
-            with self._lock:
-                self._pending += pcm
+        if not pcm:
+            return
+        # Nobody listening (the setting is off, or the session ended): the
+        # bytes would pile up in memory for nothing — a four-hour meeting is
+        # half a gigabyte nobody asked to keep.
+        if self._thread is None or not self._thread.is_alive():
+            return
+        with self._lock:
+            self._pending += pcm
 
     def _work(self):
         carry = b""

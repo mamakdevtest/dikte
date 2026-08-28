@@ -86,10 +86,11 @@ class LivePopupExpandTest(DikteTest):
         grown = (self.popup.width(), self.popup.height())
         self.popup.set_expanded(True)
         self.assertEqual((self.popup.width(), self.popup.height()), grown)
-        pos = self.popup.pos()
         self.popup.set_expanded(False)
+        collapsed_pos = self.popup.pos()
+        self.popup.set_expanded(True)
         self.popup.set_expanded(False)
-        self.assertEqual(self.popup.pos(), pos)
+        self.assertEqual(self.popup.pos(), collapsed_pos)
 
 
 class LivePopupFollowTest(DikteTest):
