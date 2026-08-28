@@ -46,7 +46,19 @@ def mono_chunk(value, frames=None):
     return pcm([value] * (frames or audio.CHUNK_FRAMES))
 
 
-class RecorderWasapi(DikteTest):
+class OnWindows:
+    """Run as if the machine ran Windows, wherever the tests execute.
+
+    The WASAPI road is entered on sys.platform alone; with the endpoints
+    faked, the mixer itself is portable, so Linux CI exercises it too.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.enterContext(mock.patch.object(sys, "platform", "win32"))
+
+
+class RecorderWasapi(OnWindows, DikteTest):
     """The two-endpoint mixer: who lands on which channel, and what ends it."""
 
     def setUp(self):
@@ -155,6 +167,15 @@ class RecorderWasapi(DikteTest):
         self.assertEqual(len(self.events["failed"]), 1)
         self.assertFalse(os.path.exists(self.path))
 
+    def test_an_unwritable_recording_reports_failure(self):
+        self.wire(FakeSource([]), FakeSource([]))
+        with mock.patch.object(audio.MeetingRecorder, "_open_wav",
+                               side_effect=OSError("disk full")):
+            self.recorder.start(self.path, "Mic", "Loop")
+        self.assertEqual(len(self.events["failed"]), 1)
+        self.assertIn("disk full", self.events["failed"][0])
+        self.assertFalse(self.recorder.active)
+
     def test_max_seconds_stops_on_its_own(self):
         self.wire(FakeSource([mono_chunk(16384) for _ in range(20)]),
                   FakeSource([mono_chunk(8192) for _ in range(20)]))
@@ -166,7 +187,7 @@ class RecorderWasapi(DikteTest):
         self.assertAlmostEqual(duration, 0.5, places=1)
 
 
-class RecorderWasapiFallback(DikteTest):
+class RecorderWasapiFallback(OnWindows, DikteTest):
     """When WASAPI cannot serve both sides, the ffmpeg road still stands."""
 
     def test_wasapi_failure_falls_back_to_ffmpeg(self):
@@ -238,7 +259,7 @@ class DeviceNameMatching(unittest.TestCase):
             wasapi._pick("Sound Blaster", self.ENDPOINTS, "id-default")
 
 
-class DeviceLists(DikteTest):
+class DeviceLists(OnWindows, DikteTest):
     """Windows offers real endpoints when WASAPI can, dshow when it can't."""
 
     def test_wasapi_endpoints_are_preferred(self):

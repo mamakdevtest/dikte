@@ -120,8 +120,11 @@ if _WIN:
     def _com_on_thread():
         """Join the process's multithreaded apartment; one call per thread.
 
+        The apartment is never left (no CoUninitialize): the process lives
+        for the session and everything audio-related shares it, so balancing
+        the call would only tear the MTA down under whoever joined first.
         Endpoints opened from an MTA thread are callable from any other MTA
-        thread, which is what lets one worker own both open and read.
+        thread, which is what lets a reader thread poll what another opened.
         """
         hr = _ole32.CoInitializeEx(None, _COINIT_MULTITHREADED)
         # S_FALSE (1) means already a member; RPC_E_CHANGED_MODE means the
@@ -237,7 +240,6 @@ if _WIN:
             _check(hr, "IMMDeviceEnumerator::GetDevice")
         finally:
             _release(enum)
-        raise WasapiError(f"no audio device matching {name!r}")
 
     class _Source:
         """One open endpoint, polled for packets of mono s16 at 16 kHz.

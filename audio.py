@@ -406,6 +406,12 @@ class MeetingRecorder(QObject):
                 return
             except wasapi.WasapiError:
                 pass  # below, the ffmpeg road gets its own say
+            except (OSError, wave.Error) as exc:
+                # A recording file nobody can write would fail ffmpeg's road
+                # the same way; say so instead of dropping it on the caller.
+                self.failed.emit(t("Could not open the audio devices for the "
+                                   "meeting: {error}", error=exc))
+                return
         self._start_ffmpeg(path, mic_target, system_target, max_seconds)
 
     def _open_wav(self, path):
@@ -648,6 +654,7 @@ class MeetingRecorder(QObject):
         if self._wasapi_mode:
             self._stop_wasapi()
             self._close_file()
+            self._wasapi_mode = False  # a second stop() must be a no-op
             return 0
         self._terminate()
         if self._thread:
@@ -1190,17 +1197,21 @@ def _win_wasapi_lists(kind):
     return [(name, name) for name, _ in items]
 
 
-def _win_inputs():
-    return _win_wasapi_lists("inputs") or _dshow_inputs()
+def _win_inputs(refresh=False):
+    return _win_wasapi_lists("inputs") or _dshow_inputs(refresh=refresh)
 
 
-def _win_outputs():
-    return _win_wasapi_lists("outputs") or _dshow_outputs()
+def _win_outputs(refresh=False):
+    return _win_wasapi_lists("outputs") or _dshow_outputs(refresh=refresh)
 
 
 def _win_default_output():
-    name = wasapi.default_render_name() if wasapi.available() else ""
-    return name or _dshow_default_output()
+    try:
+        if wasapi.available() and wasapi.default_render_name():
+            return wasapi.default_render_name()
+    except (wasapi.WasapiError, OSError, ValueError):
+        pass
+    return _dshow_default_output()
 
 
 WINDOWS = Sound(
@@ -1238,7 +1249,7 @@ def cached_list_sources(refresh=False):
         if sys.platform == "darwin":
             return _avfoundation_inputs(refresh=refresh)
         if sys.platform == "win32":
-            return _win_inputs()
+            return _win_inputs(refresh=refresh)
         return _pulse_inputs(refresh=refresh)
     with _audio_cache_lock:
         if not refresh and _cached_sources is not None:
@@ -1246,7 +1257,7 @@ def cached_list_sources(refresh=False):
     if sys.platform == "darwin":
         result = _avfoundation_inputs(refresh=refresh)
     elif sys.platform == "win32":
-        result = _win_inputs()
+        result = _win_inputs(refresh=refresh)
     else:
         result = _pulse_inputs(refresh=refresh)
     with _audio_cache_lock:
@@ -1261,7 +1272,7 @@ def cached_list_monitors(refresh=False):
         if sys.platform == "darwin":
             return _avfoundation_inputs(refresh=refresh)
         if sys.platform == "win32":
-            return _win_outputs()
+            return _win_outputs(refresh=refresh)
         return _pulse_outputs(refresh=refresh)
     with _audio_cache_lock:
         if not refresh and _cached_monitors is not None:
@@ -1269,7 +1280,7 @@ def cached_list_monitors(refresh=False):
     if sys.platform == "darwin":
         result = _avfoundation_inputs(refresh=refresh)
     elif sys.platform == "win32":
-        result = _win_outputs()
+        result = _win_outputs(refresh=refresh)
     else:
         result = _pulse_outputs(refresh=refresh)
     with _audio_cache_lock:
