@@ -614,6 +614,15 @@ TR = {
     "Transcript": "Transkript",
     "{minutes} min": "{minutes} dk",
     "{hours} h {minutes} min": "{hours} sa {minutes} dk",
+    "Recording the meeting": "Toplantı kaydediliyor",
+    "The other side's audio is not coming through. Check Settings → Meeting.":
+        "Karşı tarafın sesi gelmiyor. Ayarlar → Toplantı sekmesinden kontrol et.",
+    "Could not open the audio devices for the meeting: {error}":
+        "Toplantının ses aygıtları açılamadı: {error}",
+    "Date": "Tarih",
+    "Duration": "Süre",
+    "Participants": "Katılımcılar",
+    "Meeting — {when}": "Toplantı — {when}",
 
     # --- settings: meeting --------------------------------------------------
     "Minutes": "Tutanaklar",
