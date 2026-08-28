@@ -39,6 +39,7 @@ class Pipeline(QObject):
     finished = pyqtSignal(str, str, str)  # raw transcript, final text, warning
     failed = pyqtSignal(str)
     cancelled = pyqtSignal()
+    partialTranscript = pyqtSignal(str)  # live interim transcript (if provider supports streaming)
 
     def __init__(self, conf, parent=None):
         super().__init__(parent)

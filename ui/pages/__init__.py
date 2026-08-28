@@ -12,9 +12,11 @@ from ..widgets import Subtitle, Title
 
 def scrolled(widget):
     """A page wrapped in a borderless, resizable scroll area."""
+    from PyQt6.QtCore import Qt
     area = QScrollArea()
     area.setWidgetResizable(True)
     area.setFrameShape(QScrollArea.Shape.NoFrame)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     area.setWidget(widget)
     return area
 

@@ -371,33 +371,41 @@ class RetiredGatewayMigration(DikteTest):
 
 class CleanupPrompt(DikteTest):
     def test_the_default_follows_the_interface_language(self):
-        self.assertEqual(cfg.Config().cleanup_prompt(), cfg.CLEANUP_PROMPT_EN)
+        # Now includes dynamic AI policy suffix, so check prefix and policy
+        prompt_en = cfg.Config().cleanup_prompt()
+        self.assertTrue(prompt_en.startswith(cfg.CLEANUP_PROMPT_EN))
+        self.assertIn("Editing Level", prompt_en)
         # Building a Config applies the stored language, so it is set there
         # rather than around it.
         self.write_config({"ui_language": "tr"})
-        self.assertEqual(cfg.Config().cleanup_prompt(), cfg.CLEANUP_PROMPT_TR)
+        prompt_tr = cfg.Config().cleanup_prompt()
+        self.assertTrue(prompt_tr.startswith(cfg.CLEANUP_PROMPT_TR))
+        self.assertIn("Düzenleme Seviyesi", prompt_tr)
 
     def test_a_prompt_of_your_own(self):
         conf = self.config(cleanup_prompt="  Only fix punctuation.  ")
-        self.assertEqual(conf.cleanup_prompt(), "Only fix punctuation.")
+        self.assertTrue(conf.cleanup_prompt().startswith("Only fix punctuation."))
 
     def test_the_glossary_is_appended(self):
         conf = self.config(transcribe_prompt="Paraşüt, OpenFrame")
         self.assertIn("Paraşüt, OpenFrame", conf.cleanup_prompt())
 
     def test_no_glossary_means_no_rule_about_one(self):
-        self.assertEqual(cfg.Config().cleanup_prompt(), cfg.CLEANUP_PROMPT_EN)
+        prompt = cfg.Config().cleanup_prompt()
+        self.assertTrue(prompt.startswith(cfg.CLEANUP_PROMPT_EN))
+        self.assertNotIn("Paraşüt", prompt)
 
     def test_subtitles_use_their_own_prompt(self):
         conf = cfg.Config()
         self.assertNotEqual(conf.cleanup_prompt(subtitles=True), conf.cleanup_prompt())
-        self.assertEqual(conf.cleanup_prompt(subtitles=True),
-                         cfg.FILE_CLEANUP_PROMPT_EN)
+        sub = conf.cleanup_prompt(subtitles=True)
+        self.assertTrue(sub.startswith(cfg.FILE_CLEANUP_PROMPT_EN))
+        self.assertIn("Editing Level", sub)
 
     def test_a_subtitle_prompt_of_your_own(self):
         conf = self.config(file_cleanup_prompt="Keep the stamps.")
-        self.assertEqual(conf.cleanup_prompt(subtitles=True), "Keep the stamps.")
-        self.assertEqual(conf.cleanup_prompt(), cfg.CLEANUP_PROMPT_EN)
+        self.assertTrue(conf.cleanup_prompt(subtitles=True).startswith("Keep the stamps."))
+        self.assertTrue(conf.cleanup_prompt().startswith(cfg.CLEANUP_PROMPT_EN))
 
     def test_timestamps_add_a_rule_about_them(self):
         conf = cfg.Config()

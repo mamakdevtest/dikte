@@ -120,6 +120,14 @@ class Dikte:
         # up, and drops into the corner when it is alone there.
         self.ask_overlay = Overlay(self.conf["overlay_corner"], below=self.overlay,
                                    dismissable=True, interactive_live=True)
+        # Result overlay after transcription
+        try:
+            from ui.result_overlay import ResultOverlay
+            self.result_overlay = ResultOverlay(self.conf["overlay_corner"], below=self.overlay)
+            self.result_overlay.copyRequested.connect(lambda txt: self._on_result_copy(txt))
+            self.result_overlay.closeRequested.connect(lambda: self.result_overlay.dismiss())
+        except Exception:
+            self.result_overlay = None
         # Wire recording pause/resume/stop from overlay pill
         self.overlay.pauseRequested.connect(lambda: self.pause_recording())
         self.overlay.resumeRequested.connect(lambda: self.resume_recording())
@@ -151,6 +159,11 @@ class Dikte:
         self.pipeline.stage.connect(self.overlay.show_busy)
         self.pipeline.finished.connect(self._on_finished)
         self.pipeline.failed.connect(self._on_error)
+        # live partial transcript (only emitted for streaming-capable providers)
+        try:
+            self.pipeline.partialTranscript.connect(self._on_live_transcript)
+        except Exception:
+            pass
         self.ask_pipeline.stage.connect(self.ask_overlay.show_busy)
         self.ask_pipeline.stage.connect(self._on_ask_thinking)
         self.ask_pipeline.finished.connect(self._on_ask_finished)
@@ -778,6 +791,24 @@ class Dikte:
             return
         self._recording_overlay().push_level(level)
 
+    def _on_live_transcript(self, text):
+        # Live interim text from streaming provider — show in recording overlay preview
+        try:
+            ov = self._recording_overlay()
+            if ov.state in ("recording", "asking", "paused") or ov._paused:
+                ov.set_live_transcript(text)
+        except Exception:
+            pass
+
+    def _on_result_copy(self, text):
+        # Feedback after copy from result overlay
+        try:
+            if self.result_overlay is not None:
+                # keep result visible briefly then hide
+                self.result_overlay._hide_timer.start(1200)
+        except Exception:
+            pass
+
     def _tick(self):
         seconds = self._current_seconds()
         self._recording_overlay().set_seconds(seconds)
@@ -934,21 +965,53 @@ class Dikte:
             self.pipeline.run(wav_path, duration, rms_values, paste=wants_paste)
 
     def _on_finished(self, _raw, text, warning):
-        if warning:
-            # The text was still pasted, but cleanup did not run. Say so loudly:
-            # a rejected key otherwise looks exactly like working dictation.
-            self.overlay.show_warning(
-                t("Pasted raw, cleanup failed: {error}", error=warning.splitlines()[0])
-            )
-            self.tray.showMessage(
-                t("Dikte: cleanup failed"), warning,
-                QSystemTrayIcon.MessageIcon.Warning, 10000,
-            )
+        # clear live transcript preview on the recording overlay
+        try:
+            self.overlay.clear_live_transcript()
+            self.ask_overlay.clear_live_transcript()
+        except Exception:
+            pass
+        # decide result overlay vs legacy done indicator
+        show_result = False
+        try:
+            show_result = bool(self.conf.get("result_overlay_enabled", True))
+        except Exception:
+            show_result = True
+        if show_result and text:
+            try:
+                if self.result_overlay is not None:
+                    # Dismiss the recording pill first, then show result
+                    try:
+                        self.overlay.dismiss()
+                    except Exception:
+                        pass
+                    # auto-hide time: longer when not auto-pasting, shorter when pasted
+                    auto_paste = bool(self.conf.get("auto_paste", True))
+                    msec = 4000 if auto_paste else None  # None = stay until close
+                    self.result_overlay.show_result(text, msec=msec)
+                else:
+                    # fallback to legacy
+                    action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
+                    self.overlay.show_done(t("{action}: {preview}", action=action, preview=_preview(text)))
+            except Exception:
+                action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
+                self.overlay.show_done(t("{action}: {preview}", action=action, preview=_preview(text)))
         else:
-            action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
-            self.overlay.show_done(
-                t("{action}: {preview}", action=action, preview=_preview(text))
-            )
+            if warning:
+                # The text was still pasted, but cleanup did not run. Say so loudly:
+                # a rejected key otherwise looks exactly like working dictation.
+                self.overlay.show_warning(
+                    t("Pasted raw, cleanup failed: {error}", error=warning.splitlines()[0])
+                )
+                self.tray.showMessage(
+                    t("Dikte: cleanup failed"), warning,
+                    QSystemTrayIcon.MessageIcon.Warning, 10000,
+                )
+            else:
+                action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
+                self.overlay.show_done(
+                    t("{action}: {preview}", action=action, preview=_preview(text))
+                )
         self._set_state(IDLE)
         self._settle(DICTATION, {"ok": True, "text": text, "raw": _raw,
                                  "warning": warning})
@@ -988,6 +1051,10 @@ class Dikte:
         (self._on_ask_error if owner == ASK else self._on_error)(message)
 
     def _on_error(self, message):
+        try:
+            self.overlay.clear_live_transcript()
+        except Exception:
+            pass
         self._report(message, self.overlay)
         self._set_state(IDLE)
         self._settle(DICTATION, {"ok": False, "error": message})
@@ -1056,15 +1123,30 @@ class Dikte:
         try:
             self.overlay.corner = self.conf["overlay_corner"]
             self.ask_overlay.corner = self.conf["overlay_corner"]
+            # also move result overlay if exists
+            try:
+                if hasattr(self, "result_overlay") and self.result_overlay is not None:
+                    self.result_overlay.corner = self.conf["overlay_corner"]
+                    if getattr(self.result_overlay, "showing", False):
+                        self.result_overlay._reposition()
+            except Exception:
+                pass
             self._apply_local()
             self._build_tray()
             self._refresh_tray()
+            # Notify open settings window to refresh its engine card from runtime target
+            try:
+                if getattr(self, "settings_window", None) is not None and self.settings_window is not None:
+                    if hasattr(self.settings_window, "_refresh_engine_card"):
+                        self.settings_window._refresh_engine_card()
+            except Exception:
+                pass
             # Where the desktop has no shortcut registry of its own, the listener is
             # not the fallback the setting offers to turn on: it is the only way the
             # keys arrive at all, so it runs whatever the setting says.
             if self.conf["evdev_hotkey"] or not hotkey.installs_shortcuts():
                 self.evdev.start({name: self.conf[spec.setting]
-                                  for name, spec in hotkey.SHORTCUTS.items()})
+                                   for name, spec in hotkey.SHORTCUTS.items()})
             else:
                 self.evdev.stop()
         except Exception as exc:
@@ -1117,6 +1199,11 @@ class Dikte:
             self.meeting_recorder.stop()
         self.overlay.dismiss()
         self.ask_overlay.dismiss()
+        try:
+            if getattr(self, "result_overlay", None) is not None:
+                self.result_overlay.dismiss()
+        except Exception:
+            pass
         # Also on the restart path, which replaces the process without ever
         # reaching atexit and would otherwise leave the models in memory.
         ggml.stop_all()

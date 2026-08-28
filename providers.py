@@ -173,6 +173,20 @@ def supports(conf, pid, capability):
     return bool(who) and capability in who.capabilities
 
 
+def supports_partial_transcript(conf, pid):
+    """Whether this STT provider can deliver interim/partial transcripts during recording.
+
+    Local whisper.cpp is batch-only; Deepgram's streaming API supports interim results.
+    User gateways are treated as batch-only for now (conservative).
+    """
+    if pid == "local":
+        return False
+    if pid == "deepgram":
+        return True
+    # user gateways and others: batch only for now
+    return False
+
+
 def http_providers(conf, capability=None):
     """The id → Provider table a credential-backed selector offers."""
     table = definitions(conf)

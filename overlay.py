@@ -38,6 +38,9 @@ _STOP_VISUAL = 40.0
 _ACTION_GAP = 8.0
 _THINKING_HEIGHT = 36.0
 _THINKING_GAP = 10.0
+_LIVE_COLLAPSED_H = 28.0
+_LIVE_EXPANDED_H = 72.0
+_LIVE_GAP = 8.0
 _FRAME_MS = 25
 _QUIET_FRAME_MS = 120
 _BUSY_FRAME_MS = 90
@@ -304,6 +307,8 @@ class Overlay(QWidget):
     resumeRequested = pyqtSignal()
     stopRequested = pyqtSignal()
     thinkingChanged = pyqtSignal(str)
+    liveTranscriptChanged = pyqtSignal(str)
+    liveExpandedChanged = pyqtSignal(bool)
 
     def __init__(self, corner="bottom-left", below=None, dismissable=False, interactive_live=False):
         super().__init__(None)
@@ -343,6 +348,13 @@ class Overlay(QWidget):
         self._stop_rect = QRectF()
         self._hover_stop = False
         self._stop_pressed = False
+        # live transcript preview (optional, bounded)
+        self._live_text = ""
+        self._live_expanded = False
+        self._live_font_cache = None
+        self._expand_rect = QRectF()
+        self._hover_expand = False
+        self._expand_pressed = False
 
         flags = (
             Qt.WindowType.FramelessWindowHint
@@ -395,6 +407,10 @@ class Overlay(QWidget):
         self._button_pressed = False
         self._waveform_dirty = True
         self._reset_timer_cache()
+        # clear previous live transcript on new session (but keep expand state)
+        if self._live_text:
+            self._live_text = ""
+            self._layout_cache = None
         # keep backwards compat levels tiny baseline
         self.levels = [0.0] * BARS
         self.levels2 = [0.0] * BARS
@@ -429,6 +445,9 @@ class Overlay(QWidget):
         self._button_pressed = False
         self._waveform_dirty = True
         self._reset_timer_cache()
+        if self._live_text:
+            self._live_text = ""
+            self._layout_cache = None
         self.levels = [0.0] * BARS
         self.levels2 = [0.0] * BARS
         self._hide_timer.stop()
@@ -464,6 +483,10 @@ class Overlay(QWidget):
         # clear thinking when leaving busy
         if self._thinking_text:
             self._thinking_text = ""
+            self._layout_cache = None
+        # live panel is for recording only; hide when leaving LIVE
+        if self._live_text and state not in LIVE and state != PAUSED_STATE:
+            self._live_text = ""
             self._layout_cache = None
         # leaving LIVE, ensure reveal is complete
         self._reveal_progress = 1.0
@@ -551,6 +574,93 @@ class Overlay(QWidget):
     def clear_thinking(self):
         self.set_thinking_status("")
 
+    # ---- live transcript preview -----------------------------------------
+    def set_live_transcript(self, text: str):
+        """Set the live transcript preview text. Empty string hides the panel.
+        Bounded to 220 chars to prevent unbounded growth and jumping.
+        Call repeatedly as partial results arrive (off UI thread safe via queued signal).
+        """
+        try:
+            cleaned = (text or "").strip()
+        except Exception:
+            cleaned = ""
+        if len(cleaned) > 220:
+            cleaned = cleaned[:220].rstrip() + "…"
+        if cleaned == self._live_text:
+            return
+        self._live_text = cleaned
+        # When live text appears while recording, ensure overlay includes live panel
+        if self.state in LIVE or self.state == PAUSED_STATE or self._paused:
+            self._resize_to_content()
+            self._reposition()
+            self.update()
+        self.liveTranscriptChanged.emit(cleaned)
+
+    def clear_live_transcript(self):
+        self.set_live_transcript("")
+
+    def set_live_expanded(self, expanded: bool):
+        expanded = bool(expanded)
+        if self._live_expanded == expanded:
+            return
+        self._live_expanded = expanded
+        self._layout_cache = None
+        self._resize_to_content()
+        self._reposition()
+        self.update()
+        self.liveExpandedChanged.emit(expanded)
+
+    def toggle_live_expanded(self):
+        self.set_live_expanded(not self._live_expanded)
+
+    def _live_font(self):
+        if self._live_font_cache is None:
+            font = QFont(self._label_font())
+            font.setPointSizeF(9.0)
+            self._live_font_cache = font
+        return self._live_font_cache
+
+    @property
+    def live_text(self):
+        return self._live_text
+
+    @property
+    def live_expanded(self):
+        return self._live_expanded
+
+    def _live_height(self):
+        if not self._live_text:
+            return 0.0
+        # fixed bounded heights — prevents continuous jumping as text arrives
+        return _LIVE_EXPANDED_H if self._live_expanded else _LIVE_COLLAPSED_H
+
+    def _should_show_live(self):
+        return bool(self._live_text) and (self.state in LIVE or self.state == PAUSED_STATE or self._paused)
+
+    def _expand_button_rect(self):
+        if not self._should_show_live():
+            return QRectF()
+        # Expand/collapse lives inside the live panel, right-aligned, centered vertically
+        # Hit target 32x20, visual 24x16 — keeps waveform/Pause area untouched
+        w = self.width()
+        size_w, size_h = 32.0, 20.0
+        try:
+            live_rect = self._layout()["live"]
+            live_top = live_rect.top()
+            live_h = live_rect.height()
+        except Exception:
+            thinking_h = _THINKING_HEIGHT + _THINKING_GAP if (self._thinking_text and self.state == "busy") else 0
+            live_top = thinking_h
+            live_h = self._live_height()
+        x = w - size_w - 10.0
+        y = live_top + (live_h - size_h) / 2.0
+        if y < 1:
+            y = 1
+        return QRectF(x, y, size_w, size_h)
+
+    def _thinking_height_total(self):
+        return _THINKING_HEIGHT + _THINKING_GAP if (self._thinking_text and self.state == "busy") else 0.0
+
     def _thinking_font(self):
         if self._thinking_font_cache is None:
             font = QFont(self._label_font())
@@ -567,6 +677,20 @@ class Overlay(QWidget):
         self._conceal()
 
     def mousePressEvent(self, event):
+        # live expand toggle — inside live panel, right-aligned
+        if self.interactive_live and self._should_show_live():
+            try:
+                pos = event.position() if hasattr(event, "position") else event.pos()
+                pt = QPointF(pos.x(), pos.y()) if hasattr(pos, "x") else QPointF(float(pos.x()), float(pos.y()))
+                expand_rect = self._expand_button_rect()
+                if expand_rect.isValid() and expand_rect.contains(pt):
+                    self._expand_pressed = True
+                    self.toggle_live_expanded()
+                    self.update(expand_rect.toRect())
+                    event.accept()
+                    return
+            except Exception:
+                pass
         if self.interactive_live and self._should_show_pause_button():
             pos = event.position() if hasattr(event, "position") else event.pos()
             try:
@@ -602,6 +726,18 @@ class Overlay(QWidget):
         event.accept()
 
     def mouseMoveEvent(self, event):
+        # hover for expand inside live panel
+        if self.interactive_live and self._should_show_live():
+            try:
+                pos = event.position() if hasattr(event, "position") else event.pos()
+                pt = QPointF(pos.x(), pos.y()) if hasattr(pos, "x") else QPointF(float(pos.x()), float(pos.y()))
+                expand_rect = self._expand_button_rect()
+                hover_expand = expand_rect.isValid() and expand_rect.contains(pt)
+                if hover_expand != self._hover_expand:
+                    self._hover_expand = hover_expand
+                    self.update(expand_rect.toRect())
+            except Exception:
+                pass
         if self.interactive_live and self._should_show_pause_button():
             pos = event.position() if hasattr(event, "position") else event.pos()
             try:
@@ -631,6 +767,9 @@ class Overlay(QWidget):
         if self._stop_pressed:
             self._stop_pressed = False
             self.update(self._stop_button_rect().toRect())
+        if self._expand_pressed:
+            self._expand_pressed = False
+            self.update(self._expand_button_rect().toRect())
         event.accept()
 
     def leaveEvent(self, event):
@@ -640,6 +779,9 @@ class Overlay(QWidget):
         if self._hover_stop:
             self._hover_stop = False
             self.update(self._stop_button_rect().toRect())
+        if self._hover_expand:
+            self._hover_expand = False
+            self.update(self._expand_button_rect().toRect())
         super().leaveEvent(event)
 
     @property
@@ -695,7 +837,9 @@ class Overlay(QWidget):
             return QRectF()
         group_w = _ACTION_HIT + _ACTION_GAP + _STOP_HIT
         x = self.width() - group_w - 20.0
-        offset = _THINKING_HEIGHT + _THINKING_GAP if (self._thinking_text and self.state == "busy") else 0
+        thinking_h = _THINKING_HEIGHT + _THINKING_GAP if (self._thinking_text and self.state == "busy") else 0
+        live_total = (self._live_height() + _LIVE_GAP) if self._should_show_live() else 0
+        offset = thinking_h + live_total
         y = offset + (HEIGHT - _ACTION_HIT) / 2.0
         return QRectF(x, y, group_w, _ACTION_HIT)
 
@@ -719,13 +863,20 @@ class Overlay(QWidget):
         """Return stable logical subregions, rebuilding only after resize/state."""
         show_action = self._should_show_pause_button()
         thinking = bool(self._thinking_text) and self.state == "busy"
-        key = (self.width(), self.height(), show_action, self.state == "meeting", thinking)
+        live = self._should_show_live()
+        live_h = self._live_height() if live else 0.0
+        live_gap = _LIVE_GAP if live else 0.0
+        expand = self._live_expanded if live else False
+        key = (self.width(), self.height(), show_action, self.state == "meeting", thinking, live, expand)
         if self._layout_cache is not None and self._layout_cache_key == key:
             return self._layout_cache
 
-        # Main pill vertical offset when thinking panel is visible
-        offset = _THINKING_HEIGHT + _THINKING_GAP if thinking else 0.0
+        # Main pill vertical offset: thinking (busy) + live transcript (recording) stacked above pill
+        thinking_h = _THINKING_HEIGHT + _THINKING_GAP if thinking else 0.0
+        live_total = (live_h + live_gap) if live else 0.0
+        offset = thinking_h + live_total
         main_h = HEIGHT
+        # need action rect before timer calc, but action uses offset
         action = self._action_group_rect() if show_action else QRectF()
         timer_right = self.width() - 20.0 - (_ACTION_SLOT if show_action else 0.0)
         timer = QRectF(timer_right - _TIMER_WIDTH, offset, _TIMER_WIDTH, main_h)
@@ -746,6 +897,12 @@ class Overlay(QWidget):
         step = bar_w + gap
         bars = tuple(QRectF(wave_left + i * step, offset, bar_w, 0.0)
                      for i in range(BARS))
+        # live panel rect is above main pill, below thinking if both (mutually exclusive)
+        if live:
+            live_top = thinking_h
+            live_rect = QRectF(0.0, live_top, float(self.width()), live_h)
+        else:
+            live_rect = QRectF()
         layout = {
             "indicator": QRectF(18.0, offset, 24.0, main_h),
             "waveform": QRectF(wave_left, offset, available, main_h),
@@ -755,6 +912,7 @@ class Overlay(QWidget):
             "stop": self._stop_button_rect(),
             "bars": bars,
             "thinking": QRectF(0.0, 0.0, float(self.width()), _THINKING_HEIGHT) if thinking else QRectF(),
+            "live": live_rect,
             "main_top": offset,
         }
         self._layout_cache_key = key
@@ -829,6 +987,9 @@ class Overlay(QWidget):
         if self._thinking_text:
             self._thinking_text = ""
             self._layout_cache = None
+        if self._live_text:
+            self._live_text = ""
+            self._layout_cache = None
         self.update()
         if self.dismissable:
             self.resize(1, 1)
@@ -849,7 +1010,9 @@ class Overlay(QWidget):
                         min(MAX_WIDTH, metrics.horizontalAdvance(self.message) + extra))
         height = HEIGHT
         if self._thinking_text and self.state == "busy":
-            height = int(HEIGHT + _THINKING_GAP + _THINKING_HEIGHT)
+            height = int(height + _THINKING_GAP + _THINKING_HEIGHT)
+        if self._should_show_live():
+            height = int(height + _LIVE_GAP + self._live_height())
         self.resize(int(width), int(height))
 
     def _reposition(self):
@@ -939,7 +1102,11 @@ class Overlay(QWidget):
 
         # Thinking panel above main pill, if any (only when busy)
         thinking = bool(self._thinking_text) and self.state == "busy"
-        offset = _THINKING_HEIGHT + _THINKING_GAP if thinking else 0.0
+        live = self._should_show_live()
+        thinking_h = _THINKING_HEIGHT + _THINKING_GAP if thinking else 0.0
+        live_h = self._live_height() if live else 0.0
+        live_gap = _LIVE_GAP if live else 0.0
+        offset = thinking_h + live_h + live_gap
         if thinking:
             thinking_rect = QRectF(0.5, 0.5, self.width() - 1, _THINKING_HEIGHT - 1)
             painter.setPen(QPen(border, 1))
@@ -955,6 +1122,58 @@ class Overlay(QWidget):
             text = metrics.elidedText(self._thinking_text, Qt.TextElideMode.ElideRight, int(thinking_rect.width() - 24))
             painter.drawText(QRectF(thinking_rect.left() + 12, thinking_rect.top(), thinking_rect.width() - 24, thinking_rect.height()),
                              int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
+        if live:
+            live_top = thinking_h
+            live_rect = QRectF(0.5, live_top + 0.5, self.width() - 1, live_h - 1)
+            # Keep width fixed spacing from edges, use same style as thinking but slightly larger radius for live
+            painter.setPen(QPen(border, 1))
+            painter.setBrush(bg)
+            painter.drawRoundedRect(live_rect, 10, 10)
+            painter.setFont(self._live_font())
+            c2 = QColor(cols["TEXT"])
+            c2.setAlpha(230)
+            painter.setPen(c2)
+            metrics2 = QFontMetrics(self._live_font())
+            # When collapsed: single line elided, when expanded: wrap up to 2-3 lines elided
+            avail_w = int(live_rect.width() - 48)  # reserve for expand button
+            if self._live_expanded:
+                # Expanded: show up to 3 lines with wordWrap, bounded height
+                # Use manual line breaking via QFontMetrics; keep bounded to live_h
+                text = self._live_text
+                # elide per line logic: Qt drawText with WordWrap won't elide, so we pre-elide to 220 chars already bounded
+                # Draw with word wrap inside rect, leaving expand button area
+                text_rect = QRectF(live_rect.left() + 12, live_rect.top() + 4, avail_w, live_rect.height() - 8)
+                painter.drawText(text_rect, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap), text)
+            else:
+                text = metrics2.elidedText(self._live_text, Qt.TextElideMode.ElideRight, avail_w)
+                painter.drawText(QRectF(live_rect.left() + 12, live_rect.top(), avail_w, live_rect.height()),
+                                 int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
+            # Draw expand/collapse chevron inside live panel
+            expand_rect = self._expand_button_rect()
+            if expand_rect.isValid():
+                # background for hit area
+                bcol = QColor(cols["SURFACE2"] if self._hover_expand else cols["BG"])
+                if self._expand_pressed:
+                    bcol = QColor(cols["BORDER"])
+                bcol.setAlpha(220)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(bcol)
+                # small rounded bg for expand
+                painter.drawRoundedRect(expand_rect, 6, 6)
+                # chevron
+                chev = "chevD" if self._live_expanded else "chevR"  # down when expanded? Use up/down
+                # Actually collapsed should show up chevron to expand upward? Use chevD for expand, chevR rotated? Simplify use text arrow
+                # Draw simple arrow via path
+                painter.setPen(QPen(QColor(cols["TEXT"]), 1.4))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                cx = expand_rect.center().x()
+                cy = expand_rect.center().y()
+                if self._live_expanded:
+                    # up arrow (collapse)
+                    painter.drawPolyline(QPointF(cx - 5, cy + 2), QPointF(cx, cy - 2), QPointF(cx + 5, cy + 2))
+                else:
+                    # down arrow? Actually live is above pill, expanding shows more; use up chevron
+                    painter.drawPolyline(QPointF(cx - 5, cy - 1), QPointF(cx, cy + 3), QPointF(cx + 5, cy - 1))
 
         # Main pill
         main_rect = QRectF(0.5, offset + 0.5, self.width() - 1, HEIGHT - 1)

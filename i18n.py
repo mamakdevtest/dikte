@@ -776,4 +776,55 @@ TR = {
         "Köşe bandı 72 px yüksekliğindedir. Renk tek başına anlam taşımaz; her durumda ikon ya da dalga görünür.",
     "The indicator appears on the screen where the cursor is; it cannot be dragged, does not take focus, and only its live action accepts clicks.":
         "Gösterge imlecin bulunduğu ekranda görünür; sürüklenemez, odağı almaz ve yalnızca canlı eylemi tıklama kabul eder.",
+
+    # --- sidebar -------------------------------------------------------
+    "Collapse sidebar": "Kenar çubuğunu daralt",
+    "Expand sidebar": "Kenar çubuğunu genişlet",
+    "Local dictation": "Yerel dikte",
+    "Light theme": "Açık tema",
+    "Dark theme": "Koyu tema",
+    "Switch to light theme": "Açık temaya geç",
+    "Switch to dark theme": "Koyu temaya geç",
+
+    # --- AI ------------------------------------------------------------
+    "AI Text Processing": "Yapay Zeka Metin İşleme",
+    "Editing Level": "Düzenleme Seviyesi",
+    "Shortening Freedom": "Kısaltma Özgürlüğü",
+    "Show result overlay after dictation": "Dikte sonrası sonuç balonunu göster",
+    "When enabled, the final transcript appears in a small overlay with Copy and Close actions. Auto Paste behavior is unchanged.":
+        "Etkinse nihai transkript küçük bir balonda Copy ve Close ile gösterilir. Otomatik yapıştırma değişmez.",
+    "Transcription": "Transkripsiyon",
+    "STT Provider": "STT Sağlayıcı",
+    "Auto Paste": "Otomatik Yapıştır",
+    "Only filler sounds, stutters, punctuation and obvious ASR errors are fixed. Length and structure are preserved.":
+        "Yalnızca dolgu sesleri, kekemelik, noktalama ve bariz ASR hataları düzeltilir. Uzunluk ve yapı korunur.",
+    "In addition to Minimum, obvious filler words and tiny grammar glitches are cleaned. No shortening.":
+        "Minimum’a ek olarak bariz dolgu kelimeleri ve küçük dilbilgisi hataları temizlenir. Kısaltma yok.",
+    "Balanced readability: sentences may be restructured, but meaning and important details are kept. No real summarization.":
+        "Dengeli okunabilirlik: cümleler yeniden kurulabilir ama anlam ve önemli detaylar korunur. Gerçek özetleme yok.",
+    "Stronger rewriting, merging redundancies, polished written language. Shortening bounded by Shortening Freedom.":
+        "Daha güçlü yeniden yazma, gereksiz tekrarların birleştirilmesi, cilalı yazılı dil. Kısaltma, Kısaltma Özgürlüğü ile sınırlı.",
+    "Intensive rewriting allowed. Aggressive shortening still needs Shortening Freedom; level alone does not summarize.":
+        "Yoğun yeniden yazmaya izin verilir. Agresif kısaltma yine de Kısaltma Özgürlüğüne bağlıdır; seviye tek başına özetlemez.",
+    "Preserve length: a 3-minute speech is not turned into 3 sentences. Only filler/repetition is removed.":
+        "Uzunluk korunur: 3 dakikalık konuşma 3 cümleye çevrilmez. Yalnızca dolgu/tekrar çıkarılır.",
+    "Only obvious filler/redundancy removed.":
+        "Yalnızca bariz dolgu/gereksizlikler çıkarılır.",
+    "Light compression: almost all facts kept.":
+        "Hafif sıkıştırma: neredeyse tüm bilgiler korunur.",
+    "Moderate compression: important details kept.":
+        "Orta sıkıştırma: önemli detaylar korunur.",
+    "Strong compression: important facts must remain.":
+        "Güçlü sıkıştırma: önemli bilgiler kalmalıdır.",
+    "Summarization may be used when useful.":
+        "Gerektiğinde özetleme kullanılabilir.",
+    "Even at level 5, with 0% shortening, aggressive summarization is forbidden.":
+        "Seviye 5 olsa bile %0 kısaltmada agresif özetleme yasaktır.",
+
+    # --- overlay live / result -----------------------------------------
+    "Live transcript": "Canlı transkript",
+    "Expand": "Genişlet",
+    "Copy": "Kopyala",
+    "Result": "Sonuç",
+    "Transcription completed": "Transkripsiyon tamamlandı",
 }

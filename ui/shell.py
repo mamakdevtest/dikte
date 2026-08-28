@@ -8,7 +8,7 @@ as before.
 
 import os
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, Qt, QSize, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QTabWidget, QVBoxLayout, QWidget,
@@ -67,6 +67,7 @@ def _badge_pixmap(size=34):
 
 class AppShell(QWidget):
     theme_toggled = pyqtSignal()
+    compactToggled = pyqtSignal(bool)
 
     def __init__(self, whisper_label="Whisper", parent=None):
         super().__init__(parent)
@@ -74,6 +75,8 @@ class AppShell(QWidget):
         self._nav_titles = []
         self._compact = False
         self._theme_name = "dark"
+        self._anim = None
+        self._anim_target_compact = None
 
         self.tabs = QTabWidget(self)
         self.tabs.setDocumentMode(True)
@@ -129,6 +132,16 @@ class AppShell(QWidget):
         self._brand_name = name
         self._brand_sub = sub
         bl.addStretch(1)
+        # collapse toggle (ChatGPT-style)
+        self._collapse_btn = QPushButton()
+        self._collapse_btn.setProperty("variant", "ghost")
+        self._collapse_btn.setFixedSize(28, 28)
+        self._collapse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._collapse_btn.setToolTip(_t("Collapse sidebar"))
+        self._collapse_btn.clicked.connect(self._toggle_compact)
+        # initial icon set via _apply_collapse_icon
+        bl.addWidget(self._collapse_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._apply_collapse_icon()
         col.addWidget(brand)
 
         # nav
@@ -251,7 +264,18 @@ class AppShell(QWidget):
             active = i == index
             button.setProperty("active", active)
             color = c["sageDark"] if active else c["fg3"]
-            button.setIcon(_icons.icon(icon_name, 16, color))
+            sz = 20 if getattr(self, "_compact", False) else 16
+            button.setIconSize(QSize(sz, sz))
+            button.setIcon(_icons.icon(icon_name, sz, color))
+            if getattr(self, "_compact", False):
+                # tooltip in compact mode shows title
+                try:
+                    title = self._nav_titles[i] if i < len(self._nav_titles) else ""
+                    button.setToolTip(_t(title))
+                except Exception:
+                    pass
+            else:
+                button.setToolTip("")
             button.style().unpolish(button)
             button.style().polish(button)
 
@@ -268,19 +292,33 @@ class AppShell(QWidget):
         else:
             self.theme_button.setText(
                 "  " + (_t("Light theme") if self._theme_name == "dark" else _t("Dark theme")))
+        self._apply_collapse_icon()
 
     def set_theme(self, name):
         self._theme_name = name if name in ("dark", "light") else "dark"
         self._apply_theme_text()
 
-    def setCompact(self, compact: bool):
-        compact = bool(compact)
-        if getattr(self, "_compact", False) == compact:
-            # still need to ensure theme text reflects mode if theme changed
+    def _apply_collapse_icon(self):
+        try:
+            c = theme.palette(self._theme_name)
+            icon_name = "chevR" if getattr(self, "_compact", False) else "chevL"
+            tip = _t("Expand sidebar") if getattr(self, "_compact", False) else _t("Collapse sidebar")
+            if hasattr(self, "_collapse_btn") and self._collapse_btn is not None:
+                self._collapse_btn.setIcon(_icons.icon(icon_name, 14, c["fg2"]))
+                self._collapse_btn.setToolTip(tip)
+        except Exception:
             pass
+
+    def _toggle_compact(self):
+        self.setCompact(not getattr(self, "_compact", False), animate=True)
+        try:
+            self.compactToggled.emit(bool(self._compact))
+        except Exception:
+            pass
+
+    def _apply_compact_layout(self, compact: bool):
+        compact = bool(compact)
         self._compact = compact
-        if hasattr(self, "_sidebar") and self._sidebar is not None:
-            self._sidebar.setFixedWidth(64 if compact else 226)
         if hasattr(self, "_brand_layout") and self._brand_layout is not None:
             if compact:
                 self._brand_layout.setContentsMargins(0, 14, 0, 10)
@@ -306,9 +344,61 @@ class AppShell(QWidget):
             button.style().unpolish(button)
             button.style().polish(button)
         self._apply_theme_text()
+        self._apply_collapse_icon()
+        # re-sync nav icons/tooltips and sizes
+        try:
+            self._sync_nav(self.tabs.currentIndex())
+        except Exception:
+            pass
         if hasattr(self, "_brand_widget"):
             self._brand_widget.style().unpolish(self._brand_widget)
             self._brand_widget.style().polish(self._brand_widget)
+
+    def setCompact(self, compact: bool, animate: bool = False):
+        compact = bool(compact)
+        if getattr(self, "_compact", False) == compact and not animate:
+            self._apply_theme_text()
+            self._apply_collapse_icon()
+            return
+        # animated width transition — fast and non-blocking
+        if animate and hasattr(self, "_sidebar") and self._sidebar is not None:
+            try:
+                start_w = self._sidebar.width()
+                end_w = 64 if compact else 226
+                if start_w == end_w:
+                    self._apply_compact_layout(compact)
+                    return
+                # immediately apply compact-dependent visibility so text fade doesn't lag
+                # but keep width animated
+                self._apply_compact_layout(compact)
+                # animate width back from start to end for smoothness
+                # we already applied final compact state, now animate width
+                self._sidebar.setFixedWidth(start_w)
+                anim = QVariantAnimation(self)
+                anim.setStartValue(float(start_w))
+                anim.setEndValue(float(end_w))
+                anim.setDuration(160)
+                anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+                def _on_val(v):
+                    try:
+                        self._sidebar.setFixedWidth(int(float(v)))
+                    except Exception:
+                        pass
+                anim.valueChanged.connect(_on_val)
+                # keep reference to prevent GC
+                self._anim = anim
+                self._anim_target_compact = compact
+                anim.start()
+                return
+            except Exception:
+                pass
+        # fallback immediate
+        self._apply_compact_layout(compact)
+        if hasattr(self, "_sidebar") and self._sidebar is not None:
+            try:
+                self._sidebar.setFixedWidth(64 if compact else 226)
+            except Exception:
+                pass
 
 
 # A tiny late-binding wrapper so shell.py imports stay free of a hard i18n

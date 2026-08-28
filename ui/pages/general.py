@@ -80,6 +80,15 @@ def build(window):
 
     gate(window.auto_paste, [paste_key_row, clipboard_row])
 
+    # --- result overlay ---------------------------------------------------
+    result_card = SectionCard(t("Result display"))
+    outer.addWidget(result_card)
+    result_row, window.result_overlay_enabled = switch_row(
+        t("Show result overlay after dictation"),
+        t("When enabled, the final transcript appears in a small overlay with Copy and Close actions. "
+          "Auto Paste behavior is unchanged."))
+    result_card.add(result_row)
+
     # --- recording --------------------------------------------------------
     recording = SectionCard(t("Recording behavior"))
     outer.addWidget(recording)

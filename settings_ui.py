@@ -537,6 +537,14 @@ class SettingsWindow(QDialog):
         _theme.apply(self._theme)
         self.shell.set_theme(self._theme)
         self._load()
+        # Apply persisted sidebar compact (manual preference) — auto responsive overrides at <920
+        try:
+            initial_compact = bool(self.conf.get("sidebar_compact", False)) or self.width() < 920
+            self.shell.setCompact(initial_compact)
+            self._user_compact = bool(self.conf.get("sidebar_compact", False))
+            self.shell.compactToggled.connect(self._on_sidebar_compact_toggled)
+        except Exception:
+            pass
         self.file_timestamps.toggled.connect(self._remember_file_choices)
         self.file_cleanup.toggled.connect(self._remember_file_choices)
         # Engine card reflects selected transcribe provider/model
@@ -1594,6 +1602,114 @@ class SettingsWindow(QDialog):
         except Exception:
             pass
 
+    def _on_sidebar_compact_toggled(self, compact):
+        compact = bool(compact)
+        self._user_compact = compact
+        try:
+            self.conf["sidebar_compact"] = compact
+            self.conf.save()
+        except Exception:
+            pass
+        # keep responsive: if window is narrow, stay compact regardless
+        try:
+            if self.width() < 920 and not compact:
+                # user expanded while narrow — allow but will re-compact on next resize
+                pass
+        except Exception:
+            pass
+
+    def _ai_edit_changed(self, level):
+        try:
+            level = max(1, min(5, int(level)))
+        except Exception:
+            level = 3
+        try:
+            if hasattr(self, "ai_edit_spin"):
+                self.ai_edit_spin.blockSignals(True)
+                self.ai_edit_spin.setValue(level)
+                self.ai_edit_spin.blockSignals(False)
+            if hasattr(self, "ai_edit_level") and hasattr(self.ai_edit_level, "set_active"):
+                self.ai_edit_level.set_active(level)
+        except Exception:
+            pass
+        self._update_ai_descriptions()
+
+    def _ai_shortening_changed(self, value):
+        try:
+            value = max(0, min(100, int(value)))
+        except Exception:
+            value = 0
+        try:
+            if hasattr(self, "ai_shortening_spin"):
+                self.ai_shortening_spin.blockSignals(True)
+                self.ai_shortening_spin.setValue(value)
+                self.ai_shortening_spin.blockSignals(False)
+            if hasattr(self, "ai_shortening_slider"):
+                self.ai_shortening_slider.blockSignals(True)
+                self.ai_shortening_slider.setValue(value)
+                self.ai_shortening_slider.blockSignals(False)
+        except Exception:
+            pass
+        self._update_ai_descriptions()
+
+    def _update_ai_descriptions(self):
+        try:
+            edit = 3
+            short = 0
+            if hasattr(self, "ai_edit_spin"):
+                try:
+                    edit = int(self.ai_edit_spin.value())
+                except Exception:
+                    try:
+                        # fallback from segmented
+                        for b in getattr(self.ai_edit_level, "buttons", []):
+                            if b.isChecked():
+                                edit = int(b.property("value") or 3)
+                                break
+                    except Exception:
+                        pass
+            elif hasattr(self, "ai_edit_level"):
+                for b in getattr(self.ai_edit_level, "buttons", []):
+                    if b.isChecked():
+                        try:
+                            edit = int(b.property("value") or 3)
+                        except Exception:
+                            pass
+                        break
+            if hasattr(self, "ai_shortening_slider"):
+                short = int(self.ai_shortening_slider.value())
+            elif hasattr(self, "ai_shortening_spin"):
+                short = int(self.ai_shortening_spin.value())
+            # descriptions per spec
+            descs = {
+                1: t("Only filler sounds, stutters, punctuation and obvious ASR errors are fixed. Length and structure are preserved."),
+                2: t("In addition to Minimum, obvious filler words and tiny grammar glitches are cleaned. No shortening."),
+                3: t("Balanced readability: sentences may be restructured, but meaning and important details are kept. No real summarization."),
+                4: t("Stronger rewriting, merging redundancies, polished written language. Shortening bounded by Shortening Freedom."),
+                5: t("Intensive rewriting allowed. Aggressive shortening still needs Shortening Freedom; level alone does not summarize."),
+            }
+            if hasattr(self, "ai_edit_desc"):
+                self.ai_edit_desc.setText(descs.get(edit, descs[3]))
+            if hasattr(self, "ai_shortening_desc"):
+                if short == 0:
+                    txt = t("Preserve length: a 3-minute speech is not turned into 3 sentences. Only filler/repetition is removed.")
+                elif short <= 24:
+                    txt = t("Only obvious filler/redundancy removed.")
+                elif short <= 49:
+                    txt = t("Light compression: almost all facts kept.")
+                elif short <= 74:
+                    txt = t("Moderate compression: important details kept.")
+                elif short <= 99:
+                    txt = t("Strong compression: important facts must remain.")
+                else:
+                    txt = t("Summarization may be used when useful.")
+                # invariant note
+                if edit == 5 and short == 0:
+                    txt += " " + t("Even at level 5, with 0% shortening, aggressive summarization is forbidden.")
+                self.ai_shortening_desc.setText(txt)
+        except Exception:
+            pass
+
     def _reset_assistant_session(self):
         assistant.clear_session()
         self._refresh_assistant_status()
@@ -1878,9 +1994,22 @@ class SettingsWindow(QDialog):
         super().resizeEvent(event)
         try:
             w = self.width()
-            # 920: collapse sidebar (226->64), 1080: page padding, 760: row stacking
+            # 920: collapse sidebar (226->64) — responsive auto, but respect manual preference when wide
             if hasattr(self, "shell") and hasattr(self.shell, "setCompact"):
-                self.shell.setCompact(w < 920)
+                auto_compact = w < 920
+                if auto_compact:
+                    self.shell.setCompact(True)
+                else:
+                    # when wide, restore user's manual choice rather than forcing expanded
+                    user_compact = getattr(self, "_user_compact", None)
+                    if user_compact is not None:
+                        self.shell.setCompact(bool(user_compact))
+                    else:
+                        # fallback to persisted config
+                        try:
+                            self.shell.setCompact(bool(self.conf.get("sidebar_compact", False)))
+                        except Exception:
+                            self.shell.setCompact(False)
             # Narrow rows <760
             is_narrow = w < 760
             try:
@@ -2067,6 +2196,42 @@ class SettingsWindow(QDialog):
             conf["file_cleanup_prompt"] or cfg.default_file_cleanup_prompt()
         )
         self.transcribe_prompt.setPlainText(conf["transcribe_prompt"])
+        # AI Text Processing — editing level + shortening freedom
+        try:
+            edit_level = max(1, min(5, int(conf.get("ai_edit_level", 3))))
+        except Exception:
+            edit_level = 3
+        try:
+            shortening = max(0, min(100, int(conf.get("ai_shortening_freedom", 0))))
+        except Exception:
+            shortening = 0
+        try:
+            if hasattr(self, "ai_edit_level") and hasattr(self.ai_edit_level, "set_active"):
+                self.ai_edit_level.set_active(edit_level)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "ai_edit_spin"):
+                self.ai_edit_spin.blockSignals(True)
+                self.ai_edit_spin.setValue(edit_level)
+                self.ai_edit_spin.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "ai_shortening_slider"):
+                self.ai_shortening_slider.blockSignals(True)
+                self.ai_shortening_slider.setValue(shortening)
+                self.ai_shortening_slider.blockSignals(False)
+            if hasattr(self, "ai_shortening_spin"):
+                self.ai_shortening_spin.blockSignals(True)
+                self.ai_shortening_spin.setValue(shortening)
+                self.ai_shortening_spin.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            self._update_ai_descriptions()
+        except Exception:
+            pass
 
         self._select_data(self.assistant_provider, conf["assistant_provider"])
         self.assistant_model.setCurrentText(conf["assistant_model"])
@@ -2111,6 +2276,12 @@ class SettingsWindow(QDialog):
         self.file_timestamps.setChecked(conf["file_timestamps"])
         self.file_cleanup.setChecked(conf["file_cleanup"])
         self.file_path = ""
+
+        try:
+            if hasattr(self, "result_overlay_enabled"):
+                self.result_overlay_enabled.setChecked(bool(conf.get("result_overlay_enabled", True)))
+        except Exception:
+            pass
 
         for which, (box, _status, _missing) in self._shortcut_rows.items():
             box.setCurrentText(conf[hotkey.SHORTCUTS[which].setting])
@@ -2313,6 +2484,43 @@ class SettingsWindow(QDialog):
 
         conf["file_timestamps"] = self.file_timestamps.isChecked()
         conf["file_cleanup"] = self.file_cleanup.isChecked()
+
+        # AI Text Processing
+        try:
+            edit_val = 3
+            if hasattr(self, "ai_edit_spin"):
+                edit_val = int(self.ai_edit_spin.value())
+            elif hasattr(self, "ai_edit_level"):
+                for b in getattr(self.ai_edit_level, "buttons", []):
+                    if b.isChecked():
+                        edit_val = int(b.property("value") or 3)
+                        break
+            conf["ai_edit_level"] = max(1, min(5, int(edit_val)))
+        except Exception:
+            pass
+        try:
+            short_val = 0
+            if hasattr(self, "ai_shortening_slider"):
+                short_val = int(self.ai_shortening_slider.value())
+            elif hasattr(self, "ai_shortening_spin"):
+                short_val = int(self.ai_shortening_spin.value())
+            conf["ai_shortening_freedom"] = max(0, min(100, int(short_val)))
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "result_overlay_enabled"):
+                conf["result_overlay_enabled"] = bool(self.result_overlay_enabled.isChecked())
+        except Exception:
+            pass
+        try:
+            # sidebar_compact persists manual toggle; auto-compact <920 is transient
+            if hasattr(self, "_user_compact"):
+                conf["sidebar_compact"] = bool(self._user_compact)
+            elif hasattr(self, "shell"):
+                conf["sidebar_compact"] = bool(getattr(self.shell, "_compact", False))
+        except Exception:
+            pass
 
         for which, (box, _status, _missing) in self._shortcut_rows.items():
             spec = hotkey.SHORTCUTS[which]
