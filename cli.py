@@ -516,7 +516,12 @@ SECRET_KEYS = ("openai_api_key", "groq_api_key", "deepgram_api_key")
 
 
 def _mask(key, value):
-    if key in SECRET_KEYS and value:
+    """Return a config value that is safe to print or include in JSON output."""
+    if isinstance(value, dict):
+        return {name: _mask(name, item) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_mask(key, item) for item in value]
+    if (key in SECRET_KEYS or key == "secret") and isinstance(value, str) and value:
         return f"…{value[-4:]}"
     return value
 
@@ -535,6 +540,8 @@ def _coerce(key, raw):
         return int(float(raw))
     if isinstance(default, float):
         return float(raw)
+    if isinstance(default, (dict, list)):
+        raise ValueError(f"{key} is structured; use its dedicated command")
     return raw
 
 
@@ -548,8 +555,7 @@ def cmd_config_list(opts):
     conf = cfg.Config()
     # A key belongs to whoever asked for it by name, not to everything that ever
     # prints the whole list; a terminal scrollback is a poor place for one.
-    values = {key: conf[key] if opts.reveal else _mask(key, conf[key])
-              for key in sorted(cfg.DEFAULTS)}
+    values = {key: _mask(key, conf[key]) for key in sorted(cfg.DEFAULTS)}
     lines = []
     for key, value in values.items():
         shown = value
@@ -563,7 +569,7 @@ def cmd_config_list(opts):
 def cmd_config_get(opts):
     if opts.key not in cfg.DEFAULTS:
         return fail(opts, f"unknown setting: {opts.key}", 2)
-    value = cfg.Config()[opts.key]
+    value = _mask(opts.key, cfg.Config()[opts.key])
     return out(opts, {"ok": True, "key": opts.key, "value": value},
                json.dumps(value, ensure_ascii=False) if not isinstance(value, str)
                else value)
@@ -589,7 +595,8 @@ def cmd_config_set(opts):
     except OSError as exc:
         return fail(opts, exc)
     _tell_instance_to_reload()
-    return out(opts, {"ok": True, "key": opts.key, "value": value},
+    return out(opts, {"ok": True, "key": opts.key,
+                      "value": _mask(opts.key, value)},
                f"{opts.key} = {_mask(opts.key, value)}")
 
 
@@ -785,6 +792,9 @@ def cmd_credentials_remove(opts):
     if not who.custom:
         return fail(opts, "only a key of a provider you added can be removed", 2)
     conf = cfg.Config()
+    if not any(cred["id"] == opts.credential
+               for cred in providers.credentials(conf, opts.id)):
+        return fail(opts, f"no such key: {opts.credential}", 2)
     providers.remove_credential(conf, opts.id, opts.credential)
     failure = _save_registry(conf, opts)
     if failure:
@@ -1196,7 +1206,7 @@ def build_parser():
     config.set_defaults(func=_needs_subcommand(config))
     listing = leaf(inner, "list", "all of them")
     listing.add_argument("--reveal", action="store_true",
-                         help="print the API keys in full")
+                         help="deprecated; secrets always stay masked")
     listing.set_defaults(func=cmd_config_list)
     getter = leaf(inner, "get", "one setting")
     getter.add_argument("key")

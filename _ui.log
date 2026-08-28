@@ -1,0 +1,8 @@
+test_a_long_model_name_is_not_cut_in_half (tests.test_ui.LocalModels.test_a_long_model_name_is_not_cut_in_half) ... ok
+test_a_model_bigger_than_two_gigabytes_counts_up_rather_than_down (tests.test_ui.LocalModels.test_a_model_bigger_than_two_gigabytes_counts_up_rather_than_down) ... ok
+test_a_model_that_is_not_here_yet_survives_a_save (tests.test_ui.LocalModels.test_a_model_that_is_not_here_yet_survives_a_save) ... ok
+test_it_opens_where_it_was_left_when_everything_works (tests.test_ui.LocalModels.test_it_opens_where_it_was_left_when_everything_works) ... ok
+test_it_opens_where_the_missing_model_is_fixed (tests.test_ui.LocalModels.test_it_opens_where_the_missing_model_is_fixed) ... ok
+test_nothing_is_fetched_for_a_window_nobody_opened (tests.test_ui.LocalModels.test_nothing_is_fetched_for_a_window_nobody_opened) ... ok
+test_only_the_chosen_cleaner_is_on_screen (tests.test_ui.LocalModels.test_only_the_chosen_cleaner_is_on_screen) ... ok
+test_only_the_chosen_transcriber_is_on_screen (tests.test_ui.LocalModels.test_only_the_chosen_transcriber_is_on_screen) ... 

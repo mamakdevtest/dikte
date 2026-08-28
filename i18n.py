@@ -607,6 +607,13 @@ TR = {
     "Writing the minutes…": "Tutanak yazılıyor…",
     "Neither side of the recording had any speech in it.":
         "Kaydın iki tarafında da konuşma yok.",
+    "The recording came back silent on both sides. Check the microphone and "
+    "the speaker output in Settings → Meeting.":
+        "Kayıt iki taraftan da sessiz geldi. Ayarlar → Toplantı sekmesinden "
+        "mikrofonu ve ses çıkışını kontrol et.",
+    "Delete recordings after": "Ses kayıtları silinsin",
+    " days": " gün",
+    "Never": "Asla",
     "This recording is not a two-channel meeting.":
         "Bu kayıt iki kanallı bir toplantı kaydı değil.",
     "The recording is gone: {path}": "Ses kaydı yerinde yok: {path}",

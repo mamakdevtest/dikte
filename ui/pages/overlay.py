@@ -202,7 +202,7 @@ def _state_card(title: str, desc: str, preview: QWidget) -> QWidget:
     s = QLabel(desc, card)
     s.setWordWrap(True)
     s.setStyleSheet(f"font-size: 11.5px; color: {c['fg3']};")
-    cap.addLayout(cap)
+    cap.addWidget(s)
     # Add as widget
     cap_wrap = QWidget(card)
     cap_wrap.setLayout(cap)

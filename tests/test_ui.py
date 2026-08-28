@@ -777,6 +777,18 @@ class MacSettings(Settings):
         self.assertEqual(offered, paste.MACOS.shortcuts)
 
 
+class OverlaySettingsPreview(DikteTest):
+    def test_state_card_stacks_the_description_under_its_title(self):
+        """The preview must retain both pieces of state text in its caption."""
+        from ui.pages import overlay as overlay_page
+
+        card = overlay_page._state_card("Recording", "Listening for speech",
+                                        settings_ui.QWidget())
+        self.addCleanup(card.deleteLater)
+        caption = card.layout().itemAt(1).widget()
+        self.assertEqual(caption.layout().count(), 2)
+
+
 class Overlay(DikteTest):
     def overlay(self, **kwargs):
         widget = overlay_module.Overlay(**kwargs)

@@ -520,7 +520,10 @@ DEFAULTS = {
     "meeting_self_name": "",        # empty -> "Me" in the interface language
     "meeting_other_name": "",       # empty -> "Other side"
     "meeting_participants": "",
-    "meeting_keep_audio": False,    # a failed run keeps its audio regardless
+    "meeting_keep_audio": True,     # a failed run keeps its audio regardless
+    # 0 keeps every recording forever; otherwise meeting .wav files older
+    # than this many days go at startup and after each meeting.
+    "meeting_audio_retention_days": 7,
     "meeting_shortcut": "",         # empty -> tray only
 
     # --- speaking a command to an agent -------------------------------------

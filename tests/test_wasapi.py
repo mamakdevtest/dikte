@@ -259,6 +259,129 @@ class DeviceNameMatching(unittest.TestCase):
             wasapi._pick("Sound Blaster", self.ENDPOINTS, "id-default")
 
 
+class DictationWasapi(OnWindows, DikteTest):
+    """Dictation records through WASAPI too: the default endpoint, not the
+    first device enumeration lists."""
+
+    def setUp(self):
+        super().setUp()
+        self.app = QApplication.instance() or QApplication([])
+        self.recorder = audio.Recorder()
+        self.events = {"level": [], "stopped": [], "failed": []}
+        self.recorder.level.connect(lambda v: self.events["level"].append(v))
+        self.recorder.stopped.connect(
+            lambda p, d, r: self.events["stopped"].append((p, d)))
+        self.recorder.failed.connect(lambda e: self.events["failed"].append(e))
+
+    def wait_for(self, condition, timeout=5.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.app.processEvents()
+            if condition():
+                return True
+            time.sleep(0.01)
+        return False
+
+    def test_the_default_microphone_is_recorded_and_written_out(self):
+        source = FakeSource([mono_chunk(16384) for _ in range(6)])
+        self.enterContext(mock.patch.object(audio, "_dictation_source",
+                                            return_value=source))
+        path = os.path.join(self.root, "dictation.wav")
+        self.recorder.start("", max_seconds=60)
+        self.assertTrue(self.recorder.active)
+        self.assertTrue(self.wait_for(lambda: len(self.events["level"]) >= 1))
+        self.recorder.stop()
+        self.assertEqual(self.events["failed"], [])
+        self.assertEqual(len(self.events["stopped"]), 1)
+        got_path, duration = self.events["stopped"][0]
+        self.assertTrue(os.path.exists(got_path))
+        self.assertGreater(duration, 0.2)
+        self.assertTrue(source.closed)
+        self.assertFalse(self.recorder.active)
+        os.unlink(got_path)
+
+    def test_pause_closes_and_resume_reopens_the_microphone(self):
+        first, second = FakeSource([mono_chunk(16384) for _ in range(3)]), \
+            FakeSource([mono_chunk(16384) for _ in range(3)])
+        self.enterContext(mock.patch.object(
+            audio, "_dictation_source", side_effect=[first, second]))
+        path = os.path.join(self.root, "dictation.wav")
+        self.recorder.start("")
+        self.assertTrue(self.wait_for(lambda: self.recorder._buffer))
+        self.assertTrue(self.recorder.pause())
+        self.assertTrue(first.closed)
+        self.assertTrue(self.recorder.paused)
+        self.assertTrue(self.recorder.resume())
+        self.assertTrue(self.wait_for(lambda: self.recorder._source is second))
+        self.recorder.stop()
+        self.assertEqual(self.events["failed"], [])
+        self.assertEqual(len(self.events["stopped"]), 1)
+        os.unlink(self.events["stopped"][0][0])
+
+    def test_a_wasapi_failure_still_offers_the_ffmpeg_road(self):
+        self.enterContext(mock.patch.object(
+            audio, "_dictation_source",
+            side_effect=wasapi.WasapiError("no default endpoint")))
+        self.enterContext(mock.patch.object(audio, "recording_command",
+                                            return_value=["ffmpeg", "fake"]))
+        frames = pcm([16384] * audio.CHUNK_FRAMES) * 8
+
+        class Popen:
+            def __init__(self, cmd, **kwargs):
+                self.stdout = io.BytesIO(frames)
+                self.stderr = io.BytesIO(b"")
+                self.returncode = 0
+                self._alive = True
+
+            def poll(self):
+                return None if self._alive else 0
+
+            def terminate(self):
+                self._alive = False
+
+            def kill(self):
+                self._alive = False
+
+            def wait(self, timeout=None):
+                self._alive = False
+                return 0
+
+        self.enterContext(mock.patch.object(audio.subprocess, "Popen", Popen))
+        path = os.path.join(self.root, "dictation.wav")
+        self.recorder.start("")
+        self.recorder.stop()
+        self.assertEqual(len(self.events["stopped"]), 1)
+        os.unlink(self.events["stopped"][0][0])
+
+    def test_a_stale_device_name_falls_back_to_the_default(self):
+        default = FakeSource([])
+        with mock.patch.object(
+                audio.wasapi, "open_capture",
+                side_effect=[wasapi.WasapiError("no match"), default]) as open_:
+            got = audio._dictation_source("Old Virtual Mic")
+        self.assertIs(got, default)
+        self.assertEqual(open_.call_args_list,
+                         [mock.call("Old Virtual Mic"), mock.call("")])
+
+    def test_an_empty_name_that_fails_raises(self):
+        with mock.patch.object(
+                audio.wasapi, "open_capture",
+                side_effect=wasapi.WasapiError("no default endpoint")):
+            with self.assertRaises(wasapi.WasapiError):
+                audio._dictation_source("")
+
+    def test_meeting_sources_fall_back_per_side(self):
+        mic, loop = FakeSource([]), FakeSource([])
+        with mock.patch.object(
+                audio.wasapi, "open_capture",
+                side_effect=[wasapi.WasapiError("stale"), mic]), \
+                mock.patch.object(audio.wasapi, "open_loopback",
+                                  return_value=loop):
+            got_mic, got_loop = audio._wasapi_sources("Stale Mic", "")
+        self.assertIs(got_mic, mic)
+        self.assertIs(got_loop, loop)
+
+
 class DeviceLists(OnWindows, DikteTest):
     """Windows offers real endpoints when WASAPI can, dshow when it can't."""
 

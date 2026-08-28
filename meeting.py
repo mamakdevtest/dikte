@@ -216,10 +216,29 @@ class MeetingPipeline(QObject):
                 ])
             segments.extend((start, end, text, speaker) for start, end, text in heard)
         if not segments:
+            if self._both_silent(mine, theirs):
+                raise api.ApiError(t(
+                    "The recording came back silent on both sides. Check the "
+                    "microphone and the speaker output in Settings → Meeting."))
             raise api.ApiError(t("Neither side of the recording had any speech in it."))
 
         names = conf.speaker_names()
         return render_turns(merge_turns(segments), *names)
+
+    def _both_silent(self, mine, theirs):
+        """Was anything captured at all?
+
+        A device picked wrong records a faithful file full of nothing, and
+        "no speech in it" would send the user hunting through the wrong
+        settings page.
+        """
+        for path in (mine, theirs):
+            try:
+                if max(rms_series(path), default=0.0) > 0.01:
+                    return False
+            except (OSError, wave.Error):
+                return False
+        return True
 
     def _silent(self, path):
         if not self.conf["skip_silent"]:
@@ -559,3 +578,23 @@ def new_entry(base, duration):
         "error": "",
         "model": "",
     }
+
+
+def prune_audio(days):
+    """Recordings older than the retention go; the minutes stay forever.
+
+    A kept recording is a second chance at the minutes, not an archive —
+    past the retention it is only disk someone forgot about.
+    """
+    if days <= 0:
+        return 0
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for wav in cfg.MEETINGS_DIR.glob("*.wav"):
+        try:
+            if wav.stat().st_mtime < cutoff:
+                wav.unlink()
+                removed += 1
+        except OSError:
+            pass  # a file that will not leave today can leave tomorrow
+    return removed

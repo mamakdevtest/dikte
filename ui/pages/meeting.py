@@ -140,6 +140,16 @@ def build(window):
         "A run that fails keeps its recording either way, so it can be tried "
         "again from the Minutes tab. This is about the ones that worked."))
     recording_form.addRow("", window.meeting_keep_audio)
+    window.meeting_retention = QSpinBox()
+    window.meeting_retention.setRange(0, 365)
+    window.meeting_retention.setSuffix(t(" days"))
+    window.meeting_retention.setSpecialValueText(t("Never"))
+    window.meeting_retention.setFixedWidth(160)
+    window.meeting_retention.setToolTip(t(
+        "Recordings older than this are deleted when the app starts and "
+        "after each meeting. The written minutes are never touched."))
+    recording_form.addRow(t("Delete recordings after"),
+                          window.meeting_retention)
     window._shortcut_row(
         recording_form, "meeting", t("Shortcut"),
         t("No global shortcut installed. The tray menu starts a meeting too."),

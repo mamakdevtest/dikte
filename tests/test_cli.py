@@ -281,12 +281,30 @@ class ConfigCommands(DikteTest):
         # setting as well, because "true or false" needs the context.
         self.assertIn("lots", err)
 
+    def test_a_structured_provider_setting_is_not_overwritten_as_text(self):
+        """The provider registry has its own guarded CLI commands."""
+        self.write_config({"providers": [custom_provider()]})
+        before = cfg.Config()["providers"]
+        with mock.patch.object(ipc, "send"):
+            code, _, err = self.run_cmd(cli.cmd_config_set, key="providers",
+                                        value="not-a-provider-list")
+        self.assertEqual(code, 2)
+        self.assertIn("structured", err)
+        self.assertEqual(cfg.Config()["providers"], before)
+
     def test_a_key_is_masked_when_it_is_written_back(self):
         with mock.patch.object(ipc, "send"):
             _, out, _ = self.run_cmd(cli.cmd_config_set, key="openai_api_key",
-                                     value="sk-abcdefgh1234")
+                                      value="sk-abcdefgh1234")
         self.assertNotIn("sk-abcdefgh", out)
         self.assertIn("1234", out)
+
+    def test_a_key_is_masked_in_a_json_write_reply(self):
+        with mock.patch.object(ipc, "send"):
+            _, out, _ = self.run_cmd(cli.cmd_config_set, key="openai_api_key",
+                                      value="sk-abcdefgh1234", json=True)
+        self.assertNotIn("sk-abcdefgh", out)
+        self.assertEqual(json.loads(out)["value"], "…1234")
 
     def test_the_listing_masks_the_keys(self):
         with mock.patch.object(ipc, "send"):
@@ -295,12 +313,26 @@ class ConfigCommands(DikteTest):
         _, out, _ = self.run_cmd(cli.cmd_config_list, reveal=False)
         self.assertNotIn("sk-abcdefgh", out)
 
-    def test_a_key_belongs_to_whoever_asked_for_it_by_name(self):
+    def test_a_key_is_masked_even_when_reveal_is_requested(self):
         with mock.patch.object(ipc, "send"):
             self.run_cmd(cli.cmd_config_set, key="openai_api_key",
-                         value="sk-abcdefgh1234")
+                                      value="sk-abcdefgh1234")
         _, out, _ = self.run_cmd(cli.cmd_config_list, reveal=True)
-        self.assertIn("sk-abcdefgh1234", out)
+        self.assertNotIn("sk-abcdefgh1234", out)
+        self.assertIn("…1234", out)
+
+    def test_a_custom_provider_secret_is_masked_in_config_views(self):
+        secret = "sk-gateway-secret-1234"
+        self.write_config({"providers": [custom_provider(secret=secret)]})
+        for func, values in (
+            (cli.cmd_config_get, {"key": "providers", "json": True}),
+            (cli.cmd_config_list, {"reveal": True, "json": True}),
+        ):
+            with self.subTest(func=func.__name__):
+                code, out, _ = self.run_cmd(func, **values)
+                self.assertEqual(code, 0)
+                self.assertNotIn(secret, out)
+                self.assertIn("…1234", out)
 
     def test_the_listing_shortens_a_long_value(self):
         with mock.patch.object(ipc, "send"):
@@ -335,7 +367,7 @@ class ConfigCommands(DikteTest):
 
     def test_the_prompt_a_run_would_really_send(self):
         _, out, _ = self.run_cmd(cli.cmd_prompt, which="cleanup")
-        self.assertEqual(out.strip(), cfg.CLEANUP_PROMPT_EN.strip())
+        self.assertEqual(out.strip(), cfg.Config().cleanup_prompt().strip())
 
     def test_all_four_prompts_at_once(self):
         _, out, _ = self.run_cmd(cli.cmd_prompt, which=None, json=True)
@@ -527,6 +559,14 @@ class ProvidersRegistry(DikteTest):
         self.assertEqual([k["id"] for k in stored["keys"]],
                          [k["id"] for k in stored["keys"] if k["id"] != "key0000001"])
         self.assertNotEqual(stored["active"], "key0000001")
+
+    def test_a_missing_credential_is_not_reported_as_removed(self):
+        self.write_config({"providers": [custom_provider()]})
+        code, _, err = self.run_cmd(cli.cmd_credentials_remove,
+                                    id="user/abc123def0", credential="missing")
+        self.assertEqual(code, 2)
+        self.assertIn("no such key", err)
+        self.assertEqual(len(cfg.Config()["providers"][0]["keys"]), 1)
 
     def test_a_built_in_has_no_named_keys_to_manage(self):
         code, _, err = self.run_cmd(cli.cmd_credentials_add, id="openai",

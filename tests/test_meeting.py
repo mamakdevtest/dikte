@@ -7,6 +7,8 @@ after the transcription and must not pay for it twice.
 """
 
 import contextlib
+import os
+import time
 import unittest
 import wave
 from unittest import mock
@@ -292,7 +294,10 @@ class Pipeline(DikteTest):
         self.conf = self.config(
             providers=[gateway(models={"text": "some/cleanup",
                                         "minutes": "some/minutes"})],
-            cleanup_provider="user/abc123", meeting_provider="user/abc123")
+            cleanup_provider="user/abc123", meeting_provider="user/abc123",
+            # The shipped default keeps recordings; the audio-goes test below
+            # is about the discard road, so it pins the old behavior here.
+            meeting_keep_audio=False)
         self.base = "20260801-100000"
         self.doc, self.wav = cfg.meeting_paths(self.base)
         self.wav.parent.mkdir(parents=True, exist_ok=True)
@@ -436,6 +441,32 @@ class Pipeline(DikteTest):
                                return_value=True):
             _, failures = self.run_pipeline()
         self.assertIn("speech", failures[0][1])
+
+    def test_a_silent_recording_names_the_devices(self):
+        """A wrong device records a faithful file full of nothing, and the
+        failure has to send the user to the sound page, not the speech one."""
+        make_wav(self.wav, stereo(silence(2.0), silence(2.0)), channels=2)
+        with mock.patch.object(api, "transcribe_segments", return_value=[]), \
+                mock.patch.object(api, "cleanup", return_value="# Kickoff"):
+            worker = meeting.MeetingPipeline(self.conf)
+            failures = []
+            worker.failed.connect(lambda *a: failures.append(a))
+            worker._work(cfg.read_meetings()[0])
+        self.assertIn("silent", failures[0][1])
+
+    def test_recordings_past_the_retention_go(self):
+        old, fresh = cfg.MEETINGS_DIR / "old.wav", cfg.MEETINGS_DIR / "new.wav"
+        cfg.MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
+        for wav in (old, fresh):
+            wav.write_bytes(b"")
+        week_ago = time.time() - 8 * 86400
+        os.utime(old, (week_ago, week_ago))
+        self.assertEqual(meeting.prune_audio(7), 1)
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.exists())
+        # Zero means nothing is ever old enough to leave.
+        self.assertEqual(meeting.prune_audio(0), 0)
+        self.assertTrue(fresh.exists())
 
     def test_the_transcript_is_attributed_by_channel(self):
         self.conf["meeting_self_name"] = "Yusuf"

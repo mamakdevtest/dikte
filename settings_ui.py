@@ -2271,6 +2271,7 @@ class SettingsWindow(QDialog):
         self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
         self.meeting_max_minutes.setValue(max(5, int(conf["meeting_max_seconds"]) // 60))
         self.meeting_keep_audio.setChecked(conf["meeting_keep_audio"])
+        self.meeting_retention.setValue(int(conf["meeting_audio_retention_days"]))
         self.meeting_prompt.setPlainText(
             conf["meeting_prompt"] or cfg.default_meeting_prompt()
         )
@@ -2480,6 +2481,7 @@ class SettingsWindow(QDialog):
         conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
         conf["meeting_max_seconds"] = self.meeting_max_minutes.value() * 60
         conf["meeting_keep_audio"] = self.meeting_keep_audio.isChecked()
+        conf["meeting_audio_retention_days"] = self.meeting_retention.value()
         meeting_prompt = self.meeting_prompt.toPlainText().strip()
         conf["meeting_prompt"] = ("" if meeting_prompt == cfg.default_meeting_prompt()
                                   else meeting_prompt)

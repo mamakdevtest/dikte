@@ -103,6 +103,7 @@ class Recorder(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._proc = None
+        self._source = None
         self._thread = None
         self._buffer = bytearray()
         self._rms = []
@@ -134,10 +135,21 @@ class Recorder(QObject):
     def start(self, target="", max_seconds=300):
         if self._session_active:
             return
-        cmd = recording_command(target)
-        if not cmd:
-            self.failed.emit(t(sound().missing))
-            return
+        # WASAPI first on Windows: the default endpoint is the microphone the
+        # system actually uses, where enumeration order used to hand dictation
+        # a virtual device nobody speaks into. ffmpeg remains the fallback.
+        self._source = None
+        proc = None
+        if sys.platform == "win32":
+            try:
+                self._source = _dictation_source(target)
+            except (wasapi.WasapiError, OSError, ValueError):
+                self._source = None
+        if self._source is None:
+            cmd = recording_command(target)
+            if not cmd:
+                self.failed.emit(t(sound().missing))
+                return
 
         self._target = target
         self._gen += 1
@@ -150,16 +162,18 @@ class Recorder(QObject):
         self._stopping = False
         self._max_bytes = int(max_seconds * RATE * SAMPLE_WIDTH * CHANNELS)
 
-        try:
-            self._proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
-                **_popen_kwargs()
-            )
-        except OSError as exc:
-            self.failed.emit(t("Could not start recording: {error}", error=exc))
-            self._session_active = False
-            self._proc = None
-            return
+        if self._source is None:
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                    **_popen_kwargs()
+                )
+            except OSError as exc:
+                self.failed.emit(t("Could not start recording: {error}", error=exc))
+                self._session_active = False
+                self._proc = None
+                return
+        self._proc = proc
 
         self._thread = threading.Thread(target=self._pump, args=(gen,), daemon=True)
         self._thread.start()
@@ -168,14 +182,24 @@ class Recorder(QObject):
         if gen is None:
             gen = self._gen
         proc = self._proc
-        if proc is None:
+        source = self._source
+        if proc is None and source is None:
             return
-        stdout = proc.stdout
+        stdout = proc.stdout if proc is not None else None
         try:
             while True:
                 if gen != self._gen:
                     break
-                chunk = stdout.read(CHUNK_BYTES)
+                if stdout is not None:
+                    chunk = stdout.read(CHUNK_BYTES)
+                else:
+                    # A shared-mode microphone delivers silence as real
+                    # samples, so a quiet read is a momentary gap, not the
+                    # end of the recording.
+                    chunk = source.read()
+                    if not chunk:
+                        time.sleep(0.01)
+                        continue
                 if not chunk:
                     break
                 if gen != self._gen:
@@ -189,7 +213,7 @@ class Recorder(QObject):
                 if too_long:
                     self._terminate()
                     break
-        except (OSError, ValueError):
+        except (OSError, ValueError, wasapi.WasapiError):
             pass
         if gen != self._gen:
             return
@@ -201,13 +225,17 @@ class Recorder(QObject):
             captured = bool(self._buffer)
         if self._stopping or self._cancelled or captured:
             return
-        try:
-            detail = proc.stderr.read().decode("utf-8", "replace").strip()
-        except (AttributeError, OSError):
-            detail = ""
+        if proc is not None:
+            try:
+                detail = proc.stderr.read().decode("utf-8", "replace").strip()
+            except (AttributeError, OSError):
+                detail = ""
+            detail = detail or f"exit code {proc.returncode}"
+        else:
+            detail = "the microphone stopped responding"
         self.failed.emit(t(
             "Audio recorder stopped before receiving sound: {error}",
-            error=detail or f"exit code {proc.returncode}",
+            error=detail,
         ))
 
     def _terminate(self):
@@ -215,6 +243,8 @@ class Recorder(QObject):
         proc = self._proc
         if proc and proc.poll() is None:
             _terminate_process(proc, timeout=1.5)
+        if self._source is not None:
+            self._source.close()
 
     def pause(self):
         if not self._session_active or self._paused:
@@ -222,16 +252,17 @@ class Recorder(QObject):
         if not self.active:
             return False
         proc = self._proc
-        if proc is None:
-            return False
         self._stopping = True
         self._gen += 1
-        if proc.poll() is None:
+        if proc is not None and proc.poll() is None:
             _terminate_process(proc, timeout=1.5)
+        if self._source is not None:
+            self._source.close()
         if self._thread:
             self._thread.join(timeout=2)
         self._thread = None
         self._proc = None
+        self._source = None
         self._stopping = False
         self._paused = True
         return True
@@ -245,18 +276,27 @@ class Recorder(QObject):
         if remaining <= 0:
             self.failed.emit(t("max duration reached"))
             return False
-        cmd = recording_command(self._target)
-        if not cmd:
-            self.failed.emit(t(sound().missing))
-            return False
-        try:
-            self._proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
-                **_popen_kwargs()
-            )
-        except OSError as exc:
-            self.failed.emit(t("Could not start recording: {error}", error=exc))
-            return False
+        self._source = None
+        proc = None
+        if sys.platform == "win32":
+            try:
+                self._source = _dictation_source(self._target)
+            except (wasapi.WasapiError, OSError, ValueError):
+                self._source = None
+        if self._source is None:
+            cmd = recording_command(self._target)
+            if not cmd:
+                self.failed.emit(t(sound().missing))
+                return False
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                    **_popen_kwargs()
+                )
+            except OSError as exc:
+                self.failed.emit(t("Could not start recording: {error}", error=exc))
+                return False
+        self._proc = proc
         self._gen += 1
         gen = self._gen
         self._paused = False
@@ -275,10 +315,13 @@ class Recorder(QObject):
         proc = self._proc
         if proc and proc.poll() is None:
             _terminate_process(proc, timeout=1.5)
+        if self._source is not None:
+            self._source.close()
         if self._thread:
             self._thread.join(timeout=2)
         self._thread = None
         self._proc = None
+        self._source = None
         with self._lock:
             self._buffer = bytearray()
             self._rms = []
@@ -297,10 +340,12 @@ class Recorder(QObject):
                 self._thread.join(timeout=2)
             self._thread = None
             self._proc = None
+            self._source = None
         else:
             # paused: nothing to terminate, just clear handles
             self._thread = None
             self._proc = None
+            self._source = None
 
         with self._lock:
             pcm = bytes(self._buffer)
@@ -347,6 +392,33 @@ def meeting_command(mic_target, system_target):
     return sound().meeting(mic_target, system_target)
 
 
+def _dictation_source(target=""):
+    """The microphone dictation records through, straight from WASAPI.
+
+    An empty name means the default capture endpoint — the one the system
+    panel would use — rather than the first device enumeration happens to
+    list, which on many machines is a virtual or streaming microphone that
+    never hears anybody. A stored name that matches nothing falls back to
+    that same default: recording on the default mic beats not recording.
+    """
+    try:
+        return wasapi.open_capture(target)
+    except wasapi.WasapiError:
+        if not target:
+            raise
+        return wasapi.open_capture("")
+
+
+def _open_or_default(open_fn, name):
+    """Open a meeting endpoint, falling back to the default on a stale name."""
+    try:
+        return open_fn(name)
+    except wasapi.WasapiError:
+        if not name:
+            raise
+        return open_fn("")
+
+
 def _wasapi_sources(mic_target, system_target):
     """(microphone, speakers) endpoints for a meeting, straight from WASAPI.
 
@@ -354,12 +426,13 @@ def _wasapi_sources(mic_target, system_target):
     meeting still records the other side: whatever Discord, Zoom or the
     browser plays lands on the default output, and loopback hears it there.
     """
-    mic = wasapi.open_capture(mic_target)
+    mic = _open_or_default(wasapi.open_capture, mic_target)
     try:
-        return mic, wasapi.open_loopback(system_target)
+        loop = _open_or_default(wasapi.open_loopback, system_target)
     except wasapi.WasapiError:
         mic.close()
         raise
+    return mic, loop
 
 
 class MeetingRecorder(QObject):

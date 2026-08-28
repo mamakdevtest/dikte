@@ -157,6 +157,11 @@ class Dikte:
         self.ask_pipeline = Pipeline(self.conf)
         self.meeting_recorder = audio.MeetingRecorder()
         self.meetings = MeetingPipeline(self.conf)
+        # Recordings are a second chance at the minutes, not an archive.
+        try:
+            meeting.prune_audio(self.conf["meeting_audio_retention_days"])
+        except OSError:
+            pass
         self.evdev = hotkey.listener()
         # Before anything of ours is started: a server from a Dikte that was
         # killed outright is still holding a model in memory.
@@ -897,6 +902,11 @@ class Dikte:
         except OSError as exc:
             self._on_meeting_failed(entry["base"], str(exc))
             return
+        # The retention applies to everything already on disk, too.
+        try:
+            meeting.prune_audio(self.conf["meeting_audio_retention_days"])
+        except OSError:
+            pass
         # On the way out there is no time to write anything up; the recording is
         # on disk and listed, and the Minutes tab can pick it up next time.
         if self._quitting:
