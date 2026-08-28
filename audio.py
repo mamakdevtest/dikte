@@ -1,10 +1,12 @@
 """Raw PCM capture with a live level meter.
 
 Dictation records one source. A meeting records two of them at once, the
-microphone and what comes out of the speakers, and for that it goes through
-ffmpeg: one process reading both devices and merging them into the two channels
-of a single stream, which is the only way the two stay aligned with each other
-over an hour.
+microphone and what comes out of the speakers. On Windows the pair comes
+from WASAPI (see wasapi.py), which records the speakers without needing a
+driver-provided loopback device; everywhere else, and on Windows whenever
+WASAPI can't serve both sides, it goes through ffmpeg: one process reading
+both devices and merging them into the two channels of a single stream,
+which is the only way the two stay aligned with each other over an hour.
 
 Which programs do the capturing is a property of the machine, not of the code
 above: PulseAudio or PipeWire on Linux, AVFoundation through ffmpeg on macOS,
@@ -24,10 +26,12 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import wave
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+import wasapi
 from i18n import t
 
 RATE = 16000
@@ -51,6 +55,7 @@ _cached_dshow_devices = None
 _cached_dshow_platform = None
 _cached_av_devices = None
 _cached_av_platform = None
+_cached_wasapi = {}
 _which_cache = {}
 _real_which = shutil.which
 _real_run = subprocess.run
@@ -83,7 +88,9 @@ def invalidate_audio_cache():
         _cached_dshow_platform = None
         _cached_av_devices = None
         _cached_av_platform = None
+        _cached_wasapi.clear()
         _which_cache.clear()
+    wasapi.reset_cache()
 
 
 class Recorder(QObject):
@@ -340,6 +347,21 @@ def meeting_command(mic_target, system_target):
     return sound().meeting(mic_target, system_target)
 
 
+def _wasapi_sources(mic_target, system_target):
+    """(microphone, speakers) endpoints for a meeting, straight from WASAPI.
+
+    An empty target means the default endpoint, so with nothing configured a
+    meeting still records the other side: whatever Discord, Zoom or the
+    browser plays lands on the default output, and loopback hears it there.
+    """
+    mic = wasapi.open_capture(mic_target)
+    try:
+        return mic, wasapi.open_loopback(system_target)
+    except wasapi.WasapiError:
+        mic.close()
+        raise
+
+
 class MeetingRecorder(QObject):
     """Microphone and speaker output into one stereo file: left is you, right is
     everyone else.
@@ -366,6 +388,10 @@ class MeetingRecorder(QObject):
         self._cancelled = False
         self._stopping = False
         self._lock = threading.Lock()
+        self._wasapi_mode = False
+        self._sources = ()
+        self._queues = ()
+        self._readers = ()
 
     @property
     def active(self):
@@ -374,6 +400,60 @@ class MeetingRecorder(QObject):
     def start(self, path, mic_target="", system_target="", max_seconds=14400):
         if self.active:
             return
+        if sys.platform == "win32":
+            try:
+                self._start_wasapi(path, mic_target, system_target, max_seconds)
+                return
+            except wasapi.WasapiError:
+                pass  # below, the ffmpeg road gets its own say
+        self._start_ffmpeg(path, mic_target, system_target, max_seconds)
+
+    def _open_wav(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        wav = wave.open(path, "wb")
+        wav.setnchannels(2)
+        wav.setsampwidth(SAMPLE_WIDTH)
+        wav.setframerate(RATE)
+        return wav
+
+    def _reset_run(self, path, max_seconds):
+        self._path = path
+        self._frames = 0
+        self._cancelled = False
+        self._stopping = False
+        self._wasapi_mode = False
+        self._max_frames = int(max_seconds * RATE)
+
+    def _start_wasapi(self, path, mic_target, system_target, max_seconds):
+        """Both sides straight from WASAPI, no subprocess in the middle.
+
+        The microphone and the speakers are separate endpoints here rather
+        than two inputs of one process, so the pump pairs them frame by
+        frame and pads whichever side falls quiet — a loopback endpoint
+        delivers nothing at all while no app plays sound.
+        """
+        mic_src, loop_src = _wasapi_sources(mic_target, system_target)
+        try:
+            wav = self._open_wav(path)
+        except (OSError, wave.Error):
+            mic_src.close()
+            loop_src.close()
+            raise
+        self._wav = wav
+        self._reset_run(path, max_seconds)
+        self._wasapi_mode = True
+        self._sources = (mic_src, loop_src)
+        self._queues = (collections.deque(), collections.deque())
+        self._readers = tuple(
+            threading.Thread(target=self._reader, args=(src, queue), daemon=True)
+            for src, queue in zip(self._sources, self._queues)
+        )
+        for reader in self._readers:
+            reader.start()
+        self._thread = threading.Thread(target=self._mix, daemon=True)
+        self._thread.start()
+
+    def _start_ffmpeg(self, path, mic_target="", system_target="", max_seconds=14400):
         if not _cached_which("ffmpeg"):
             self.failed.emit(t("ffmpeg not found. Install it to record a meeting."))
             return
@@ -387,11 +467,7 @@ class MeetingRecorder(QObject):
         cmd = meeting_command(mic_target, system_target)
 
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            self._wav = wave.open(path, "wb")
-            self._wav.setnchannels(2)
-            self._wav.setsampwidth(SAMPLE_WIDTH)
-            self._wav.setframerate(RATE)
+            self._wav = self._open_wav(path)
             # ffmpeg keeps talking to stderr for as long as it runs; a pipe
             # nobody drains would eventually block it, so it writes to a file.
             self._log = tempfile.TemporaryFile()
@@ -409,13 +485,110 @@ class MeetingRecorder(QObject):
             self.failed.emit(t("Could not start recording: {error}", error=exc))
             return
 
-        self._path = path
-        self._frames = 0
-        self._cancelled = False
-        self._stopping = False
-        self._max_frames = int(max_seconds * RATE)
+        self._reset_run(path, max_seconds)
         self._thread = threading.Thread(target=self._pump, daemon=True)
         self._thread.start()
+
+    def _reader(self, src, queue):
+        """Drain one WASAPI endpoint into its queue until told to stop.
+
+        A failing read means the device went away mid-meeting; the queue
+        ends and the pump reports it, the same way a vanished ffmpeg did.
+        """
+        while not self._stopping:
+            try:
+                chunk = src.read()
+            except wasapi.WasapiError:
+                queue.append(None)
+                return
+            if chunk:
+                queue.append(chunk)
+            else:
+                time.sleep(0.01)
+
+    def _mix(self):
+        """Pair the two queues frame by frame into the stereo file.
+
+        Whichever side has no data for over half a second while the other
+        does gets zeros: silence is a real thing a meeting records, and a
+        starved loopback must never stall the microphone's half. A reader
+        that reports its device is gone ends the run outright, the way a
+        vanished ffmpeg always has — at most a few hundred milliseconds of
+        tail go unwritten.
+        """
+        block = CHUNK_FRAMES * SAMPLE_WIDTH  # mono bytes per side
+        pending = [bytearray(), bytearray()]
+        last_data = [time.monotonic(), time.monotonic()]
+        try:
+            while True:
+                for side in (0, 1):
+                    while len(pending[side]) < block:
+                        try:
+                            chunk = self._queues[side].popleft()
+                        except IndexError:
+                            break
+                        if chunk is None:
+                            # device went away; the tail is lost, but the run
+                            # must be reported the way a vanished ffmpeg was
+                            if not self._stopping:
+                                self.died.emit()
+                            return
+                        pending[side] += chunk
+                        last_data[side] = time.monotonic()
+                have = min(len(pending[0]), len(pending[1])) // block
+                now = time.monotonic()
+                if not have:
+                    for side in (0, 1):
+                        starved = (now - last_data[side] > 0.5
+                                   and len(pending[1 - side]) >= block)
+                        if starved:
+                            room = min(len(pending[1 - side]) // block, RATE)
+                            pending[side] += b"\x00" * (room * block)
+                            last_data[side] = now
+                            have = min(len(pending[0]),
+                                       len(pending[1])) // block
+                    if not have:
+                        if self._stopping:
+                            return
+                        time.sleep(0.01)
+                        continue
+                take = min(have, 8)  # ≤ 0.5 s per lap keeps stops snappy
+                left = pending[0][:take * block]
+                right = pending[1][:take * block]
+                del pending[0][:take * block]
+                del pending[1][:take * block]
+                stereo = bytearray()
+                for index in range(0, len(left), SAMPLE_WIDTH):
+                    stereo += left[index:index + SAMPLE_WIDTH]
+                    stereo += right[index:index + SAMPLE_WIDTH]
+                mine, theirs = stereo_levels(bytes(stereo))
+                with self._lock:
+                    if self._wav is None:
+                        return
+                    self._wav.writeframes(bytes(stereo))
+                    self._frames += len(stereo) // (SAMPLE_WIDTH * 2)
+                    too_long = self._frames >= self._max_frames
+                self.levels.emit(mine, theirs)
+                if too_long:
+                    self._stop_wasapi()
+                    return
+        except (OSError, ValueError, wave.Error):
+            pass
+        if not self._stopping:
+            self.died.emit()
+
+    def _stop_wasapi(self):
+        self._stopping = True
+        for src in self._sources:
+            src.close()
+        for reader in self._readers:
+            reader.join(timeout=2)
+        if self._thread is not threading.current_thread():
+            if self._thread:
+                self._thread.join(timeout=3)
+        self._thread = None
+        self._sources = ()
+        self._readers = ()
 
     def _pump(self):
         stdout = self._proc.stdout
@@ -470,7 +643,12 @@ class MeetingRecorder(QObject):
         lines = [line for line in text.splitlines() if line.strip()]
         return lines[-1] if lines else ""
 
-    def _finish_process(self):
+    def _finish_run(self):
+        """Shut whichever backend is running down, and say which."""
+        if self._wasapi_mode:
+            self._stop_wasapi()
+            self._close_file()
+            return 0
         self._terminate()
         if self._thread:
             self._thread.join(timeout=3)
@@ -482,7 +660,7 @@ class MeetingRecorder(QObject):
 
     def cancel(self):
         self._cancelled = True
-        self._finish_process()
+        self._finish_run()
         self._drop_log()
         try:
             os.unlink(self._path)
@@ -490,11 +668,11 @@ class MeetingRecorder(QObject):
             pass
 
     def stop(self):
-        if not self._proc:
+        if not self._proc and not self._wasapi_mode and not self._thread:
             return
         # The count is read after the join: the pump thread is still appending
         # the last blocks up to the moment it ends.
-        code = self._finish_process()
+        code = self._finish_run()
         frames = self._frames
         if self._cancelled:
             self._drop_log()
@@ -950,14 +1128,14 @@ def _dshow_record(target):
 def _dshow_meeting(mic_target, system_target):
     """Two DirectShow inputs merged into stereo.
 
-    On Windows there is no pulse monitor. Meeting capture needs a loopback
-    device (Stereo Mix or VB-CABLE) as the second input. When neither exists,
-    the pipeline will fail with ffmpeg's device-not-found error, which the
-    caller surfaces as a PasteError/meeting message.
+    The fallback road a meeting takes when WASAPI can't serve both sides.
+    Like pulse, it needs a second device that carries what the speakers
+    play — a loopback capture device (Stereo Mix or VB-CABLE) — and MeetingRecorder
+    refuses to start without one rather than hand ffmpeg a name that will fail.
     """
     if not system_target:
-        # Single-device fallback: record mic only; meeting.py will surface
-        # that this path is unavailable via its system-device chooser.
+        # Unreachable through MeetingRecorder (it refuses an empty target
+        # first); kept because sound().meeting() is also a public surface.
         return _dshow_record(mic_target)
     if not mic_target:
         _devices = _dshow_audio_devices()
@@ -996,12 +1174,41 @@ def _dshow_default_output():
     return outputs[0][0] if outputs else ""
 
 
+def _win_wasapi_lists(kind):
+    """[(name, description)] from WASAPI, or () when it can't serve.
+
+    WASAPI enumerates the real endpoints; DirectShow only ever saw capture
+    devices, which is why the far side of a meeting used to depend on a
+    Stereo-Mix-style device existing at all.
+    """
+    try:
+        if not wasapi.available():
+            return ()
+        items = wasapi.render_outputs() if kind == "outputs" else wasapi.capture_inputs()
+    except (wasapi.WasapiError, OSError, ValueError):
+        return ()
+    return [(name, name) for name, _ in items]
+
+
+def _win_inputs():
+    return _win_wasapi_lists("inputs") or _dshow_inputs()
+
+
+def _win_outputs():
+    return _win_wasapi_lists("outputs") or _dshow_outputs()
+
+
+def _win_default_output():
+    name = wasapi.default_render_name() if wasapi.available() else ""
+    return name or _dshow_default_output()
+
+
 WINDOWS = Sound(
     record=_dshow_record,
     meeting=_dshow_meeting,
-    inputs=_dshow_inputs,
-    outputs=_dshow_outputs,
-    default_output=_dshow_default_output,
+    inputs=_win_inputs,
+    outputs=_win_outputs,
+    default_output=_win_default_output,
     missing=(
         "No microphone found. Install ffmpeg and add it to PATH "
         "(winget install Gyan.FFmpeg)."
@@ -1031,7 +1238,7 @@ def cached_list_sources(refresh=False):
         if sys.platform == "darwin":
             return _avfoundation_inputs(refresh=refresh)
         if sys.platform == "win32":
-            return _dshow_inputs(refresh=refresh)
+            return _win_inputs()
         return _pulse_inputs(refresh=refresh)
     with _audio_cache_lock:
         if not refresh and _cached_sources is not None:
@@ -1039,7 +1246,7 @@ def cached_list_sources(refresh=False):
     if sys.platform == "darwin":
         result = _avfoundation_inputs(refresh=refresh)
     elif sys.platform == "win32":
-        result = _dshow_inputs(refresh=refresh)
+        result = _win_inputs()
     else:
         result = _pulse_inputs(refresh=refresh)
     with _audio_cache_lock:
@@ -1054,7 +1261,7 @@ def cached_list_monitors(refresh=False):
         if sys.platform == "darwin":
             return _avfoundation_inputs(refresh=refresh)
         if sys.platform == "win32":
-            return _dshow_outputs(refresh=refresh)
+            return _win_outputs()
         return _pulse_outputs(refresh=refresh)
     with _audio_cache_lock:
         if not refresh and _cached_monitors is not None:
@@ -1062,7 +1269,7 @@ def cached_list_monitors(refresh=False):
     if sys.platform == "darwin":
         result = _avfoundation_inputs(refresh=refresh)
     elif sys.platform == "win32":
-        result = _dshow_outputs(refresh=refresh)
+        result = _win_outputs()
     else:
         result = _pulse_outputs(refresh=refresh)
     with _audio_cache_lock:
