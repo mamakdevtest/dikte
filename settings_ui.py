@@ -1727,12 +1727,14 @@ class SettingsWindow(QDialog):
     def _load_minutes(self):
         self.minutes_list.clear()
         for row in reversed(cfg.read_meetings()):
+            ts = row.get("ts", "")
             title = row.get("title") or t("Meeting")
-            head = f"{row.get('ts', '')}  ·  {meeting.length_label(row.get('duration', 0))}"
+            head = meeting.format_when(ts, short=True)
+            head = f"{head}  ·  {meeting.length_label(row.get('duration', 0))}"
             state = MEETING_STATUS.get(row.get("status", ""), "")
             if state:
                 head += "  ·  " + t(state)
-            item = QListWidgetItem(f"{head}\n{title}")
+            item = QListWidgetItem(f"{title}\n{head}")
             item.setData(Qt.ItemDataRole.UserRole, row)
             self.minutes_list.addItem(item)
         if not self.minutes_list.count():

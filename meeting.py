@@ -31,7 +31,7 @@ import filetranscribe
 import providers
 import vad
 from filetranscribe import Cancelled, format_timestamp
-from i18n import t
+from i18n import language, t
 
 # Where the document stops being prose and starts being the transcript. It is a
 # comment, so it never shows up in a rendered document, and it is what a retry
@@ -51,6 +51,31 @@ TURN_GAP = 8.0
 # the block the dictation level meter uses so the silence thresholds mean the
 # same thing here.
 LEVEL_FRAMES = 1024
+
+# The title step keeps its own budget: a short reply over the first page and
+# a half of the transcript, nothing more.
+TITLE_CHARS = 1500
+TITLE_MAX = 80
+
+TITLE_PROMPT = (
+    "A meeting transcript follows. Reply with one short professional title "
+    "for it, at most eight words, in the same language the transcript is "
+    "written in. No quotes, no markup, no sentence period: the title alone "
+    "and nothing else.\n\n"
+)
+
+# Localised calendar names, because strftime would name the months in whatever
+# C locale the process inherited rather than in the language Dikte speaks.
+_MONTHS = {
+    "tr": (("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz",
+            "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"),
+           ("Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem",
+            "Ağu", "Eyl", "Eki", "Kas", "Ara")),
+    "en": (("January", "February", "March", "April", "May", "June", "July",
+            "August", "September", "October", "November", "December"),
+           ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul",
+            "Aug", "Sep", "Oct", "Nov", "Dec")),
+}
 
 
 class MeetingPipeline(QObject):
@@ -119,6 +144,14 @@ class MeetingPipeline(QObject):
                 cfg.update_meeting(base, status="transcribed", error="")
 
             self._check()
+            if not entry.get("title"):
+                generated = self._title(transcript)
+                if generated:
+                    entry["title"] = generated
+                    # In the index while the minutes are still being written,
+                    # so the list says what the meeting was before it says it
+                    # is done.
+                    cfg.update_meeting(base, title=generated)
             self._say(t("Writing the minutes…"))
             minutes = self._minutes(transcript)
             minutes_model = self._minutes_model()
@@ -210,6 +243,43 @@ class MeetingPipeline(QObject):
             out.append(cleanup.run(block, conf, prompt, timeout=600))
         return "\n".join(out)
 
+    def _title(self, transcript):
+        """A short professional title, or '' when nobody can be asked.
+
+        A failure here must never fail the run — the fallback names the
+        meeting by its date, which is honest even when it is plain.
+        """
+        conf = self.conf
+        head = (transcript or "").strip()[:TITLE_CHARS]
+        if not head:
+            return ""
+        try:
+            out = self._ask_model(head, TITLE_PROMPT)
+        except (api.ApiError, OSError, subprocess.SubprocessError,
+                wave.Error, ValueError):
+            return ""
+        return clean_title(out)
+
+    def _ask_model(self, text, prompt):
+        """One cleanup-shaped request to whoever writes the minutes."""
+        conf = self.conf
+        provider = conf["meeting_provider"]
+        if provider == "local":
+            return cleanup._local(text, conf, prompt, 600)
+        who = providers.provider(conf, provider)
+        if who is not None and who.transport == "http":
+            model = (providers.custom_model(conf, provider, "minutes")
+                     if who.custom else conf["meeting_model"])
+            if not model:
+                return ""
+            return api.cleanup(
+                text, providers.credential(conf, provider), model, prompt,
+                reasoning=conf["meeting_reasoning"],
+                base_url=providers.base_url(conf, provider), timeout=600,
+                provider=provider, service=who.name,
+            )
+        raise api.ApiError(t("Unknown provider."))
+
     def _minutes(self, transcript):
         """Whoever the meeting provider is set to, handed the whole transcript.
 
@@ -257,11 +327,19 @@ class MeetingPipeline(QObject):
         return self.conf["meeting_model"]
 
     def _write(self, doc_path, minutes, transcript, entry):
-        """Write the document, and hand back the title it ended up with."""
-        title, body = split_title(minutes)
-        title = title or entry.get("title") or t("Meeting")
+        """Write the document, and hand back the title it ended up with.
+
+        A generated title wins; the minutes' own first heading is the second
+        choice and still gets stripped from the body, so the document never
+        carries two of them; the calendar names the meeting last.
+        """
+        head, body = split_title(minutes)
+        title = (entry.get("title") or head
+                 or fallback_title(entry.get("ts", "")))
+        participants = (self.conf["meeting_participants"] or "").strip()
         text = build_document(
-            title, entry.get("ts", ""), entry.get("duration", 0.0), body, transcript
+            title, entry.get("ts", ""), entry.get("duration", 0.0), body,
+            transcript, participants=participants,
         )
         doc_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = doc_path.with_suffix(".md.tmp")
@@ -391,13 +469,60 @@ def split_title(minutes):
     return "", text
 
 
-def build_document(title, when, duration, minutes, transcript):
+def build_document(title, when, duration, minutes, transcript, participants=""):
     minutes = (minutes or "").strip()
-    parts = [f"# {title}", "", f"*{when} · {length_label(duration)}*", ""]
+    parts = [f"# {title}", ""]
+    meta = []
+    if when:
+        meta.append(f"{t('Date')}: {format_when(when)}")
+    meta.append(f"{t('Duration')}: {length_label(duration)}")
+    participants = (participants or "").strip()
+    if participants:
+        meta.append(f"{t('Participants')}: {participants}")
+    parts += [f"*{' · '.join(meta)}*", ""]
     if minutes:
         parts += [minutes, "", "---", ""]
     parts += [TRANSCRIPT_MARKER, f"## {t('Transcript')}", "", transcript.strip(), ""]
     return "\n".join(parts)
+
+
+def format_when(ts, short=False):
+    """"2026-08-28 14:30" said the way people write it, in our language.
+
+    An unparseable or empty stamp comes back as it arrived: the raw form is
+    still information, just not dressed up.
+    """
+    try:
+        stamp = time.strptime(ts, "%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return ts or ""
+    long_names, short_names = _MONTHS.get(language(), _MONTHS["en"])
+    month = (short_names if short else long_names)[stamp.tm_mon - 1]
+    return (f"{stamp.tm_mday} {month} {stamp.tm_year} "
+            f"{stamp.tm_hour:02d}:{stamp.tm_min:02d}")
+
+
+def fallback_title(ts):
+    """The name a meeting gets when no model offered a better one."""
+    when = format_when(ts, short=True)
+    if when:
+        return t("Meeting — {when}", when=when)
+    return t("Meeting")
+
+
+def clean_title(text):
+    """Whatever the model answered, reduced to a usable one-line title."""
+    out = (text or "").strip()
+    out = out.strip("'\"“”„«»").strip()
+    out = re.sub(r"^[#*\-\s]+", "", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    if not out:
+        return ""
+    if len(out) > TITLE_MAX:
+        cut = out[:TITLE_MAX]
+        space = cut.rfind(" ")
+        out = (cut[:space] if space > 0 else cut).rstrip()
+    return out.rstrip(".").strip()
 
 
 def read_transcript(document):

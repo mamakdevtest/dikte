@@ -14,6 +14,7 @@ from unittest import mock
 import api
 import cleanup
 import config as cfg
+import i18n
 import meeting
 from tests.support import DikteTest, make_wav, silence, speech, stereo, tone
 from tests.test_cleanup import gateway
@@ -170,8 +171,22 @@ class Document(DikteTest):
         text = meeting.build_document("Kickoff", "2026-08-01 10:00", 3900,
                                       "We agreed.", "[00:00] Me: hello")
         self.assertTrue(text.startswith("# Kickoff"))
-        self.assertIn("2026-08-01 10:00", text)
-        self.assertIn("1 h 5 min", text)
+        self.assertIn("Date: 1 August 2026 10:00", text)
+        self.assertIn("Duration: 1 h 5 min", text)
+
+    def test_participants_join_the_header_when_expected(self):
+        text = meeting.build_document("Kickoff", "2026-08-01 10:00", 3900,
+                                      "We agreed.", "[00:00] Me: hello",
+                                      participants="Yusuf, Ayşe")
+        self.assertIn("Participants: Yusuf, Ayşe", text)
+        plain = meeting.build_document("Kickoff", "2026-08-01 10:00", 3900,
+                                       "", "[00:00] Me: hello")
+        self.assertNotIn("Participants", plain)
+
+    def test_the_header_hides_itself_behind_a_dateless_entry(self):
+        text = meeting.build_document("Kickoff", "", 60, "", "[00:00] Me: hi")
+        self.assertIn("Duration: 1 min", text)
+        self.assertNotIn("Date", text)
 
     def test_the_transcript_can_be_read_back_out(self):
         transcript = "[00:00] Me: hello\n[00:05] Other side: hi"
@@ -201,6 +216,55 @@ class Document(DikteTest):
         self.write_config({"ui_language": "tr"})
         cfg.Config()
         self.assertIn("dk", meeting.length_label(600))
+
+
+class When(unittest.TestCase):
+    """The date a meeting carries, said the way people write it."""
+
+    def test_english_uses_the_english_calendar(self):
+        self.assertEqual(meeting.format_when("2026-08-01 14:30"),
+                         "1 August 2026 14:30")
+        self.assertEqual(meeting.format_when("2026-08-01 14:30", short=True),
+                         "1 Aug 2026 14:30")
+
+    def test_turkish_uses_the_turkish_calendar(self):
+        i18n.set_language("tr")
+        self.addCleanup(i18n.set_language, "en")
+        self.assertEqual(meeting.format_when("2026-08-01 14:30"),
+                         "1 Ağustos 2026 14:30")
+        self.assertEqual(meeting.format_when("2026-08-01 14:30", short=True),
+                         "1 Ağu 2026 14:30")
+
+    def test_an_unparseable_stamp_comes_back_as_it_arrived(self):
+        self.assertEqual(meeting.format_when(""), "")
+        self.assertEqual(meeting.format_when("yesterday"), "yesterday")
+        self.assertEqual(meeting.format_when(None), "")
+
+    def test_the_fallback_title_names_the_day(self):
+        self.assertEqual(meeting.fallback_title("2026-08-01 14:30"),
+                         "Meeting — 1 Aug 2026 14:30")
+        self.assertEqual(meeting.fallback_title(""), "Meeting")
+
+
+class CleanTitle(unittest.TestCase):
+    def test_quotes_markup_and_whitespace_go(self):
+        self.assertEqual(meeting.clean_title(' "# Kickoff"\n\n '), "Kickoff")
+        self.assertEqual(meeting.clean_title("- Weekly sync."), "Weekly sync")
+        self.assertEqual(meeting.clean_title("„Toplantı“"), "Toplantı")
+
+    def test_newlines_become_one_line(self):
+        self.assertEqual(meeting.clean_title("Kickoff\nplanning\nsession"),
+                         "Kickoff planning session")
+
+    def test_overlong_titles_are_cut_on_a_word(self):
+        title = meeting.clean_title(" ".join(["word"] * 30))
+        self.assertLessEqual(len(title), meeting.TITLE_MAX)
+        self.assertTrue(title.split()[-1] == "word")
+
+    def test_nothing_left_means_nothing(self):
+        self.assertEqual(meeting.clean_title('"""'), "")
+        self.assertEqual(meeting.clean_title(""), "")
+        self.assertEqual(meeting.clean_title(None), "")
 
 
 class Entry(unittest.TestCase):
@@ -236,7 +300,7 @@ class Pipeline(DikteTest):
         cfg.save_meeting(meeting.new_entry(self.base, 1.0))
 
     def run_pipeline(self, entry=None, segments=None, minutes="# Kickoff\n\nAgreed.",
-                     cleanup_fails=False):
+                     title="Kickoff", cleanup_fails=False):
         worker = meeting.MeetingPipeline(self.conf)
         done, failures = [], []
         worker.finished.connect(lambda *args: done.append(args))
@@ -245,6 +309,9 @@ class Pipeline(DikteTest):
         def cleanup(text, *args, **kwargs):
             if cleanup_fails:
                 raise api.ApiError("the gateway is rate limiting you")
+            prompt = args[2] if len(args) > 2 else kwargs.get("prompt", "")
+            if "professional title" in prompt:
+                return title
             return minutes
 
         with mock.patch.object(api, "transcribe_segments",
@@ -304,10 +371,16 @@ class Pipeline(DikteTest):
         self.conf["meeting_provider"] = "local"
         self.conf["local_llm_model"] = "gemma-3-4b-it-Q4_K_M.gguf"
         self.conf["meeting_cleanup"] = False
+
+        def local(text, conf, prompt, timeout):
+            if "professional title" in prompt:
+                return "Kickoff"
+            return "# Kickoff\n\nAgreed."
+
         with mock.patch.object(api, "transcribe_segments",
                                return_value=[(0.0, 1.0, "hello")]), \
                 mock.patch.object(cleanup, "_local",
-                                  return_value="# Kickoff\n\nAgreed.") as call:
+                                  side_effect=local) as call:
             meeting.MeetingPipeline(self.conf)._work(cfg.read_meetings()[0])
         text, conf, prompt, timeout = call.call_args.args
         self.assertEqual(prompt, self.conf.meeting_prompt())
@@ -380,8 +453,29 @@ class Pipeline(DikteTest):
                           "[00:02] Ayşe: next week is better"])
 
     def test_minutes_with_no_heading_fall_back_to_a_title(self):
-        self.run_pipeline(minutes="We agreed to ship.")
-        self.assertEqual(cfg.read_meetings()[0]["title"], "Meeting")
+        self.run_pipeline(minutes="We agreed to ship.", title="")
+        row = cfg.read_meetings()[0]
+        self.assertEqual(row["title"], "Meeting — 1 Aug 2026 10:00")
+
+    def test_a_title_failure_still_writes_the_minutes_up(self):
+        """A shy title model never costs the meeting its minutes."""
+        def cleanup(text, *args, **kwargs):
+            prompt = args[2] if len(args) > 2 else kwargs.get("prompt", "")
+            if "professional title" in prompt:
+                raise api.ApiError("no title today")
+            return "# Kickoff\n\nAgreed."
+
+        with mock.patch.object(api, "transcribe_segments",
+                               return_value=[(0.0, 1.0, "hello")]), \
+                mock.patch.object(api, "cleanup", side_effect=cleanup):
+            worker = meeting.MeetingPipeline(self.conf)
+            done, failures = [], []
+            worker.finished.connect(lambda *a: done.append(a))
+            worker.failed.connect(lambda *a: failures.append(a))
+            worker._work(cfg.read_meetings()[0])
+        self.assertEqual(failures, [])
+        self.assertEqual(len(done), 1)
+        self.assertEqual(cfg.read_meetings()[0]["title"], "Kickoff")
 
     def test_a_second_run_while_one_is_going_is_refused(self):
         worker = meeting.MeetingPipeline(self.conf)
