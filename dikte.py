@@ -67,10 +67,16 @@ M_IDLE, M_RECORDING, M_WORKING = "idle", "recording", "working"
 # Anything arriving inside this window is that echo, not a second press.
 ECHO_MS = 2000
 
-# How long the indicator stays up at the start of a meeting. Long enough to see
-# both halves of the waveform move, which is the one check that matters, and
-# short enough not to sit in the corner for the rest of the hour.
-PEEK_MS = 12000
+
+def meeting_remote_silent(recording_seconds, since_sound_seconds):
+    """Has the other side's channel gone suspiciously quiet?
+
+    The recording card promises both channels are arriving; this is the test
+    it applies. A meeting that just started says nothing yet, and silence for
+    a few seconds happens whenever only one person talks — only a long quiet
+    stretch well into a recording is worth interrupting the user for.
+    """
+    return recording_seconds > 15.0 and since_sound_seconds > 10.0
 
 
 def app_icon():
@@ -101,6 +107,9 @@ class Dikte:
         self.meeting_state = M_IDLE
         self.meeting_base = ""
         self.meeting_message = ""
+        # When the other side's channel last carried sound, in recording
+        # seconds; zero means the recording counts from its first moment.
+        self._meeting_last_sound = 0.0
         self.settings_window = None
         self._quitting = False
         # A request that asked to be told how its run ended waits in here until
@@ -838,10 +847,10 @@ class Dikte:
         if not self.meeting_recorder.active:
             return  # start() has already said what went wrong
         self.meeting_base = base
+        self._meeting_last_sound = 0.0
         self.meeting_elapsed.restart()
         self.meeting_ticker.start()
         self.overlay.show_meeting()
-        QTimer.singleShot(PEEK_MS, self._conceal_meeting_overlay)
         self._set_meeting_state(M_RECORDING)
 
     def stop_meeting(self):
@@ -862,17 +871,18 @@ class Dikte:
         self._set_meeting_state(M_IDLE)
         self._settle(MEETING, {"ok": False, "cancelled": True, "error": "cancelled"})
 
-    def _conceal_meeting_overlay(self):
-        if self.overlay.state == "meeting":
-            self.overlay.dismiss()
-
     def _on_meeting_levels(self, mine, theirs):
         self.overlay.push_levels(mine, theirs)
+        if theirs >= 0.04:
+            self._meeting_last_sound = self.meeting_elapsed.elapsed() / 1000.0
 
     def _meeting_tick(self):
         seconds = self.meeting_elapsed.elapsed() / 1000.0
         if self.overlay.state == "meeting":
             self.overlay.set_seconds(seconds)
+            self.overlay.set_meeting_warning(
+                meeting_remote_silent(seconds, seconds - self._meeting_last_sound)
+            )
         if self.state == IDLE:
             self.tray.setToolTip(
                 t("Dikte: in a meeting ({time})", time=_clock(seconds))

@@ -41,6 +41,12 @@ _THINKING_GAP = 10.0
 _LIVE_COLLAPSED_H = 28.0
 _LIVE_EXPANDED_H = 72.0
 _LIVE_GAP = 8.0
+# The meeting card carries a footer under the pill: what is happening, and
+# whether both channels are actually hearing something. Collapsed, it shrinks
+# to a dot and the clock.
+_MEETING_FOOTER_H = 34.0
+_MEETING_GAP = 6.0
+_MEETING_COLLAPSED_W = 176.0
 _FRAME_MS = 25
 _QUIET_FRAME_MS = 120
 _BUSY_FRAME_MS = 90
@@ -355,6 +361,10 @@ class Overlay(QWidget):
         self._expand_rect = QRectF()
         self._hover_expand = False
         self._expand_pressed = False
+        # meeting card: a status/legend footer, collapsible by click
+        self._meeting_warning = False
+        self._meeting_collapsed = False
+        self._meeting_font_cache = None
 
         flags = (
             Qt.WindowType.FramelessWindowHint
@@ -447,11 +457,60 @@ class Overlay(QWidget):
         self._reset_timer_cache()
         if self._live_text:
             self._live_text = ""
-            self._layout_cache = None
         self.levels = [0.0] * BARS
         self.levels2 = [0.0] * BARS
+        self._meeting_warning = False
+        self._meeting_collapsed = False
+        self._layout_cache = None
         self._hide_timer.stop()
         self._appear()
+
+    def set_meeting_warning(self, warning: bool):
+        """Flag that the other side's channel has gone quiet for a while."""
+        warning = bool(warning)
+        if self.state != "meeting":
+            return
+        if warning == self._meeting_warning:
+            return
+        self._meeting_warning = warning
+        self._layout_cache = None
+        self._resize_to_content()
+        self._reposition()
+        self.update()
+
+    @property
+    def meeting_warning(self):
+        return self._meeting_warning
+
+    def set_meeting_collapsed(self, collapsed: bool):
+        collapsed = bool(collapsed)
+        if collapsed == self._meeting_collapsed:
+            return
+        self._meeting_collapsed = collapsed
+        if self.state == "meeting":
+            self._layout_cache = None
+            self._resize_to_content()
+            self._reposition()
+            self.update()
+
+    def toggle_meeting_collapsed(self):
+        self.set_meeting_collapsed(not self._meeting_collapsed)
+
+    @property
+    def meeting_collapsed(self):
+        return self._meeting_collapsed
+
+    def _meeting_footer_height(self):
+        if self.state == "meeting" and not self._meeting_collapsed:
+            return _MEETING_FOOTER_H + _MEETING_GAP
+        return 0.0
+
+    def _meeting_font(self):
+        if self._meeting_font_cache is None:
+            font = QFont(self._label_font())
+            font.setPointSizeF(8.0)
+            self._meeting_font_cache = font
+        return self._meeting_font_cache
 
     def show_busy(self, message):
         if self.muted:
@@ -677,6 +736,12 @@ class Overlay(QWidget):
         self._conceal()
 
     def mousePressEvent(self, event):
+        # A meeting card expands or collapses where it stands; it has no
+        # pause API and nothing else to offer a click.
+        if self.interactive_live and self.state == "meeting":
+            self.toggle_meeting_collapsed()
+            event.accept()
+            return
         # live expand toggle — inside live panel, right-aligned
         if self.interactive_live and self._should_show_live():
             try:
@@ -867,7 +932,8 @@ class Overlay(QWidget):
         live_h = self._live_height() if live else 0.0
         live_gap = _LIVE_GAP if live else 0.0
         expand = self._live_expanded if live else False
-        key = (self.width(), self.height(), show_action, self.state == "meeting", thinking, live, expand)
+        key = (self.width(), self.height(), show_action, self.state == "meeting",
+               self._meeting_warning, self._meeting_collapsed, thinking, live, expand)
         if self._layout_cache is not None and self._layout_cache_key == key:
             return self._layout_cache
 
@@ -903,6 +969,10 @@ class Overlay(QWidget):
             live_rect = QRectF(0.0, live_top, float(self.width()), live_h)
         else:
             live_rect = QRectF()
+        footer_h = self._meeting_footer_height()
+        footer = (QRectF(0.0, offset + HEIGHT + _MEETING_GAP,
+                         float(self.width()), _MEETING_FOOTER_H)
+                  if footer_h else QRectF())
         layout = {
             "indicator": QRectF(18.0, offset, 24.0, main_h),
             "waveform": QRectF(wave_left, offset, available, main_h),
@@ -913,6 +983,7 @@ class Overlay(QWidget):
             "bars": bars,
             "thinking": QRectF(0.0, 0.0, float(self.width()), _THINKING_HEIGHT) if thinking else QRectF(),
             "live": live_rect,
+            "footer": footer,
             "main_top": offset,
         }
         self._layout_cache_key = key
@@ -984,6 +1055,8 @@ class Overlay(QWidget):
         self._wave2.set_paused(False)
         self._reveal_progress = 1.0
         self._reveal_t0 = 0.0
+        self._meeting_warning = False
+        self._meeting_collapsed = False
         if self._thinking_text:
             self._thinking_text = ""
             self._layout_cache = None
@@ -1003,6 +1076,8 @@ class Overlay(QWidget):
     def _resize_to_content(self):
         if self.state in LIVE or self.state == PAUSED_STATE:
             width = _LIVE_WIDTH
+            if self.state == "meeting" and self._meeting_collapsed:
+                width = _MEETING_COLLAPSED_W
         else:
             metrics = QFontMetrics(self._label_font())
             extra = 76 + (18 if self._can_dismiss else 0)
@@ -1013,6 +1088,8 @@ class Overlay(QWidget):
             height = int(height + _THINKING_GAP + _THINKING_HEIGHT)
         if self._should_show_live():
             height = int(height + _LIVE_GAP + self._live_height())
+        if self.state == "meeting":
+            height = int(height + self._meeting_footer_height())
         self.resize(int(width), int(height))
 
     def _reposition(self):
@@ -1187,8 +1264,13 @@ class Overlay(QWidget):
         self._draw_indicator(painter, accent)
 
         if self.state in LIVE or self.state == PAUSED_STATE:
-            self._draw_waveform(painter, accent)
-            self._draw_time(painter)
+            if self.state == "meeting" and self._meeting_collapsed:
+                self._draw_time(painter)
+            else:
+                self._draw_waveform(painter, accent)
+                self._draw_time(painter)
+                if self.state == "meeting":
+                    self._draw_meeting_footer(painter, cols)
             if self._should_show_pause_button():
                 self._draw_pause_button(painter)
                 self._draw_stop_button(painter)
@@ -1196,6 +1278,60 @@ class Overlay(QWidget):
             self._draw_message(painter)
             if self._can_dismiss:
                 self._draw_dismiss(painter)
+
+    def _draw_meeting_footer(self, painter, cols):
+        """Status line over a legend of the two channels — or the warning.
+
+        The whole point is that a recording the user cannot hear is still a
+        recording they must be able to trust: both meters moving means both
+        sides are arriving, and a long quiet right channel says out loud
+        that something is wrong rather than failing silently.
+        """
+        layout = self._layout()
+        rect = layout["footer"]
+        if not rect.isValid():
+            return
+        painter.setPen(QPen(cols["BORDER"], 1))
+        painter.setBrush(cols["BG"])
+        painter.drawRoundedRect(QRectF(rect.left() + 0.5, rect.top() + 0.5,
+                                       rect.width() - 1, rect.height() - 1),
+                                10, 10)
+        painter.setFont(self._meeting_font())
+        line_h = rect.height() / 2.0
+        status_rect = QRectF(rect.left() + 14, rect.top(),
+                             rect.width() - 28, line_h)
+        status = t("Recording the meeting")
+        painter.setPen(QColor(cols["TEXT"]))
+        painter.drawText(status_rect,
+                         int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                         status)
+        warn_rect = QRectF(rect.left() + 14, rect.top() + line_h,
+                           rect.width() - 28, line_h)
+        if self._meeting_warning:
+            painter.setPen(QColor(cols["WARN"]))
+            metrics = QFontMetrics(self._meeting_font())
+            text = metrics.elidedText(
+                t("The other side's audio is not coming through. "
+                  "Check Settings → Meeting."),
+                Qt.TextElideMode.ElideRight, int(warn_rect.width()))
+            painter.drawText(warn_rect,
+                             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                             text)
+            return
+        # Legend: a dot per channel, in the exact colours the waveforms use.
+        painter.setPen(Qt.PenStyle.NoPen)
+        dot_y = warn_rect.center().y()
+        painter.setBrush(QColor(cols["REC"]))
+        painter.drawEllipse(QPointF(warn_rect.left() + 3, dot_y), 3.0, 3.0)
+        painter.setBrush(QColor(cols["THEM"]))
+        painter.drawEllipse(QPointF(warn_rect.left() + 96, dot_y), 3.0, 3.0)
+        painter.setPen(QColor(cols["MUTED"]))
+        painter.drawText(QRectF(warn_rect.left() + 12, warn_rect.top(), 80, line_h),
+                         int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                         t("You"))
+        painter.drawText(QRectF(warn_rect.left() + 105, warn_rect.top(), 160, line_h),
+                         int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                         t("The other end"))
 
     def _draw_indicator(self, painter, accent):
         layout = self._layout()
