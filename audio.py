@@ -543,7 +543,8 @@ class MeetingRecorder(QObject):
         preview during a meeting."""
         with self._lock:
             chunk = bytes(self._mic_tap[self._tap_drained:])
-            self._tap_drained = len(self._mic_tap)
+            self._mic_tap = bytearray()
+            self._tap_drained = 0
         return chunk
 
     def pending_theirs(self):
@@ -551,7 +552,8 @@ class MeetingRecorder(QObject):
         preview can say who is speaking."""
         with self._lock:
             chunk = bytes(self._theirs_tap[self._theirs_drained:])
-            self._theirs_drained = len(self._theirs_tap)
+            self._theirs_tap = bytearray()
+            self._theirs_drained = 0
         return chunk
 
     def _start_wasapi(self, path, mic_target, system_target, max_seconds):

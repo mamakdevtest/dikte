@@ -688,6 +688,8 @@ class Dikte:
         """Grow the labeled transcript with whatever a side just said."""
         text = (text or "").strip()
         prev = self._live_mine_len if side == "mine" else self._live_theirs_len
+        if prev > len(text):
+            prev = 0  # the stream restarted; hear it from the top
         if side == "mine":
             self._live_mine_len = len(text)
         else:
