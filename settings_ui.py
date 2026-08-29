@@ -452,6 +452,7 @@ class SettingsWindow(QDialog):
     _model_test_done = pyqtSignal(bool, str)
     _audio_sources_loaded = pyqtSignal(list)
     _audio_monitors_loaded = pyqtSignal(list)
+    _audio_defaults_loaded = pyqtSignal(str, str)
 
     def __init__(self, conf, meetings=None, parent=None):
         super().__init__(parent)
@@ -526,6 +527,7 @@ class SettingsWindow(QDialog):
         self._model_test_done.connect(self._on_model_test_done)
         self._audio_sources_loaded.connect(self._on_audio_sources_loaded)
         self._audio_monitors_loaded.connect(self._on_audio_monitors_loaded)
+        self._audio_defaults_loaded.connect(self._on_audio_defaults_loaded)
         self.transcriber.progress.connect(self._on_file_progress)
         self.transcriber.finished.connect(self._on_file_finished)
         self.transcriber.failed.connect(self._on_file_failed)
@@ -2269,6 +2271,10 @@ class SettingsWindow(QDialog):
         self._meeting_provider_changed()  # selecting index 0 fires no signal
         self._select_data(self.meeting_reasoning, conf["meeting_reasoning"])
         self._select_data(self.meeting_language, conf["meeting_language"])
+        self._select_data(self.meeting_mine_language,
+                          conf["meeting_mine_language"])
+        self._select_data(self.meeting_theirs_language,
+                          conf["meeting_theirs_language"])
         self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
         self.meeting_max_minutes.setValue(max(5, int(conf["meeting_max_seconds"]) // 60))
         self.meeting_keep_audio.setChecked(conf["meeting_keep_audio"])
@@ -2315,13 +2321,44 @@ class SettingsWindow(QDialog):
                 sources = audio.cached_list_sources()
             except Exception:
                 sources = []
-            self._audio_sources_loaded.emit(sources)
             try:
                 monitors = audio.cached_list_monitors()
             except Exception:
                 monitors = []
-            self._audio_monitors_loaded.emit(monitors)
+            try:
+                mic_default = audio.default_input()
+            except Exception:
+                mic_default = ""
+            try:
+                out_default = audio.default_monitor()
+            except Exception:
+                out_default = ""
+            try:
+                self._audio_sources_loaded.emit(sources)
+                self._audio_monitors_loaded.emit(monitors)
+                self._audio_defaults_loaded.emit(mic_default, out_default)
+            except RuntimeError:
+                # The window went away while the enumeration was running;
+                # there is nobody left to hand the answer to.
+                pass
         threading.Thread(target=work, daemon=True).start()
+
+    def _on_audio_defaults_loaded(self, mic_default, out_default):
+        """Name the automatic choices: which device they resolve to."""
+        try:
+            if hasattr(self, "mic") and mic_default:
+                self.mic.setItemText(
+                    0, f"{t('Default microphone')} — {mic_default}")
+            if hasattr(self, "meeting_mic"):
+                resolved = self.conf["mic_target"] or mic_default
+                label = t("Same as dictation") + (
+                    f" — {resolved}" if resolved else "")
+                self.meeting_mic.setItemText(0, label)
+            if hasattr(self, "meeting_system") and out_default:
+                self.meeting_system.setItemText(
+                    0, f"{t('Current output')} — {out_default}")
+        except Exception:
+            pass
 
     def _on_audio_sources_loaded(self, sources):
         # Fill mic combos: General mic + Meeting mic (if present)
@@ -2480,6 +2517,10 @@ class SettingsWindow(QDialog):
                                      or cfg.DEFAULTS["meeting_model"])
         conf["meeting_reasoning"] = self.meeting_reasoning.currentData() or ""
         conf["meeting_language"] = self.meeting_language.currentData() or ""
+        conf["meeting_mine_language"] = (
+            self.meeting_mine_language.currentData() or "")
+        conf["meeting_theirs_language"] = (
+            self.meeting_theirs_language.currentData() or "")
         conf["meeting_cleanup"] = self.meeting_cleanup.isChecked()
         conf["meeting_max_seconds"] = self.meeting_max_minutes.value() * 60
         conf["meeting_keep_audio"] = self.meeting_keep_audio.isChecked()

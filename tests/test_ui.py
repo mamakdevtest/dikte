@@ -43,6 +43,19 @@ def settle(predicate, timeout=5.0):
     return predicate()
 
 
+def release(widget):
+    """Tear a widget down now rather than when the loop next turns.
+
+    deleteLater only runs on an event loop these tests do not spin, and an
+    unturned loop leaks every window: on Windows the leaked widgets eat the
+    process's bounded GDI objects and the run hangs a few windows in.
+    """
+    from PyQt6.QtCore import QEvent
+    widget.close()
+    widget.deleteLater()
+    QApplication.sendPostedEvents(widget, QEvent.Type.DeferredDelete)
+
+
 # A valid non-default value for every setting the window shows. Anything the
 # window does not touch is left out: the round trip cannot lose what it never
 # reads.
@@ -146,8 +159,7 @@ class Settings(DikteTest):
 
     def window(self, conf):
         window = settings_ui.SettingsWindow(conf)
-        self.addCleanup(window.deleteLater)
-        self.addCleanup(window.close)
+        self.addCleanup(release, window)
         return window
 
     def test_the_window_opens_with_every_tab_on_it(self):
@@ -761,8 +773,11 @@ class MacSettings(Settings):
 
     def test_there_is_no_install_button_where_nothing_is_installed(self):
         window = self.window(cfg.Config())
+        # The sidebar's nav buttons carry page titles — "Shortcuts" among
+        # them — and are not the install buttons this test is after.
         labels = [button.text() for button in
-                  window.findChildren(settings_ui.QPushButton)]
+                  window.findChildren(settings_ui.QPushButton)
+                  if button.objectName() != "navItem"]
         self.assertFalse([text for text in labels if "shortcut" in text.lower()])
 
     def test_the_listener_is_not_offered_as_a_choice(self):
@@ -784,7 +799,7 @@ class OverlaySettingsPreview(DikteTest):
 
         card = overlay_page._state_card("Recording", "Listening for speech",
                                         settings_ui.QWidget())
-        self.addCleanup(card.deleteLater)
+        self.addCleanup(release, card)
         caption = card.layout().itemAt(1).widget()
         self.assertEqual(caption.layout().count(), 2)
 
@@ -792,8 +807,7 @@ class OverlaySettingsPreview(DikteTest):
 class Overlay(DikteTest):
     def overlay(self, **kwargs):
         widget = overlay_module.Overlay(**kwargs)
-        self.addCleanup(widget.deleteLater)
-        self.addCleanup(widget.close)
+        self.addCleanup(release, widget)
         return widget
 
     @staticmethod
@@ -1000,8 +1014,7 @@ class LocalModels(DikteTest):
 
     def window(self, conf):
         window = settings_ui.SettingsWindow(conf)
-        self.addCleanup(window.deleteLater)
-        self.addCleanup(window.close)
+        self.addCleanup(release, window)
         return window
 
     def test_the_cli_versions_are_asked_off_the_thread_once(self):

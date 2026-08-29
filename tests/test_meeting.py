@@ -518,5 +518,186 @@ class Pipeline(DikteTest):
         self.assertFalse(worker.run({"base": self.base}))
 
 
+class AutoLanguage(DikteTest):
+    """Nothing pinned by hand: the recording says which language it is in.
+
+    The probe hears the first stretch that carries speech, and the language
+    it names rides along to every chunk after it — or the run stops there,
+    because an hour sent through the wrong language is worse than none.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.conf = self.config(
+            providers=[gateway(models={"text": "some/cleanup",
+                                        "minutes": "some/minutes"})],
+            cleanup_provider="user/abc123", meeting_provider="user/abc123",
+            meeting_keep_audio=False, meeting_cleanup=False,
+            language="auto", meeting_language="")
+        self.base = "20260801-110000"
+        self.doc, self.wav = cfg.meeting_paths(self.base)
+        self.wav.parent.mkdir(parents=True, exist_ok=True)
+        make_wav(self.wav, stereo(speech(2.0), speech(2.0, freq=220.0)),
+                 channels=2)
+        cfg.save_meeting(meeting.new_entry(self.base, 1.0))
+
+    def test_the_detected_language_is_pinned_for_every_chunk(self):
+        languages = []
+
+        def fake_segments(target, path, language="", prompt="", **kwargs):
+            languages.append(language)
+            return [(0.0, 1.0, "merhaba")]
+
+        with mock.patch.object(meeting.MeetingPipeline, "_silent",
+                               return_value=False), \
+                mock.patch.object(api, "transcribe_auto",
+                                  return_value=([], "tr")) as probe, \
+                mock.patch.object(api, "transcribe_segments",
+                                  side_effect=fake_segments), \
+                mock.patch.object(api, "cleanup",
+                                  return_value="# Kickoff\n\nAgreed."):
+            worker = meeting.MeetingPipeline(self.conf)
+            failures = []
+            worker.failed.connect(lambda *a: failures.append(a))
+            worker._work(cfg.read_meetings()[0])
+        self.assertEqual(failures, [])
+        # Each side is heard out on its own, because the two sides of a
+        # meeting may not share a language.
+        self.assertEqual(probe.call_count, 2)
+        self.assertTrue(languages)
+        self.assertEqual(set(languages), {"tr"})
+
+    def test_an_undetectable_language_stops_the_run(self):
+        with mock.patch.object(meeting.MeetingPipeline, "_silent",
+                               return_value=False), \
+                mock.patch.object(api, "transcribe_auto",
+                                  return_value=([], "")) as probe, \
+                mock.patch.object(api, "transcribe_segments") as segments, \
+                mock.patch.object(api, "cleanup", return_value="# Kickoff"):
+            worker = meeting.MeetingPipeline(self.conf)
+            failures = []
+            worker.failed.connect(lambda *a: failures.append(a))
+            worker._work(cfg.read_meetings()[0])
+        # Both sides heard out before giving up: the failure rests on
+        # listened audio, and the transcript never ran without a language.
+        self.assertEqual(probe.call_count, 2)
+        segments.assert_not_called()
+        self.assertEqual(failures[0][0], self.base)
+        self.assertIn("could not be detected", failures[0][1])
+        entry = cfg.read_meetings()[0]
+        self.assertEqual(entry["status"], "failed")
+        self.assertIn("could not be detected", entry["error"])
+
+    def test_a_language_pinned_by_hand_never_probes(self):
+        self.conf["language"] = "tr"
+        with mock.patch.object(api, "transcribe_auto") as probe, \
+                mock.patch.object(api, "transcribe_segments",
+                                  return_value=[(0.0, 1.0, "hello")]), \
+                mock.patch.object(api, "cleanup",
+                                  return_value="# Kickoff\n\nAgreed."):
+            worker = meeting.MeetingPipeline(self.conf)
+            failures = []
+            worker.failed.connect(lambda *a: failures.append(a))
+            worker._work(cfg.read_meetings()[0])
+        probe.assert_not_called()
+        self.assertEqual(failures, [])
+        self.assertTrue(self.doc.exists())
+
+    def test_each_side_keeps_the_language_it_was_pinned_to(self):
+        self.conf["meeting_mine_language"] = "tr"
+        self.conf["meeting_theirs_language"] = "en"
+        by_side = {}
+
+        def fake_segments(target, path, language="", prompt="", **kwargs):
+            by_side.setdefault("mine" if "mine" in path else "theirs",
+                               set()).add(language)
+            return [(0.0, 1.0, "merhaba")]
+
+        with mock.patch.object(meeting.MeetingPipeline, "_silent",
+                               return_value=False), \
+                mock.patch.object(api, "transcribe_auto") as probe, \
+                mock.patch.object(api, "transcribe_segments",
+                                  side_effect=fake_segments), \
+                mock.patch.object(api, "cleanup",
+                                  return_value="# Kickoff\n\nAgreed."):
+            worker = meeting.MeetingPipeline(self.conf)
+            failures = []
+            worker.failed.connect(lambda *a: failures.append(a))
+            worker._work(cfg.read_meetings()[0])
+        self.assertEqual(failures, [])
+        probe.assert_not_called()
+        self.assertEqual(by_side, {"mine": {"tr"}, "theirs": {"en"}})
+
+    def test_a_pinned_side_is_never_probed_but_the_other_is(self):
+        self.conf["meeting_mine_language"] = "tr"
+        by_side = {}
+
+        def fake_segments(target, path, language="", prompt="", **kwargs):
+            by_side.setdefault("mine" if "mine" in path else "theirs",
+                               set()).add(language)
+            return [(0.0, 1.0, "merhaba")]
+
+        with mock.patch.object(meeting.MeetingPipeline, "_silent",
+                               return_value=False), \
+                mock.patch.object(api, "transcribe_auto",
+                                  return_value=([], "en")) as probe, \
+                mock.patch.object(api, "transcribe_segments",
+                                  side_effect=fake_segments), \
+                mock.patch.object(api, "cleanup",
+                                  return_value="# Kickoff\n\nAgreed."):
+            worker = meeting.MeetingPipeline(self.conf)
+            failures = []
+            worker.failed.connect(lambda *a: failures.append(a))
+            worker._work(cfg.read_meetings()[0])
+        self.assertEqual(failures, [])
+        probe.assert_called_once()
+        self.assertEqual(by_side, {"mine": {"tr"}, "theirs": {"en"}})
+
+
+class ResolveLanguages(DikteTest):
+    """The language each side ends up transcribed in, without the pipeline."""
+
+    def setUp(self):
+        super().setUp()
+        self.conf = self.config(language="auto", meeting_language="",
+                                meeting_mine_language="",
+                                meeting_theirs_language="")
+        self.worker = meeting.MeetingPipeline(self.conf)
+        self.sides = [("mine.wav", "mine", []), ("theirs.wav", "theirs", [])]
+
+    def test_a_silent_side_borrows_the_other_sides_language(self):
+        def probe(target, chunks, workdir, hint, offset=0):
+            return "en" if offset else ""
+
+        with mock.patch.object(self.worker, "_probe_language",
+                               side_effect=probe):
+            resolved = self.worker._resolve_languages(
+                None, self.sides, self.root, "")
+        self.assertEqual(resolved, {"mine": "en", "theirs": "en"})
+
+    def test_no_answer_anywhere_stops_the_run(self):
+        with mock.patch.object(self.worker, "_probe_language",
+                               return_value=""):
+            with self.assertRaises(api.ApiError):
+                self.worker._resolve_languages(None, self.sides, self.root, "")
+
+    def test_a_shared_meeting_language_covers_both_sides(self):
+        self.conf["meeting_language"] = "de"
+        with mock.patch.object(self.worker, "_probe_language") as probe:
+            resolved = self.worker._resolve_languages(
+                None, self.sides, self.root, "")
+        self.assertEqual(resolved, {"mine": "de", "theirs": "de"})
+        probe.assert_not_called()
+
+    def test_a_side_overrides_the_shared_language(self):
+        self.conf["meeting_language"] = "de"
+        self.conf["meeting_theirs_language"] = "ar"
+        with mock.patch.object(self.worker, "_probe_language") as probe:
+            resolved = self.worker._resolve_languages(
+                None, self.sides, self.root, "")
+        self.assertEqual(resolved, {"mine": "de", "theirs": "ar"})
+        probe.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

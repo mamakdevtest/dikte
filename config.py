@@ -512,6 +512,10 @@ DEFAULTS = {
     "meeting_mic_target": "",       # empty -> whatever dictation records with
     "meeting_system_target": "",    # empty -> the default sink's monitor
     "meeting_language": "",         # empty -> the dictation speech language
+    # Either side of a meeting may speak another language; an empty value
+    # inherits the meeting language above, "auto" has that side heard out.
+    "meeting_mine_language": "",
+    "meeting_theirs_language": "",
     "meeting_max_seconds": 14400,   # 4 hours
     "meeting_cleanup": True,
     # The minutes follow the cleanup default: the local model when nothing is
@@ -890,6 +894,16 @@ class Config:
         """The transcription hint: the dictation glossary plus the names."""
         return "\n".join(x for x in (self["transcribe_prompt"].strip(),
                                      self.participants()) if x)
+
+    def meeting_language_for(self, speaker):
+        """The language one side of the meeting is heard in.
+
+        The side's own choice wins, then the meeting's, then dictation's.
+        '' or 'auto' both mean the recording still has to say which it is.
+        """
+        side = (self["meeting_mine_language"] if speaker == "mine"
+                else self["meeting_theirs_language"])
+        return side or self["meeting_language"] or self["language"]
 
     def speaker_names(self):
         """(mine, theirs), falling back to the interface language's defaults."""

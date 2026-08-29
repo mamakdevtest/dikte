@@ -80,6 +80,22 @@ def meeting_remote_silent(recording_seconds, since_sound_seconds):
     return recording_seconds > 15.0 and since_sound_seconds > 10.0
 
 
+def meeting_mic_silent(recording_seconds, mic_bytes):
+    """Has the microphone delivered anything at all?
+
+    A shared-mode microphone delivers silence as real samples, so nothing
+    arriving well into a recording means the device is not delivering, not
+    that the user is quiet. A few seconds of startup grace first.
+    """
+    return recording_seconds > 10.0 and mic_bytes == 0
+
+
+# The loopback carries mastered playback while the microphone carries one
+# quiet voice; the overlay's mic half gets display-only gain so it responds
+# as visibly as the other side. The recorded audio is never touched.
+MEETING_MINE_GAIN = 2.5
+
+
 def app_icon():
     """Application and window icon from shipped assets or system theme."""
     icon = QIcon.fromTheme("dikte")
@@ -869,6 +885,10 @@ class Dikte:
     def start_meeting(self):
         if self.meeting_state != M_IDLE:
             return
+        # The meeting needs the microphone to itself: a dictation still
+        # holding the same device shares its packets badly on some drivers,
+        # and the meeting's half arrives starved.
+        self.stop_recording()
         base = meeting.new_base()
         _, wav_path = cfg.meeting_paths(base)
         self.meeting_recorder.start(
@@ -884,8 +904,7 @@ class Dikte:
         self.meeting_elapsed.restart()
         self.meeting_ticker.start()
         if self.conf["live_transcript"]:
-            self.live.begin(language=self.conf["meeting_language"]
-                            or self.conf["language"])
+            self.live.begin(language=self.conf.meeting_language_for("mine"))
         self.overlay.show_meeting()
         self._set_meeting_state(M_RECORDING)
 
@@ -909,7 +928,7 @@ class Dikte:
         self._settle(MEETING, {"ok": False, "cancelled": True, "error": "cancelled"})
 
     def _on_meeting_levels(self, mine, theirs):
-        self.overlay.push_levels(mine, theirs)
+        self.overlay.push_levels(min(1.0, mine * MEETING_MINE_GAIN), theirs)
         if theirs >= 0.04:
             self._meeting_last_sound = self.meeting_elapsed.elapsed() / 1000.0
 
@@ -918,8 +937,8 @@ class Dikte:
         if self.overlay.state == "meeting":
             self.overlay.set_seconds(seconds)
             self.overlay.set_meeting_warning(
-                meeting_remote_silent(seconds, seconds - self._meeting_last_sound)
-            )
+                meeting_remote_silent(seconds, seconds - self._meeting_last_sound),
+                meeting_mic_silent(seconds, self.meeting_recorder.mic_received))
         if self.meeting_state == M_RECORDING:
             self.live.feed(self.meeting_recorder.pending_mic())
         if self.state == IDLE:

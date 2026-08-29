@@ -367,6 +367,7 @@ class Overlay(QWidget):
         self._expand_pressed = False
         # meeting card: a status/legend footer, collapsible by click
         self._meeting_warning = False
+        self._meeting_mic_warning = False
         self._meeting_collapsed = False
         self._meeting_font_cache = None
 
@@ -464,19 +465,25 @@ class Overlay(QWidget):
         self.levels = [0.0] * BARS
         self.levels2 = [0.0] * BARS
         self._meeting_warning = False
+        self._meeting_mic_warning = False
         self._meeting_collapsed = False
         self._layout_cache = None
         self._hide_timer.stop()
         self._appear()
 
-    def set_meeting_warning(self, warning: bool):
-        """Flag that the other side's channel has gone quiet for a while."""
-        warning = bool(warning)
+    def set_meeting_warning(self, warning: bool, mic: bool = False):
+        """Flag that one of the channels has gone quiet for a while.
+
+        The first flag is the far side, the second the microphone; both are
+        said out loud in the footer rather than discovered afterwards.
+        """
+        warning, mic = bool(warning), bool(mic)
         if self.state != "meeting":
             return
-        if warning == self._meeting_warning:
+        if warning == self._meeting_warning and mic == self._meeting_mic_warning:
             return
         self._meeting_warning = warning
+        self._meeting_mic_warning = mic
         self._layout_cache = None
         self._resize_to_content()
         self._reposition()
@@ -485,6 +492,10 @@ class Overlay(QWidget):
     @property
     def meeting_warning(self):
         return self._meeting_warning
+
+    @property
+    def meeting_mic_warning(self):
+        return self._meeting_mic_warning
 
     def set_meeting_collapsed(self, collapsed: bool):
         collapsed = bool(collapsed)
@@ -967,7 +978,8 @@ class Overlay(QWidget):
         live_gap = _LIVE_GAP if live else 0.0
         expand = self._live_expanded if live else False
         key = (self.width(), self.height(), show_action, self.state == "meeting",
-               self._meeting_warning, self._meeting_collapsed, thinking, live, expand)
+               self._meeting_warning, self._meeting_mic_warning,
+               self._meeting_collapsed, thinking, live, expand)
         if self._layout_cache is not None and self._layout_cache_key == key:
             return self._layout_cache
 
@@ -1097,6 +1109,7 @@ class Overlay(QWidget):
         self._reveal_progress = 1.0
         self._reveal_t0 = 0.0
         self._meeting_warning = False
+        self._meeting_mic_warning = False
         self._meeting_collapsed = False
         if self._thinking_text:
             self._thinking_text = ""
@@ -1374,10 +1387,13 @@ class Overlay(QWidget):
                          status)
         warn_rect = QRectF(rect.left() + 14, rect.top() + line_h,
                            rect.width() - 28, line_h)
-        if self._meeting_warning:
+        if self._meeting_mic_warning or self._meeting_warning:
             painter.setPen(QColor(cols["WARN"]))
             metrics = QFontMetrics(self._meeting_font())
             text = metrics.elidedText(
+                t("Your microphone is not coming through. "
+                  "Check Settings → Meeting.")
+                if self._meeting_mic_warning else
                 t("The other side's audio is not coming through. "
                   "Check Settings → Meeting."),
                 Qt.TextElideMode.ElideRight, int(warn_rect.width()))
@@ -1541,6 +1557,7 @@ class Overlay(QWidget):
             half_w = full_w * eased / 2
             thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
             clip = QRectF(center_x - half_w, thinking_off, half_w * 2, HEIGHT)
+            painter.setClipRect(clip)
         painter.setPen(Qt.PenStyle.NoPen)
         r = bar_w / 2
         muted = QColor(cols["MUTED"])

@@ -303,12 +303,19 @@ class TranscribeDeepgram(DikteTest):
         self.assertIn("smart_format=true", full)
         self.assertIn("utterances=true", full)
 
-    def test_a_language_is_sent_but_auto_is_not(self):
+    def test_a_language_is_sent_but_auto_becomes_multi_on_nova_3(self):
         with fake_urlopen(self.reply("hi")) as calls:
             api.transcribe(DEEPGRAM, self.wav, language="tr")
             api.transcribe(DEEPGRAM, self.wav, language="auto")
         self.assertIn("language=tr", calls[0].full_url)
-        self.assertNotIn("language=", calls[1].full_url)
+        # Auto must not ride to Deepgram unnamed: silence there means English.
+        self.assertIn("language=multi", calls[1].full_url)
+
+    def test_auto_stays_omitted_where_detection_does_not_exist(self):
+        older = DEEPGRAM._replace(model="nova-2")
+        with fake_urlopen(self.reply("hi")) as calls:
+            api.transcribe(older, self.wav, language="auto")
+        self.assertNotIn("language=", calls[0].full_url)
 
     def test_the_body_is_raw_audio_not_multipart(self):
         with fake_urlopen(self.reply("hi")) as calls:
@@ -391,6 +398,50 @@ class TranscribeSegments(DikteTest):
         with fake_urlopen(self.reply([], text="")), \
                 self.assertRaises(api.ApiError):
             api.transcribe_segments(OPENAI, self.wav)
+
+
+class TranscribeAuto(DikteTest):
+    """The probe: segments plus whichever language the provider says it heard."""
+
+    def setUp(self):
+        super().setUp()
+        self.wav = str(self.path("clip.wav"))
+        os.makedirs(self.root, exist_ok=True)
+        with open(self.wav, "wb") as fh:
+            fh.write(b"RIFFfake")
+
+    def test_the_language_comes_off_the_openai_reply(self):
+        reply = {"language": "en-US", "text": "hi",
+                 "segments": [{"start": 0, "end": 1, "text": "hi"}]}
+        with fake_urlopen(reply):
+            segments, code = api.transcribe_auto(OPENAI, self.wav)
+        self.assertEqual(segments, [(0.0, 1.0, "hi")])
+        self.assertEqual(code, "en")
+
+    def test_the_language_comes_off_the_deepgram_channel(self):
+        reply = {"results": {"channels": [
+            {"detected_language": "tr",
+             "alternatives": [{"transcript": "selam", "words": []}]}],
+            "utterances": [{"start": 0, "end": 1, "transcript": "selam"}]}}
+        with fake_urlopen(reply):
+            segments, code = api.transcribe_auto(DEEPGRAM, self.wav)
+        self.assertEqual(segments, [(0.0, 1.0, "selam")])
+        self.assertEqual(code, "tr")
+
+    def test_the_language_falls_back_to_the_utterance(self):
+        reply = {"results": {"channels": [
+            {"alternatives": [{"transcript": "selam", "words": []}]}],
+            "utterances": [{"start": 0, "end": 1, "transcript": "selam",
+                            "detected_language": "fr"}]}}
+        with fake_urlopen(reply):
+            _, code = api.transcribe_auto(DEEPGRAM, self.wav)
+        self.assertEqual(code, "fr")
+
+    def test_a_provider_that_says_nothing_detects_nothing(self):
+        with fake_urlopen({"text": "hi",
+                           "segments": [{"start": 0, "end": 1, "text": "hi"}]}):
+            _, code = api.transcribe_auto(OPENAI, self.wav)
+        self.assertEqual(code, "")
 
 
 class TranscribeDeepgramSegments(DikteTest):

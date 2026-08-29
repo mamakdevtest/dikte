@@ -39,6 +39,20 @@ class MeetingRemoteSilent(unittest.TestCase):
         self.assertTrue(dikte.meeting_remote_silent(16.0, 16.0))
 
 
+class MeetingMicSilent(unittest.TestCase):
+    """The decision behind the card's microphone warning line."""
+
+    def test_a_fresh_recording_says_nothing(self):
+        self.assertFalse(dikte.meeting_mic_silent(5.0, 0))
+
+    def test_bytes_arriving_means_the_device_is_alive(self):
+        self.assertFalse(dikte.meeting_mic_silent(60.0, 32768))
+
+    def test_nothing_arriving_past_the_grace_warns(self):
+        self.assertFalse(dikte.meeting_mic_silent(10.0, 0))
+        self.assertTrue(dikte.meeting_mic_silent(11.0, 0))
+
+
 class MeetingCard(DikteTest):
     def setUp(self):
         super().setUp()
@@ -72,6 +86,15 @@ class MeetingCard(DikteTest):
         self.app.processEvents()
         self.overlay.set_meeting_warning(False)
         self.assertFalse(self.overlay.meeting_warning)
+        self.overlay.dismiss()
+
+    def test_the_mic_warning_toggles_and_resets(self):
+        self.overlay.show_meeting()
+        self.overlay.set_meeting_warning(False, mic=True)
+        self.assertTrue(self.overlay.meeting_mic_warning)
+        self.app.processEvents()
+        self.overlay.set_meeting_warning(False, mic=False)
+        self.assertFalse(self.overlay.meeting_mic_warning)
         self.overlay.dismiss()
 
     def test_warning_is_ignored_outside_meetings(self):

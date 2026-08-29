@@ -617,6 +617,12 @@ TR = {
     "The silence check may have missed the speech; trying the loudest parts…":
         "Sessizlik denetimi konuşmayı kaçırmış olabilir; en yüksek sesli "
         "bölümler deneniyor…",
+    "Listening for the language…": "Dil dinleniyor…",
+    "Language detected: {language}.": "Dil algılandı: {language}.",
+    "The spoken language could not be detected from the recording. Pick a "
+    "speech language in Settings → Meeting.":
+        "Kayıttan konuşulan dil algılanamadı. Ayarlar → Toplantı sekmesinden "
+        "bir konuşma dili seç.",
     "Live speech": "Canlı konuşma",
     "Words will appear here as they are heard…":
         "Duyuldukça kelimeler burada görünür…",
@@ -658,6 +664,11 @@ TR = {
     "Same as dictation": "Diktedekiyle aynı",
     "Current output": "Geçerli çıkış",
     "The other participants": "Karşı tarafın sesi",
+    "Same as the meeting language": "Toplantı diliyle aynı",
+    "Your speech": "Senin konuşman",
+    "The other side's speech": "Karşı tarafın konuşması",
+    "Your microphone is not coming through. Check Settings → Meeting.":
+        "Mikrofonunun sesi gelmiyor. Ayarlar → Toplantı sekmesinden kontrol et.",
     "macOS does not offer what the speakers are playing as something to "
     "record. Install BlackHole or Loopback, send the meeting's sound through "
     "it, and pick it above.":
@@ -855,6 +866,7 @@ TR = {
     # --- overlay live / result -----------------------------------------
     "Live transcript": "Canlı transkript",
     "Expand": "Genişlet",
+    "Collapse": "Daralt",
     "Copy": "Kopyala",
     "Result": "Sonuç",
     "Transcription completed": "Transkripsiyon tamamlandı",

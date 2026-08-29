@@ -480,10 +480,22 @@ class MeetingRecorder(QObject):
         self._readers = ()
         self._mic_tap = bytearray()
         self._tap_drained = 0
+        self._mic_received = 0
 
     @property
     def active(self):
         return self._thread is not None and self._thread.is_alive()
+
+    @property
+    def mic_received(self):
+        """Bytes the microphone has delivered since the run started.
+
+        Zero well into a recording means the endpoint is not delivering at
+        all — a dead device, not a quiet user, since a shared-mode
+        microphone delivers silence as real samples.
+        """
+        with self._lock:
+            return self._mic_received
 
     def start(self, path, mic_target="", system_target="", max_seconds=14400):
         if self.active:
@@ -520,6 +532,7 @@ class MeetingRecorder(QObject):
         with self._lock:
             self._mic_tap = bytearray()
             self._tap_drained = 0
+            self._mic_received = 0
 
     def pending_mic(self):
         """The microphone's half recorded since the last call, for the live
@@ -613,6 +626,7 @@ class MeetingRecorder(QObject):
                 if side == 0:
                     with self._lock:
                         self._mic_tap += chunk
+                        self._mic_received += len(chunk)
                 queue.append(chunk)
             else:
                 time.sleep(0.01)
@@ -620,12 +634,12 @@ class MeetingRecorder(QObject):
     def _mix(self):
         """Pair the two queues frame by frame into the stereo file.
 
-        Whichever side has no data for over half a second while the other
-        does gets zeros: silence is a real thing a meeting records, and a
-        starved loopback must never stall the microphone's half. A reader
-        that reports its device is gone ends the run outright, the way a
-        vanished ffmpeg always has — at most a few hundred milliseconds of
-        tail go unwritten.
+        Whichever side has no data for over a quarter of a second while the
+        other does gets zeros: silence is a real thing a meeting records,
+        and a starved loopback must never stall the microphone's half. A
+        reader that reports its device is gone ends the run outright, the
+        way a vanished ffmpeg always has — at most a few hundred
+        milliseconds of tail go unwritten.
         """
         block = CHUNK_FRAMES * SAMPLE_WIDTH  # mono bytes per side
         pending = [bytearray(), bytearray()]
@@ -650,7 +664,7 @@ class MeetingRecorder(QObject):
                 now = time.monotonic()
                 if not have:
                     for side in (0, 1):
-                        starved = (now - last_data[side] > 0.5
+                        starved = (now - last_data[side] > 0.25
                                    and len(pending[1 - side]) >= block)
                         if starved:
                             room = min(len(pending[1 - side]) // block, RATE)
@@ -672,14 +686,21 @@ class MeetingRecorder(QObject):
                 for index in range(0, len(left), SAMPLE_WIDTH):
                     stereo += left[index:index + SAMPLE_WIDTH]
                     stereo += right[index:index + SAMPLE_WIDTH]
-                mine, theirs = stereo_levels(bytes(stereo))
+                stereo = bytes(stereo)
                 with self._lock:
                     if self._wav is None:
                         return
-                    self._wav.writeframes(bytes(stereo))
+                    self._wav.writeframes(stereo)
                     self._frames += len(stereo) // (SAMPLE_WIDTH * 2)
                     too_long = self._frames >= self._max_frames
-                self.levels.emit(mine, theirs)
+                # One level pair per block, not one per lap: a lap can carry
+                # half a second of catch-up at once, and the overlay's
+                # waveform needs the steady block cadence to keep both sides
+                # moving evenly.
+                step = block * 2
+                for index in range(0, len(stereo), step):
+                    mine, theirs = stereo_levels(stereo[index:index + step])
+                    self.levels.emit(mine, theirs)
                 if too_long:
                     self._stop_wasapi()
                     return
@@ -715,6 +736,7 @@ class MeetingRecorder(QObject):
                         break
                     self._wav.writeframes(chunk)
                     self._frames += len(chunk) // (SAMPLE_WIDTH * 2)
+                    self._mic_received += len(chunk) // 2
                     too_long = self._frames >= self._max_frames
                 self.levels.emit(mine, theirs)
                 if too_long:
@@ -1426,3 +1448,19 @@ def list_monitors():
 def default_monitor():
     """The device the far side of a meeting comes from, or ''."""
     return sound().default_output()
+
+
+def default_input():
+    """The device dictation records from when nothing is named, or ''.
+
+    Only Windows can say which one that is without a probe subprocess; the
+    other platforms record from the sound system's default and name it
+    there, so '' is honest rather than missing.
+    """
+    if sys.platform == "win32":
+        try:
+            if wasapi.available():
+                return wasapi.default_capture_name()
+        except (wasapi.WasapiError, OSError, ValueError):
+            return ""
+    return ""

@@ -136,6 +136,28 @@ class RecorderWasapi(OnWindows, DikteTest):
         self.assertAlmostEqual(mine, 0.5, places=2)
         self.assertAlmostEqual(theirs, 0.25, places=2)
 
+    def test_levels_arrive_one_pair_per_block(self):
+        """A lap may catch up several blocks at once; the overlay still
+        wants one level pair per block to keep its cadence steady."""
+        self.wire(FakeSource([mono_chunk(16384) for _ in range(4)]),
+                  FakeSource([mono_chunk(8192) for _ in range(4)]))
+        self.recorder.start(self.path, "Mic", "Loop")
+        self.assertTrue(self.wait_for(lambda: len(self.events["levels"]) >= 4))
+        self.recorder.stop()
+        self.assertEqual(len(self.events["levels"]), 4)
+        for mine, theirs in self.events["levels"]:
+            self.assertAlmostEqual(mine, 0.5, places=2)
+            self.assertAlmostEqual(theirs, 0.25, places=2)
+
+    def test_the_microphone_counts_what_it_delivered(self):
+        self.wire(FakeSource([mono_chunk(16384) for _ in range(3)]),
+                  FakeSource([mono_chunk(8192) for _ in range(3)]))
+        self.recorder.start(self.path, "Mic", "Loop")
+        self.assertTrue(self.wait_for(
+            lambda: self.recorder.mic_received >= 3 * audio.CHUNK_BYTES))
+        self.recorder.stop()
+        self.assertEqual(self.recorder.mic_received, 3 * audio.CHUNK_BYTES)
+
     def test_a_silent_loopback_pads_zeros_and_keeps_recording(self):
         """No app is playing: the far side is silence, not a stalled file."""
         sources = self.wire(FakeSource([mono_chunk(16384) for _ in range(8)]),
@@ -385,6 +407,13 @@ class DictationWasapi(OnWindows, DikteTest):
 class DeviceLists(OnWindows, DikteTest):
     """Windows offers real endpoints when WASAPI can, dshow when it can't."""
 
+    def setUp(self):
+        super().setUp()
+        # An earlier module in the run may have warmed the device caches
+        # with this machine's real endpoints; these tests want the fakes.
+        audio.invalidate_audio_cache()
+        self.addCleanup(audio.invalidate_audio_cache)
+
     def test_wasapi_endpoints_are_preferred(self):
         self.enterContext(mock.patch.object(audio.wasapi, "available",
                                             return_value=True))
@@ -418,6 +447,19 @@ class DeviceLists(OnWindows, DikteTest):
         self.assertEqual(audio._win_inputs(), dshow_in)
         self.assertEqual(audio.default_monitor(),
                          "Stereo Mix (Realtek Audio)")
+
+    def test_the_default_microphone_is_named_when_wasapi_can(self):
+        self.enterContext(mock.patch.object(audio.wasapi, "available",
+                                            return_value=True))
+        self.enterContext(mock.patch.object(
+            audio.wasapi, "default_capture_name",
+            return_value="Mikrofon (Realtek Audio)"))
+        self.assertEqual(audio.default_input(), "Mikrofon (Realtek Audio)")
+
+    def test_the_default_microphone_stays_silent_when_wasapi_cannot(self):
+        self.enterContext(mock.patch.object(audio.wasapi, "available",
+                                            return_value=False))
+        self.assertEqual(audio.default_input(), "")
 
 
 if __name__ == "__main__":

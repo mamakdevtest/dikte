@@ -356,14 +356,19 @@ else:
 def _pick(name, endpoints, default):
     """id of the endpoint to use: empty name means the default one.
 
-    Matched case-insensitively as a substring, because what Settings stored
-    may be an old DirectShow spelling of the same physical device.
+    An exact name wins; otherwise matched case-insensitively as a
+    substring, because what Settings stored may be an old DirectShow
+    spelling of the same physical device. Exact first, so a stored full
+    name cannot land on a similarly-named sibling endpoint.
     """
     if not name:
         if not default:
             raise WasapiError("no default audio endpoint")
         return default
     low = name.lower()
+    for friendly, dev_id in endpoints:
+        if friendly.lower() == low:
+            return dev_id
     for friendly, dev_id in endpoints:
         if low in friendly.lower() or friendly.lower() in low:
             return dev_id

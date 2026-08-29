@@ -333,7 +333,11 @@ def _deepgram_request(target, audio_path, language, timeout=300, aborter=None):
     ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     params = [("model", target.model), ("punctuate", "true"),
               ("smart_format", "true"), ("utterances", "true")]
-    if language and language != "auto":
+    if language == "auto" and str(target.model).startswith("nova-3"):
+        # Without a language Deepgram quietly falls back to English; nova-3
+        # is the one family that can hear which language it is instead.
+        params.append(("language", "multi"))
+    elif language and language != "auto":
         params.append(("language", language))
     query = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params)
     url = f"{target.base_url.rstrip('/')}/listen?{query}"
@@ -482,18 +486,12 @@ def transcribe(target, audio_path, language="", prompt="", timeout=300, aborter=
     return text
 
 
-def transcribe_segments(target, audio_path, language="", prompt="", timeout=300,
-                        aborter=None):
-    """[(start_seconds, end_seconds, text)] using whisper-1's verbose response."""
-    data = _transcribe_request(
-        target._replace(model=timestamp_model(target.provider, target.model)),
-        audio_path, language, prompt, "verbose_json",
-        granularity="segment", timeout=timeout, aborter=aborter,
-    )
-    if target.provider == "deepgram":
+def _segments_from(data, provider):
+    """[(start, end, text)] out of a verbose_json reply, any provider's shape."""
+    if provider == "deepgram":
         return _deepgram_segments(data)
     segments = data.get("segments") or []
-    if target.provider == "local":
+    if provider == "local":
         segments = _merge_word_splits(segments)
     out = []
     for seg in segments:
@@ -504,13 +502,62 @@ def transcribe_segments(target, audio_path, language="", prompt="", timeout=300,
             out.append((start, max(end, start), text))
     if not out:
         text = data.get("text") or ""
-        if target.provider == "local":
+        if provider == "local":
             text = _local_text(text)
         text = text.strip()
         if not text:
             raise ApiError(t("Transcript came back empty."))
         out = [(0.0, 0.0, text)]
     return out
+
+
+def _detected_language(data):
+    """The language the provider says it heard, or '' when it says nothing.
+
+    OpenAI's verbose reply names it at the top level, Deepgram puts it on the
+    channel or the utterance, and whisper.cpp may leave it out entirely — an
+    empty answer is the caller's sign that detection is not on offer here.
+    """
+    code = str(data.get("language") or "").strip().lower()
+    if not code:
+        results = data.get("results") or {}
+        channels = results.get("channels") or []
+        if channels:
+            code = str(channels[0].get("detected_language") or "").strip().lower()
+        if not code:
+            for utt in (results.get("utterances") or []):
+                code = str(utt.get("detected_language") or "").strip().lower()
+                if code:
+                    break
+    if len(code) > 2 and "-" in code:
+        code = code.split("-", 1)[0]
+    return code
+
+
+def transcribe_segments(target, audio_path, language="", prompt="", timeout=300,
+                        aborter=None):
+    """[(start_seconds, end_seconds, text)] using whisper-1's verbose response."""
+    data = _transcribe_request(
+        target._replace(model=timestamp_model(target.provider, target.model)),
+        audio_path, language, prompt, "verbose_json",
+        granularity="segment", timeout=timeout, aborter=aborter,
+    )
+    return _segments_from(data, target.provider)
+
+
+def transcribe_auto(target, audio_path, prompt="", timeout=300, aborter=None):
+    """(segments, language) from one request left to hear the language itself.
+
+    The language is whatever the provider reports having detected — empty when
+    it reports none, which is the caller's cue that this provider cannot
+    detect and a speech language has to be picked by hand.
+    """
+    data = _transcribe_request(
+        target._replace(model=timestamp_model(target.provider, target.model)),
+        audio_path, "auto", prompt, "verbose_json",
+        granularity="segment", timeout=timeout, aborter=aborter,
+    )
+    return _segments_from(data, target.provider), _detected_language(data)
 
 
 def _thinking(payload, provider, reasoning):

@@ -120,6 +120,19 @@ def build(window):
         window.meeting_language.addItem(t(label), code)
     window.meeting_language.setFixedWidth(240)
     models_form.addRow(t("Speech language"), window.meeting_language)
+    window.meeting_mine_language = QComboBox()
+    window.meeting_mine_language.addItem(t("Same as the meeting language"), "")
+    for label, code in LANGUAGES:
+        window.meeting_mine_language.addItem(t(label), code)
+    window.meeting_mine_language.setFixedWidth(240)
+    models_form.addRow(t("Your speech"), window.meeting_mine_language)
+    window.meeting_theirs_language = QComboBox()
+    window.meeting_theirs_language.addItem(t("Same as the meeting language"), "")
+    for label, code in LANGUAGES:
+        window.meeting_theirs_language.addItem(t(label), code)
+    window.meeting_theirs_language.setFixedWidth(240)
+    models_form.addRow(t("The other side's speech"),
+                       window.meeting_theirs_language)
     window.meeting_cleanup = QCheckBox(t("Clean the transcript up first"))
     window.meeting_cleanup.setToolTip(t(
         "Runs the cleanup model over the transcript before the minutes are "

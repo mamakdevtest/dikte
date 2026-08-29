@@ -57,6 +57,10 @@ LEVEL_FRAMES = 1024
 TITLE_CHARS = 1500
 TITLE_MAX = 80
 
+# How much of the first audible chunk the language probe hears. Long enough
+# that the answer rests on real speech, short enough that it costs pennies.
+PROBE_SECONDS = 40.0
+
 TITLE_PROMPT = (
     "A meeting transcript follows. Reply with one short professional title "
     "for it, at most eight words, in the same language the transcript is "
@@ -186,18 +190,22 @@ class MeetingPipeline(QObject):
         conf = self.conf
         mine, theirs = split_channels(wav_path, workdir)
         target = conf.transcribe_target()
-        language = conf["meeting_language"] or conf["language"]
         hint = conf.meeting_hint()
 
-        segments = []
-        skipped = []
+        sides = []
         for path, speaker in ((mine, "mine"), (theirs, "theirs")):
-            side = t("you") if speaker == "mine" else t("the others")
             # A directory each: the chunk files are named by their index, and
             # the second channel would otherwise write over the first one's.
             chunk_dir = os.path.join(workdir, speaker)
             os.makedirs(chunk_dir, exist_ok=True)
-            chunks = filetranscribe.split_wav(path, chunk_dir)
+            sides.append((path, speaker,
+                          filetranscribe.split_wav(path, chunk_dir)))
+        languages = self._resolve_languages(target, sides, workdir, hint)
+
+        segments = []
+        skipped = []
+        for path, speaker, chunks in sides:
+            side = t("you") if speaker == "mine" else t("the others")
             heard = []
             for index, (chunk_path, offset) in enumerate(chunks, start=1):
                 self._check()
@@ -213,7 +221,8 @@ class MeetingPipeline(QObject):
                 heard = filetranscribe.stitch(heard, [
                     (start + offset, end + offset, text)
                     for start, end, text in api.transcribe_segments(
-                        target, chunk_path, language=language, prompt=hint
+                        target, chunk_path, language=languages[speaker],
+                        prompt=hint
                     )
                 ])
             segments.extend((start, end, text, speaker) for start, end, text in heard)
@@ -236,7 +245,8 @@ class MeetingPipeline(QObject):
                 heard = filetranscribe.stitch([], [
                     (start + offset, end + offset, text)
                     for start, end, text in api.transcribe_segments(
-                        target, chunk_path, language=language, prompt=hint
+                        target, chunk_path, language=languages[speaker],
+                        prompt=hint
                     )
                 ])
                 segments.extend((start, end, text, speaker)
@@ -250,6 +260,63 @@ class MeetingPipeline(QObject):
 
         names = conf.speaker_names()
         return render_turns(merge_turns(segments), *names)
+
+    def _resolve_languages(self, target, sides, workdir, hint):
+        """{side: language}: what each channel is transcribed as.
+
+        A side pinned by hand keeps its word; a side left to detection is
+        heard out on its own first stretch of speech, because the two sides
+        of a meeting may not share a language. A side the probe cannot hear
+        borrows the other side's answer — it had nothing audible to argue
+        with — and only when no answer exists anywhere does the run stop:
+        an hour sent through the wrong language is a bill paid for a
+        document nobody can read.
+        """
+        resolved = {}
+        for _path, speaker, _chunks in sides:
+            language = self.conf.meeting_language_for(speaker)
+            resolved[speaker] = "" if language in ("", "auto") else language
+        waiting = {speaker for speaker, code in resolved.items() if not code}
+        if waiting:
+            self._say(t("Listening for the language…"))
+        for index, (_path, speaker, chunks) in enumerate(sides):
+            if speaker not in waiting:
+                continue
+            code = self._probe_language(target, chunks, workdir, hint,
+                                        offset=index * 2)
+            if code:
+                resolved[speaker] = code
+                self._say(t("Language detected: {language}.", language=code))
+        found = [code for code in resolved.values() if code]
+        if waiting and not found:
+            raise api.ApiError(t(
+                "The spoken language could not be detected from the recording. "
+                "Pick a speech language in Settings → Meeting."))
+        for speaker in waiting:
+            if not resolved[speaker]:
+                resolved[speaker] = found[0]
+        return resolved
+
+    def _probe_language(self, target, chunks, workdir, hint, offset=0):
+        """The language a side's first audible stretches say, or '' for none.
+
+        The probe runs on stretches that actually carry speech, so the answer
+        rests on heard words rather than on silence. A provider that cannot
+        say gets one more stretch to listen to, then hands back nothing.
+        """
+        probed = 0
+        for chunk_path, _offset in chunks:
+            if self._silent(chunk_path):
+                continue
+            probed += 1
+            _, code = api.transcribe_auto(
+                target, cut_probe(chunk_path, workdir, offset + probed),
+                prompt=hint)
+            if code:
+                return code
+            if probed >= 2:
+                break
+        return ""
 
     def _loudness(self, path):
         try:
@@ -454,6 +521,21 @@ def rms_series(path):
 def wav_rate(path):
     with contextlib.closing(wave.open(path, "rb")) as wav:
         return wav.getframerate()
+
+
+def cut_probe(chunk_path, workdir, index):
+    """The first PROBE_SECONDS of a chunk, as its own small wav for a probe."""
+    with contextlib.closing(wave.open(chunk_path, "rb")) as src:
+        rate = src.getframerate()
+        channels, width = src.getnchannels(), src.getsampwidth()
+        frames = src.readframes(int(PROBE_SECONDS * rate))
+    out = os.path.join(workdir, f"probe-{index}.wav")
+    with contextlib.closing(wave.open(out, "wb")) as dst:
+        dst.setnchannels(channels)
+        dst.setsampwidth(width)
+        dst.setframerate(rate)
+        dst.writeframes(frames)
+    return out
 
 
 # --- the timeline ----------------------------------------------------------

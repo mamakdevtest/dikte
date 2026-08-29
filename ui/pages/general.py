@@ -95,6 +95,8 @@ def build(window):
 
     # Keep a hidden combo for test compat and save/load; visible is CornerPicker+MiniScreen.
     window.corner = _combo([(t(value), value) for value in CORNERS], 220)
+    # Parented so it dies with the window: parentless widgets outlive it.
+    window.corner.setParent(body)
     window.corner.hide()
     # Also keep reference hidden so tests can find it but not interfere with layout.
     window.corner.setObjectName("cornerComboHidden")
