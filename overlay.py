@@ -58,7 +58,7 @@ _QUIET_FRAME_MS = 120
 _BUSY_FRAME_MS = 90
 
 # Waveform model constants
-_GATE = 0.045
+_GATE = 0.035
 _BASELINE = 0.015
 _ATTACK_ALPHA = 0.55
 _RELEASE_ALPHA = 0.12
@@ -67,10 +67,9 @@ _RELEASE_ALPHA = 0.12
 # signal deliveries instead of jumping once per audio chunk.
 _FRAME_ATTACK_ALPHA = 0.34
 _FRAME_RELEASE_ALPHA = 0.10
-# One bar-slot of sideways travel per audio chunk: a new sample slides the
-# whole stream left over one delivery interval instead of shifting it in a
-# single jump. 25 ms frames over a ~64 ms chunk.
-_SCROLL_STEP = 0.4
+# One bar-slot of sideways travel per audio chunk, drained slowly enough
+# that the stream glides instead of racing: a calm conveyor, not a ticker.
+_SCROLL_STEP = 0.18
 _VISUAL_EPSILON = 0.0005
 _REVEAL_MS = 220
 
@@ -242,7 +241,7 @@ class WaveformState:
         # A gentle display curve keeps quiet speech legible without making
         # loud input pin every bar to the top. Audio data is untouched.
         share = (normalized - _BASELINE) / (1.0 - _BASELINE)
-        return _BASELINE + share ** 0.72 * (1.0 - _BASELINE)
+        return _BASELINE + share ** 0.6 * (1.0 - _BASELINE)
 
     def _refresh_display_levels(self):
         """Update the immutable display tuple only when the model changes."""
@@ -771,7 +770,7 @@ class Overlay(QWidget):
     def _live_font(self):
         if self._live_font_cache is None:
             font = QFont(self._label_font())
-            font.setPointSizeF(9.0)
+            font.setPointSizeF(10.0)
             self._live_font_cache = font
         return self._live_font_cache
 
@@ -1106,8 +1105,8 @@ class Overlay(QWidget):
         wave_left = min(_WAVE_LEFT, max(0.0, wave_right))
         available = max(1.0, min(float(self.width()) - wave_left,
                                    wave_right - wave_left))
-        preferred_gap = 3.5
-        bar_w = min(5.0, max(3.0,
+        preferred_gap = 2.5
+        bar_w = min(6.0, max(4.0,
                              (available - (BARS - 1) * preferred_gap) / BARS))
         if BARS * bar_w + (BARS - 1) * preferred_gap > available:
             # Keep the narrow-resize contract: bars never escape the widget,
@@ -1423,10 +1422,36 @@ class Overlay(QWidget):
                     if y < live_rect.top() + 2:
                         break
             else:
-                text = metrics2.elidedText(self._live_text.split("\n")[-1],
-                                           Qt.TextElideMode.ElideRight, avail_w)
-                painter.drawText(QRectF(live_rect.left() + 12, live_rect.top(), avail_w, live_rect.height()),
-                                 int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
+                label, last_text, channel = (self._live_lines[-1]
+                                             if self._live_lines
+                                             else ("", self._live_text, None))
+                x = live_rect.left() + 12
+                right_limit = live_rect.right() - 48
+                if label:
+                    dot_c = QColor(cols["REC"] if channel == "mine"
+                                   else cols["THEM"])
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(dot_c)
+                    painter.drawEllipse(
+                        QPointF(x + 3, live_rect.center().y()), 2.6, 2.6)
+                    bold = QFont(self._live_font())
+                    bold.setWeight(QFont.Weight.Bold)
+                    painter.setFont(bold)
+                    painter.setPen(dot_c)
+                    lw = QFontMetrics(bold).horizontalAdvance(label) + 8
+                    painter.drawText(
+                        QRectF(x + 10, live_rect.top(), lw, live_rect.height()),
+                        int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                        label)
+                    painter.setFont(self._live_font())
+                    x += 10 + lw
+                text = metrics2.elidedText(last_text, Qt.TextElideMode.ElideRight,
+                                           int(right_limit - x))
+                painter.setPen(c2)
+                painter.drawText(QRectF(x, live_rect.top(),
+                                        right_limit - x, live_rect.height()),
+                                 int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                                 text)
             # Draw expand/collapse chevron inside live panel
             expand_rect = self._expand_button_rect()
             if expand_rect.isValid():
@@ -1682,7 +1707,7 @@ class Overlay(QWidget):
             Qt.ClipOperation.IntersectClip)
         for index, (base, level) in enumerate(zip(bars, display)):
             shaped = max(0.0, min(1.0, float(level)))
-            h = 3.0 + shaped * 43.0
+            h = 3.0 + (shaped ** 0.85) * 43.0
             if h > 46.0:
                 h = 46.0
             y = mid - h / 2
@@ -1749,7 +1774,7 @@ class Overlay(QWidget):
                 (theirs, theirs_color, False),
             ):
                 shaped = max(0.0, min(1.0, float(level)))
-                h = 2.5 + shaped * 21.5
+                h = 2.5 + (shaped ** 0.85) * 21.5
                 if h > 24.0:
                     h = 24.0
                 y = mid - 2.0 - h if up else mid + 2.0

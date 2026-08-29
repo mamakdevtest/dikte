@@ -30,8 +30,8 @@ if sys.platform == "darwin":
                           os.environ.get("PATH", "")) if part
     )
 
-from PyQt6.QtCore import QTimer, QElapsedTimer, QSocketNotifier  # noqa: E402
-from PyQt6.QtGui import QAction, QIcon  # noqa: E402
+from PyQt6.QtCore import QTimer, QElapsedTimer, QSocketNotifier, QUrl  # noqa: E402
+from PyQt6.QtGui import QAction, QIcon, QDesktopServices  # noqa: E402
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
 
@@ -299,6 +299,11 @@ class Dikte:
         self.meeting_cancel_action.triggered.connect(self.cancel_meeting)
         self.meeting_cancel_action.setEnabled(False)
         self.menu.addAction(self.meeting_cancel_action)
+
+        self.meetings_menu = QMenu(t("Meetings"), self.menu)
+        self.meetings_menu.setIcon(_ic("fileText"))
+        self.meetings_menu.aboutToShow.connect(self._refresh_meetings_menu)
+        self.menu.addMenu(self.meetings_menu)
         self.menu.addSeparator()
 
         self.settings_action = QAction(_ic("sliders"), t("Settings…"), self.menu)
@@ -317,6 +322,32 @@ class Dikte:
         self.tray.setContextMenu(self.menu)
         self.tray.setToolTip(t("Dikte: ready"))
         self._set_icon("audio-input-microphone")
+
+    def _refresh_meetings_menu(self):
+        """The newest meetings, ready to open, whenever the submenu shows."""
+        self.meetings_menu.clear()
+        try:
+            rows = cfg.read_meetings()[-10:][::-1]
+        except OSError:
+            rows = []
+        if not rows:
+            empty = self.meetings_menu.addAction(t("No meetings yet"))
+            empty.setEnabled(False)
+            return
+        for row in rows:
+            title = (row.get("title") or "").strip() \
+                or meeting.fallback_title(row.get("ts", ""))
+            action = self.meetings_menu.addAction(title)
+            action.triggered.connect(
+                lambda _=False, base=row.get("base", ""):
+                self._open_meeting(base))
+
+    def _open_meeting(self, base):
+        doc, _wav = cfg.meeting_paths(base)
+        if doc.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(doc)))
+        else:
+            self.open_settings()
 
     def _tray_clicked(self, reason):
         if reason != QSystemTrayIcon.ActivationReason.Trigger:
@@ -880,7 +911,9 @@ class Dikte:
         # While paused, no new levels arrive (recorder stopped), so ignore
         if self.state == PAUSED or self.ask_state == PAUSED:
             return
-        self._recording_overlay().push_level(level)
+        # Display-only gain: a desk microphone records quiet voice, and the
+        # waveform should still show its loudness differences.
+        self._recording_overlay().push_level(min(1.0, level * 1.6))
 
     def _on_live_transcript(self, text):
         # Live interim text from streaming provider — show in recording overlay preview

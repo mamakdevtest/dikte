@@ -643,6 +643,8 @@ TR = {
     "{minutes} min": "{minutes} dk",
     "{hours} h {minutes} min": "{hours} sa {minutes} dk",
     "Recording the meeting": "Toplantı kaydediliyor",
+    "Meetings": "Toplantılar",
+    "No meetings yet": "Henüz toplantı yok",
     "The other side's audio is not coming through. Check Settings → Meeting.":
         "Karşı tarafın sesi gelmiyor. Ayarlar → Toplantı sekmesinden kontrol et.",
     "Could not open the audio devices for the meeting: {error}":
