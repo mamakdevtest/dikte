@@ -97,6 +97,39 @@ class MeetingCard(DikteTest):
         self.assertFalse(self.overlay.meeting_mic_warning)
         self.overlay.dismiss()
 
+    def test_labeled_lines_grow_the_expanded_panel(self):
+        self.overlay.show_meeting()
+        self.overlay.set_live_expanded(True)
+        self.overlay.set_live_lines(
+            [("Ben", "Merhaba, nasılsın?", "mine"),
+             ("Karşı taraf", "İyiyim, sen nasılsın?", "theirs")])
+        short = self.overlay._live_height()
+        self.overlay.set_live_lines(
+            [("Ben", "satır %d" % i, "mine") for i in range(60)])
+        tall = self.overlay._live_height()
+        self.assertGreater(tall, short)
+        self.assertLessEqual(tall, overlay._LIVE_MAX_H)
+        self.assertEqual(self.overlay.live_lines[-1][0], "Ben")
+        self.overlay.dismiss()
+
+    def test_the_collapsed_panel_stays_one_line_tall(self):
+        self.overlay.show_meeting()
+        self.overlay.set_live_expanded(False)
+        self.overlay.set_live_lines(
+            [("Ben", "satır %d" % i, "mine") for i in range(20)])
+        self.assertEqual(self.overlay._live_height(),
+                         overlay._LIVE_COLLAPSED_H)
+        self.overlay.dismiss()
+
+    def test_a_push_slides_the_waveform_in_over_frames(self):
+        self.overlay.show_meeting()
+        self.overlay.push_levels(0.5, 0.25)
+        self.assertGreater(self.overlay._wave.scroll, 0.99)
+        for _ in range(6):
+            self.overlay._wave.advance()
+        self.assertEqual(self.overlay._wave.scroll, 0.0)
+        self.overlay.dismiss()
+
     def test_warning_is_ignored_outside_meetings(self):
         self.overlay.state = "recording"
         self.overlay.set_meeting_warning(True)

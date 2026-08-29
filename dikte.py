@@ -177,6 +177,14 @@ class Dikte:
         # The rolling preview of the words, for the pill's wider live view.
         self.live = livetext.LiveTranscriber(self.conf)
         self.live.partial.connect(self._on_live_partial)
+        # A meeting hears two voices; the second preview carries the far
+        # side so the live panel can say who is speaking.
+        self.live_theirs = livetext.LiveTranscriber(self.conf)
+        self.live_theirs.partial.connect(self._on_live_theirs_partial)
+        self._live_lines = []
+        self._live_mine_len = 0
+        self._live_theirs_len = 0
+        self._live_names = ("", "")
         self.live_popup = None
         self.overlay.livePopupRequested.connect(self._toggle_live_popup)
         # Recordings are a second chance at the minutes, not an archive.
@@ -665,9 +673,34 @@ class Dikte:
         self.recorder.start(self.conf["mic_target"], self.conf["max_seconds"])
 
     def _on_live_partial(self, text):
+        if self.meeting_state == M_RECORDING:
+            self._append_live_line("mine", text)
+            return
         self.overlay.set_live_transcript(text)
         if self.live_popup is not None and self.live_popup.isVisible():
             self.live_popup.set_text(text)
+
+    def _on_live_theirs_partial(self, text):
+        if self.meeting_state == M_RECORDING:
+            self._append_live_line("theirs", text)
+
+    def _append_live_line(self, side, text):
+        """Grow the labeled transcript with whatever a side just said."""
+        text = (text or "").strip()
+        prev = self._live_mine_len if side == "mine" else self._live_theirs_len
+        if side == "mine":
+            self._live_mine_len = len(text)
+        else:
+            self._live_theirs_len = len(text)
+        delta = text[prev:].strip()
+        if not delta:
+            return
+        label = self._live_names[0] if side == "mine" else self._live_names[1]
+        self._live_lines.append((label, delta, side))
+        self._live_lines = self._live_lines[-96:]
+        self.overlay.set_live_lines(self._live_lines)
+        if self.live_popup is not None and self.live_popup.isVisible():
+            self.live_popup.set_text(self.overlay.live_text)
 
     def _toggle_live_popup(self):
         if self.live_popup is None:
@@ -903,8 +936,14 @@ class Dikte:
         self._meeting_last_sound = 0.0
         self.meeting_elapsed.restart()
         self.meeting_ticker.start()
+        self._live_lines = []
+        self._live_mine_len = 0
+        self._live_theirs_len = 0
+        self._live_names = self.conf.speaker_names()
         if self.conf["live_transcript"]:
             self.live.begin(language=self.conf.meeting_language_for("mine"))
+            self.live_theirs.begin(
+                language=self.conf.meeting_language_for("theirs"))
         self.overlay.show_meeting()
         self._set_meeting_state(M_RECORDING)
 
@@ -922,6 +961,7 @@ class Dikte:
         self.meeting_ticker.stop()
         self.meeting_recorder.cancel()
         self.live.end()
+        self.live_theirs.end()
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
         self._set_meeting_state(M_IDLE)
@@ -941,6 +981,7 @@ class Dikte:
                 meeting_mic_silent(seconds, self.meeting_recorder.mic_received))
         if self.meeting_state == M_RECORDING:
             self.live.feed(self.meeting_recorder.pending_mic())
+            self.live_theirs.feed(self.meeting_recorder.pending_theirs())
         if self.state == IDLE:
             self.tray.setToolTip(
                 t("Dikte: in a meeting ({time})", time=_clock(seconds))
@@ -950,6 +991,7 @@ class Dikte:
 
     def _on_meeting_recorded(self, path, duration):
         self.live.end()
+        self.live_theirs.end()
         entry = meeting.new_entry(self.meeting_base, duration)
         try:
             cfg.save_meeting(entry)
@@ -1013,6 +1055,7 @@ class Dikte:
         """The recorder itself could not run."""
         self.meeting_ticker.stop()
         self.live.end()
+        self.live_theirs.end()
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
         self._set_meeting_state(M_IDLE)

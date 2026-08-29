@@ -41,6 +41,12 @@ _THINKING_GAP = 10.0
 _LIVE_COLLAPSED_H = 28.0
 _LIVE_EXPANDED_H = 72.0
 _LIVE_GAP = 8.0
+# The expanded transcript grows with its content, newest line at the bottom,
+# up to a tall corporate-style scroll of text — then older lines simply fall
+# off the top.
+_LIVE_MAX_H = 600.0
+_LIVE_MAX_LINES = 160
+_LIVE_PAD = 10.0
 # The meeting card carries a footer under the pill: what is happening, and
 # whether both channels are actually hearing something. Collapsed, it shrinks
 # to a dot and the clock.
@@ -59,8 +65,12 @@ _RELEASE_ALPHA = 0.12
 # Audio chunks arrive roughly every 64 ms, while the overlay paints every
 # 25 ms. These frame-sized steps keep the visual response smooth between
 # signal deliveries instead of jumping once per audio chunk.
-_FRAME_ATTACK_ALPHA = 0.28
-_FRAME_RELEASE_ALPHA = 0.14
+_FRAME_ATTACK_ALPHA = 0.34
+_FRAME_RELEASE_ALPHA = 0.10
+# One bar-slot of sideways travel per audio chunk: a new sample slides the
+# whole stream left over one delivery interval instead of shifting it in a
+# single jump. 25 ms frames over a ~64 ms chunk.
+_SCROLL_STEP = 0.4
 _VISUAL_EPSILON = 0.0005
 _REVEAL_MS = 220
 
@@ -169,6 +179,24 @@ def _smooth_step(prev, target, attack=_ATTACK_ALPHA, release=_RELEASE_ALPHA):
     return prev + alpha * (target - prev)
 
 
+def _wrap_text(text, metrics, width):
+    """One paragraph wrapped greedily into lines that fit the width."""
+    width = max(10, int(width))
+    out = []
+    for paragraph in (text or "").split("\n"):
+        words = paragraph.split(" ")
+        line = ""
+        for word in words:
+            trial = word if not line else line + " " + word
+            if not line or metrics.horizontalAdvance(trial) <= width:
+                line = trial
+            else:
+                out.append(line)
+                line = word
+        out.append(line)
+    return out or [""]
+
+
 def _easing(t):
     """Cubic ease-out 1-(1-t)^3, t in [0,1]."""
     t = max(0.0, min(1.0, float(t)))
@@ -200,6 +228,9 @@ class WaveformState:
         self._target_levels = tuple(_BASELINE for _ in range(bars))
         self._smoothed_levels = tuple(_BASELINE for _ in range(bars))
         self._paused = False
+        # One bar-slot of sideways travel, drained by advance(): 1.0 right
+        # after a push, 0.0 once the stream has slid into place.
+        self._scroll = 0.0
         self._display_levels = tuple(_BASELINE for _ in range(bars))
         self._refresh_display_levels()
 
@@ -232,6 +263,7 @@ class WaveformState:
             self._target = _gate(raw)
             self._history_levels.append(self._target)
             self._target_levels = tuple(self._history_levels)
+            self._scroll = 1.0
         ts = time.monotonic()
         self._deque.append((ts, raw, self._smoothed))
         return self._smoothed
@@ -240,6 +272,10 @@ class WaveformState:
         """Move every visible bar one small step toward its new target row."""
         if self._paused:
             return False
+        scrolled = False
+        if self._scroll > 0.0:
+            self._scroll = max(0.0, self._scroll - _SCROLL_STEP)
+            scrolled = True
         before = self._smoothed_levels
         next_levels = []
         for previous, target in zip(before, self._target_levels):
@@ -255,7 +291,7 @@ class WaveformState:
         self._smoothed_levels = tuple(next_levels)
         self._smoothed = self._smoothed_levels[-1] if next_levels else _BASELINE
         if self._smoothed_levels == before:
-            return False
+            return scrolled
         self._refresh_display_levels()
         return True
 
@@ -268,8 +304,15 @@ class WaveformState:
         return self._smoothed
 
     @property
+    def scroll(self):
+        """Bar-slots of travel left before the stream settles (0..1)."""
+        return self._scroll
+
+    @property
     def has_pending(self):
         """Whether another visual frame is needed to reach the target."""
+        if self._scroll > _VISUAL_EPSILON:
+            return True
         return any(
             abs(target - current) > _VISUAL_EPSILON
             for current, target in zip(self._smoothed_levels, self._target_levels)
@@ -283,6 +326,7 @@ class WaveformState:
         self._target_levels = tuple(_BASELINE for _ in range(self.bars))
         self._smoothed_levels = tuple(_BASELINE for _ in range(self.bars))
         self._paused = False
+        self._scroll = 0.0
         self._refresh_display_levels()
 
     def set_paused(self, paused: bool):
@@ -293,6 +337,7 @@ class WaveformState:
             self._smoothed = _BASELINE
             self._target_levels = tuple(_BASELINE for _ in range(self.bars))
             self._smoothed_levels = tuple(_BASELINE for _ in range(self.bars))
+            self._scroll = 0.0
             self._refresh_display_levels()
 
     @property
@@ -360,6 +405,9 @@ class Overlay(QWidget):
         self._hover_live_button = False
         # live transcript preview (optional, bounded)
         self._live_text = ""
+        self._live_lines = []
+        self._live_measure_key = None
+        self._live_measure_h = 0.0
         self._live_expanded = False
         self._live_font_cache = None
         self._expand_rect = QRectF()
@@ -425,6 +473,7 @@ class Overlay(QWidget):
         # clear previous live transcript on new session (but keep expand state)
         if self._live_text:
             self._live_text = ""
+            self._live_lines = []
             self._layout_cache = None
         # keep backwards compat levels tiny baseline
         self.levels = [0.0] * BARS
@@ -462,6 +511,7 @@ class Overlay(QWidget):
         self._reset_timer_cache()
         if self._live_text:
             self._live_text = ""
+            self._live_lines = []
         self.levels = [0.0] * BARS
         self.levels2 = [0.0] * BARS
         self._meeting_warning = False
@@ -561,6 +611,7 @@ class Overlay(QWidget):
         # live panel is for recording only; hide when leaving LIVE
         if self._live_text and state not in LIVE and state != PAUSED_STATE:
             self._live_text = ""
+            self._live_lines = []
             self._layout_cache = None
         # leaving LIVE, ensure reveal is complete
         self._reveal_progress = 1.0
@@ -650,9 +701,11 @@ class Overlay(QWidget):
 
     # ---- live transcript preview -----------------------------------------
     def set_live_transcript(self, text: str):
-        """Set the live transcript preview text. Empty string hides the panel.
+        """One block of live text (dictation). Empty string hides the panel.
+
         Bounded to 220 chars to prevent unbounded growth and jumping.
-        Call repeatedly as partial results arrive (off UI thread safe via queued signal).
+        Call repeatedly as partial results arrive (off UI thread safe via
+        queued signal).
         """
         try:
             cleaned = (text or "").strip()
@@ -663,12 +716,40 @@ class Overlay(QWidget):
         if cleaned == self._live_text:
             return
         self._live_text = cleaned
+        self._live_lines = [("", cleaned, None)] if cleaned else []
         # When live text appears while recording, ensure overlay includes live panel
         if self.state in LIVE or self.state == PAUSED_STATE or self._paused:
             self._resize_to_content()
             self._reposition()
             self.update()
         self.liveTranscriptChanged.emit(cleaned)
+
+    def set_live_lines(self, lines):
+        """Labeled lines, oldest first: (speaker, text, channel key).
+
+        The meeting path: each probe's words arrive under the name of
+        whoever spoke them, and the panel grows with the conversation.
+        """
+        try:
+            normalized = [(str(label or ""), str(text or "").strip(), key)
+                          for label, text, key in lines]
+        except (TypeError, ValueError):
+            normalized = []
+        normalized = [(label, text, key) for label, text, key in normalized
+                      if text][-_LIVE_MAX_LINES:]
+        joined = "\n".join(f"{label}: {text}" if label else text
+                           for label, text, _ in normalized)
+        if len(joined) > 8000:
+            joined = joined[-8000:]
+        if joined == self._live_text:
+            return
+        self._live_text = joined
+        self._live_lines = normalized
+        if self.state in LIVE or self.state == PAUSED_STATE or self._paused:
+            self._resize_to_content()
+            self._reposition()
+            self.update()
+        self.liveTranscriptChanged.emit(joined)
 
     def clear_live_transcript(self):
         self.set_live_transcript("")
@@ -699,14 +780,36 @@ class Overlay(QWidget):
         return self._live_text
 
     @property
+    def live_lines(self):
+        return list(self._live_lines)
+
+    @property
     def live_expanded(self):
         return self._live_expanded
 
     def _live_height(self):
         if not self._live_text:
             return 0.0
-        # fixed bounded heights — prevents continuous jumping as text arrives
-        return _LIVE_EXPANDED_H if self._live_expanded else _LIVE_COLLAPSED_H
+        if not self._live_expanded:
+            return _LIVE_COLLAPSED_H
+        # Content-fit: the panel grows with the transcript, newest line at
+        # the bottom, capped so it never towers over the screen.
+        key = (self._live_text, self.width())
+        if getattr(self, "_live_measure_key", None) == key:
+            return self._live_measure_h
+        metrics = QFontMetrics(self._live_font())
+        line_h = metrics.lineSpacing()
+        avail = int(max(120.0, float(self.width()) - 72.0))
+        total = 0
+        for label, text, _key in self._live_lines:
+            prefix_w = (metrics.horizontalAdvance(label + "  ") + 14
+                        if label else 0)
+            total += len(_wrap_text(text, metrics, avail - prefix_w)) * line_h
+        height = min(_LIVE_MAX_H,
+                     max(_LIVE_EXPANDED_H, total + 2 * _LIVE_PAD))
+        self._live_measure_key = key
+        self._live_measure_h = height
+        return height
 
     def _should_show_live(self):
         return bool(self._live_text) and (self.state in LIVE or self.state == PAUSED_STATE or self._paused)
@@ -979,7 +1082,8 @@ class Overlay(QWidget):
         expand = self._live_expanded if live else False
         key = (self.width(), self.height(), show_action, self.state == "meeting",
                self._meeting_warning, self._meeting_mic_warning,
-               self._meeting_collapsed, thinking, live, expand)
+               self._meeting_collapsed, thinking, live, expand,
+               len(self._live_text))
         if self._layout_cache is not None and self._layout_cache_key == key:
             return self._layout_cache
 
@@ -1116,6 +1220,7 @@ class Overlay(QWidget):
             self._layout_cache = None
         if self._live_text:
             self._live_text = ""
+            self._live_lines = []
             self._layout_cache = None
         self.update()
         if self.dismissable:
@@ -1265,18 +1370,61 @@ class Overlay(QWidget):
             c2.setAlpha(230)
             painter.setPen(c2)
             metrics2 = QFontMetrics(self._live_font())
-            # When collapsed: single line elided, when expanded: wrap up to 2-3 lines elided
+            # When collapsed: single line elided, when expanded: lines flow
+            # upward from the bottom edge, newest at the bottom.
             avail_w = int(live_rect.width() - 48)  # reserve for expand button
             if self._live_expanded:
-                # Expanded: show up to 3 lines with wordWrap, bounded height
-                # Use manual line breaking via QFontMetrics; keep bounded to live_h
-                text = self._live_text
-                # elide per line logic: Qt drawText with WordWrap won't elide, so we pre-elide to 220 chars already bounded
-                # Draw with word wrap inside rect, leaving expand button area
-                text_rect = QRectF(live_rect.left() + 12, live_rect.top() + 4, avail_w, live_rect.height() - 8)
-                painter.drawText(text_rect, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap), text)
+                line_h = metrics2.lineSpacing()
+                pad = _LIVE_PAD
+                text_left = live_rect.left() + 14
+                bold = QFont(self._live_font())
+                bold.setWeight(QFont.Weight.Bold)
+                bold_metrics = QFontMetrics(bold)
+                y = live_rect.bottom() - pad
+                for label, text, channel in reversed(self._live_lines):
+                    label_w = 0
+                    if label:
+                        label_w = int(bold_metrics.horizontalAdvance(label)) + 20
+                    wrapped = _wrap_text(text, metrics2, avail_w - label_w)
+                    # Bottom-up: the last wrapped segment sits lowest, the
+                    # labeled first segment crowns the entry.
+                    for seg_index, segment in enumerate(reversed(wrapped)):
+                        y -= line_h
+                        if y < live_rect.top() + 2:
+                            break
+                        topmost = seg_index == len(wrapped) - 1
+                        if label and topmost:
+                            dot_c = QColor(cols["REC"] if channel == "mine"
+                                           else cols["THEM"])
+                            painter.setPen(Qt.PenStyle.NoPen)
+                            painter.setBrush(dot_c)
+                            painter.drawEllipse(
+                                QPointF(text_left + 3, y + line_h / 2), 2.6, 2.6)
+                            painter.setFont(bold)
+                            painter.setPen(dot_c)
+                            painter.drawText(
+                                QRectF(text_left + 12, y, label_w - 14, line_h),
+                                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                                label)
+                            painter.setFont(self._live_font())
+                            painter.setPen(c2)
+                            painter.drawText(
+                                QRectF(text_left + label_w, y,
+                                       avail_w - label_w, line_h),
+                                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                                segment)
+                        else:
+                            painter.setPen(c2)
+                            painter.drawText(
+                                QRectF(text_left + label_w, y,
+                                       avail_w - label_w, line_h),
+                                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                                segment)
+                    if y < live_rect.top() + 2:
+                        break
             else:
-                text = metrics2.elidedText(self._live_text, Qt.TextElideMode.ElideRight, avail_w)
+                text = metrics2.elidedText(self._live_text.split("\n")[-1],
+                                           Qt.TextElideMode.ElideRight, avail_w)
                 painter.drawText(QRectF(live_rect.left() + 12, live_rect.top(), avail_w, live_rect.height()),
                                  int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
             # Draw expand/collapse chevron inside live panel
@@ -1524,6 +1672,14 @@ class Overlay(QWidget):
         muted.setAlpha(80)
         r = bar_w / 2
         last_index = max(1, len(display) - 1)
+        step = bars[1].left() - bars[0].left() if len(bars) > 1 else bar_w
+        scroll_x = self._wave.scroll * step
+        thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+        painter.save()
+        painter.setClipRect(
+            QRectF(bars[0].left(), thinking_off,
+                   bars[-1].right() - bars[0].left() + bar_w + step, HEIGHT),
+            Qt.ClipOperation.IntersectClip)
         for index, (base, level) in enumerate(zip(bars, display)):
             shaped = max(0.0, min(1.0, float(level)))
             h = 3.0 + shaped * 43.0
@@ -1539,7 +1695,8 @@ class Overlay(QWidget):
                 color.setAlphaF(min(1.0, 0.5 + shaped * 0.55))
                 painter.setBrush(color)
                 painter.setOpacity(recency)
-            painter.drawRoundedRect(QRectF(base.left(), y, bar_w, h), r, r)
+            painter.drawRoundedRect(QRectF(base.left() + scroll_x, y, bar_w, h), r, r)
+        painter.restore()
         painter.setOpacity(1.0)
         if need_clip:
             painter.restore()
@@ -1576,8 +1733,16 @@ class Overlay(QWidget):
         painter.setBrush(divider)
         painter.drawRoundedRect(
             QRectF(bars[0].left(), mid - 0.5, full_w + bar_w, 1.0), 0.5, 0.5)
+        step = bars[1].left() - bars[0].left() if len(bars) > 1 else bar_w
+        scroll_x = max(self._wave.scroll, self._wave2.scroll) * step
+        thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+        painter.save()
+        painter.setClipRect(
+            QRectF(bars[0].left(), thinking_off,
+                   bars[-1].right() - bars[0].left() + bar_w + step, HEIGHT),
+            Qt.ClipOperation.IntersectClip)
         for index, (base, mine, theirs) in enumerate(zip(bars, mine_disp, theirs_disp)):
-            x = base.left()
+            x = base.left() + scroll_x
             recency = 0.58 + 0.42 * index / last_index
             for level, accent, up in (
                 (mine, mine_color, True),
@@ -1607,6 +1772,7 @@ class Overlay(QWidget):
                     tip.setAlphaF(0.95)
                     painter.setBrush(tip)
                     painter.drawRoundedRect(QRectF(x, tip_y, bar_w, tip_h), r, r)
+        painter.restore()
         painter.setOpacity(1.0)
         if need_clip:
             painter.restore()

@@ -480,6 +480,8 @@ class MeetingRecorder(QObject):
         self._readers = ()
         self._mic_tap = bytearray()
         self._tap_drained = 0
+        self._theirs_tap = bytearray()
+        self._theirs_drained = 0
         self._mic_received = 0
 
     @property
@@ -532,16 +534,24 @@ class MeetingRecorder(QObject):
         with self._lock:
             self._mic_tap = bytearray()
             self._tap_drained = 0
+            self._theirs_tap = bytearray()
+            self._theirs_drained = 0
             self._mic_received = 0
 
     def pending_mic(self):
         """The microphone's half recorded since the last call, for the live
-        preview during a meeting. The other side is not previewed: its words
-        arrive with the minutes anyway, and doubling the probe cost for a
-        rough look is not a trade worth making."""
+        preview during a meeting."""
         with self._lock:
             chunk = bytes(self._mic_tap[self._tap_drained:])
             self._tap_drained = len(self._mic_tap)
+        return chunk
+
+    def pending_theirs(self):
+        """The other side's half recorded since the last call, so the live
+        preview can say who is speaking."""
+        with self._lock:
+            chunk = bytes(self._theirs_tap[self._theirs_drained:])
+            self._theirs_drained = len(self._theirs_tap)
         return chunk
 
     def _start_wasapi(self, path, mic_target, system_target, max_seconds):
@@ -627,6 +637,9 @@ class MeetingRecorder(QObject):
                     with self._lock:
                         self._mic_tap += chunk
                         self._mic_received += len(chunk)
+                else:
+                    with self._lock:
+                        self._theirs_tap += chunk
                 queue.append(chunk)
             else:
                 time.sleep(0.01)
@@ -731,12 +744,24 @@ class MeetingRecorder(QObject):
                 if not chunk:
                     break
                 mine, theirs = stereo_levels(chunk)
+                usable = len(chunk) - (len(chunk) % (SAMPLE_WIDTH * 2))
+                if usable:
+                    samples = array.array("h")
+                    samples.frombytes(chunk[:usable])
+                    left = samples[0::2].tobytes()
+                    right = samples[1::2].tobytes()
+                else:
+                    left = right = b""
                 with self._lock:
                     if self._wav is None:
                         break
                     self._wav.writeframes(chunk)
                     self._frames += len(chunk) // (SAMPLE_WIDTH * 2)
                     self._mic_received += len(chunk) // 2
+                    if left:
+                        self._mic_tap += left
+                    if right:
+                        self._theirs_tap += right
                     too_long = self._frames >= self._max_frames
                 self.levels.emit(mine, theirs)
                 if too_long:
