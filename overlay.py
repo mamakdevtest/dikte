@@ -1521,19 +1521,24 @@ class Overlay(QWidget):
         # bars softly recede to the left without any artificial motion.
         painter.setPen(Qt.PenStyle.NoPen)
         muted = QColor(cols["MUTED"])
-        muted.setAlpha(105)
-        active = QColor(accent)
-        active.setAlpha(224)
+        muted.setAlpha(80)
         r = bar_w / 2
         last_index = max(1, len(display) - 1)
         for index, (base, level) in enumerate(zip(bars, display)):
             shaped = max(0.0, min(1.0, float(level)))
-            h = 4.0 + shaped * 42.0
+            h = 3.0 + shaped * 43.0
             if h > 46.0:
                 h = 46.0
             y = mid - h / 2
-            painter.setBrush(muted if shaped < 0.04 else active)
-            painter.setOpacity(0.58 + 0.42 * index / last_index)
+            recency = 0.58 + 0.42 * index / last_index
+            if shaped < 0.04:
+                painter.setBrush(muted)
+                painter.setOpacity(recency * 0.75)
+            else:
+                color = QColor(accent)
+                color.setAlphaF(min(1.0, 0.5 + shaped * 0.55))
+                painter.setBrush(color)
+                painter.setOpacity(recency)
             painter.drawRoundedRect(QRectF(base.left(), y, bar_w, h), r, r)
         painter.setOpacity(1.0)
         if need_clip:
@@ -1561,26 +1566,47 @@ class Overlay(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         r = bar_w / 2
         muted = QColor(cols["MUTED"])
-        muted.setAlpha(95)
+        muted.setAlpha(80)
         mine_color = QColor(cols["REC"])
-        mine_color.setAlpha(218)
         theirs_color = QColor(cols["THEM"])
-        theirs_color.setAlpha(210)
         last_index = max(1, len(mine_disp) - 1)
+        # A faint divider keeps the two channels legible at a glance.
+        divider = QColor(cols["BORDER"])
+        divider.setAlpha(66)
+        painter.setBrush(divider)
+        painter.drawRoundedRect(
+            QRectF(bars[0].left(), mid - 0.5, full_w + bar_w, 1.0), 0.5, 0.5)
         for index, (base, mine, theirs) in enumerate(zip(bars, mine_disp, theirs_disp)):
             x = base.left()
+            recency = 0.58 + 0.42 * index / last_index
             for level, accent, up in (
                 (mine, mine_color, True),
                 (theirs, theirs_color, False),
             ):
                 shaped = max(0.0, min(1.0, float(level)))
-                h = 3.0 + shaped * 20.0
-                if h > 23.0:
-                    h = 23.0
+                h = 2.5 + shaped * 21.5
+                if h > 24.0:
+                    h = 24.0
                 y = mid - 2.0 - h if up else mid + 2.0
-                painter.setBrush(muted if shaped < 0.04 else accent)
-                painter.setOpacity(0.58 + 0.42 * index / last_index)
+                if shaped < 0.04:
+                    painter.setBrush(muted)
+                    painter.setOpacity(recency * 0.7)
+                else:
+                    # Loudness reads as brightness: quiet speech is translucent,
+                    # a loud voice fills its bar with the full channel colour.
+                    color = QColor(accent)
+                    color.setAlphaF(min(1.0, 0.45 + shaped * 0.6))
+                    painter.setBrush(color)
+                    painter.setOpacity(recency)
                 painter.drawRoundedRect(QRectF(x, y, bar_w, h), r, r)
+                # A brighter tip at the growing edge says "alive right now".
+                if shaped >= 0.12:
+                    tip_h = min(4.0, h * 0.35)
+                    tip_y = y if up else y + h - tip_h
+                    tip = QColor(accent)
+                    tip.setAlphaF(0.95)
+                    painter.setBrush(tip)
+                    painter.drawRoundedRect(QRectF(x, tip_y, bar_w, tip_h), r, r)
         painter.setOpacity(1.0)
         if need_clip:
             painter.restore()
