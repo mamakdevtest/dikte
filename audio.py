@@ -433,19 +433,50 @@ def _open_or_default(open_fn, name):
 
 
 def _wasapi_sources(mic_target, system_target):
-    """(microphone, speakers) endpoints for a meeting, straight from WASAPI.
+    """(microphone, loopbacks) endpoints for a meeting, straight from WASAPI.
 
-    An empty target means the default endpoint, so with nothing configured a
-    meeting still records the other side: whatever Discord, Zoom or the
-    browser plays lands on the default output, and loopback hears it there.
+    Windows lets every application pick its own output endpoint, so the
+    meeting's far side may not play on the default one. With no output named,
+    loopback is therefore opened on every active render endpoint and the
+    mixer sums what they carry — wherever the other side speaks, it is
+    heard. A named target keeps the single loopback it names.
     """
     mic = _open_or_default(wasapi.open_capture, mic_target)
+    loops = []
     try:
-        loop = _open_or_default(wasapi.open_loopback, system_target)
+        if system_target:
+            loops = [_open_or_default(wasapi.open_loopback, system_target)]
+        else:
+            for name, _id in wasapi.render_outputs():
+                try:
+                    loops.append(wasapi.open_loopback(name))
+                except wasapi.WasapiError:
+                    continue  # an endpoint that refuses loopback is skipped
+            if not loops:
+                loops = [_open_or_default(wasapi.open_loopback, "")]
     except wasapi.WasapiError:
         mic.close()
+        for loop in loops:
+            loop.close()
         raise
-    return mic, loop
+    return mic, tuple(loops)
+
+
+def _sum_loops(buffers):
+    """Sample-wise sum of mono s16 buffers, zero-padded to the longest."""
+    width = max((len(b) for b in buffers), default=0)
+    width -= width % 2
+    if not width:
+        return b""
+    total = array.array("h", bytes(width))
+    for buf in buffers:
+        if not buf:
+            continue
+        part = array.array("h")
+        part.frombytes(buf[:width if len(buf) >= width else len(buf) - len(buf) % 2])
+        for i, value in enumerate(part):
+            total[i] = max(-32768, min(32767, total[i] + value))
+    return total.tobytes()
 
 
 class MeetingRecorder(QObject):
@@ -559,26 +590,30 @@ class MeetingRecorder(QObject):
     def _start_wasapi(self, path, mic_target, system_target, max_seconds):
         """Both sides straight from WASAPI, no subprocess in the middle.
 
-        The microphone and the speakers are separate endpoints here rather
-        than two inputs of one process, so the pump pairs them frame by
-        frame and pads whichever side falls quiet — a loopback endpoint
-        delivers nothing at all while no app plays sound.
+        The microphone is one endpoint; the far side is every render
+        endpoint the machine offers, summed, so an application playing on a
+        non-default output is still heard. The pump pairs the two sides
+        frame by frame and pads whichever falls quiet — a loopback endpoint
+        delivers nothing at all while no app plays sound on it.
         """
-        mic_src, loop_src = _wasapi_sources(mic_target, system_target)
+        mic_src, loops = _wasapi_sources(mic_target, system_target)
         try:
             wav = self._open_wav(path)
         except (OSError, wave.Error):
             mic_src.close()
-            loop_src.close()
+            for loop in loops:
+                loop.close()
             raise
         self._wav = wav
         self._reset_run(path, max_seconds)
         self._wasapi_mode = True
-        self._sources = (mic_src, loop_src)
-        self._queues = (collections.deque(), collections.deque())
+        self._sources = (mic_src,) + loops
+        self._queues = tuple(collections.deque() for _ in self._sources)
         self._readers = tuple(
-            threading.Thread(target=self._reader, args=(src, queue, side), daemon=True)
-            for side, (src, queue) in enumerate(zip(self._sources, self._queues))
+            threading.Thread(target=self._reader,
+                             args=(src, queue, 0 if index == 0 else 1),
+                             daemon=True)
+            for index, (src, queue) in enumerate(zip(self._sources, self._queues))
         )
         for reader in self._readers:
             reader.start()
@@ -647,87 +682,114 @@ class MeetingRecorder(QObject):
                 time.sleep(0.01)
 
     def _mix(self):
-        """Pair the two queues frame by frame into the stereo file.
+        """Pair the microphone with the summed loopbacks into the stereo file.
 
         Whichever side has no data for over a quarter of a second while the
         other does gets zeros: silence is a real thing a meeting records,
-        and a starved loopback must never stall the microphone's half. A
+        and quiet loopbacks must never stall the microphone's half. A
         reader that reports its device is gone ends the run outright, the
-        way a vanished ffmpeg always has — at most a few hundred
-        milliseconds of tail go unwritten.
+        way a vanished ffmpeg always has.
+
+        Level pairs are produced per written block but handed to the
+        overlay on a wall-clock schedule — one pair per block-time — so the
+        waveform's speed is the speed of the meeting, no matter how the
+        device buffers deliver their data.
         """
         block = CHUNK_FRAMES * SAMPLE_WIDTH  # mono bytes per side
-        pending = [bytearray(), bytearray()]
-        last_data = [time.monotonic(), time.monotonic()]
-        t0 = time.monotonic()
+        n_loops = len(self._queues) - 1
+        mic_pending = bytearray()
+        loop_pending = [bytearray() for _ in range(n_loops)]
+        theirs_pending = bytearray()
+        last_mic = last_theirs = time.monotonic()
+        t0 = last_mic
+        next_emit = t0
+        block_time = CHUNK_FRAMES / RATE
+        emits = collections.deque()
         try:
             while True:
-                for side in (0, 1):
-                    while len(pending[side]) < block:
+                while len(mic_pending) < block:
+                    try:
+                        chunk = self._queues[0].popleft()
+                    except IndexError:
+                        break
+                    if chunk is None:
+                        if not self._stopping:
+                            self.died.emit()
+                        return
+                    mic_pending += chunk
+                    last_mic = time.monotonic()
+                for queue, pending in zip(self._queues[1:], loop_pending):
+                    while True:
                         try:
-                            chunk = self._queues[side].popleft()
+                            chunk = queue.popleft()
                         except IndexError:
                             break
                         if chunk is None:
-                            # device went away; the tail is lost, but the run
-                            # must be reported the way a vanished ffmpeg was
                             if not self._stopping:
                                 self.died.emit()
                             return
-                        pending[side] += chunk
-                        last_data[side] = time.monotonic()
-                have = min(len(pending[0]), len(pending[1])) // block
+                        pending += chunk
+                        last_theirs = time.monotonic()
+                summed = _sum_loops(loop_pending)
+                if summed:
+                    theirs_pending += summed
+                    loop_pending = [bytearray() for _ in range(n_loops)]
+                have = min(len(mic_pending), len(theirs_pending)) // block
                 now = time.monotonic()
                 if not have:
-                    for side in (0, 1):
-                        starved = (now - last_data[side] > 0.25
-                                   and len(pending[1 - side]) >= block)
-                        if starved:
-                            room = min(len(pending[1 - side]) // block, RATE)
-                            pending[side] += b"\x00" * (room * block)
-                            last_data[side] = now
-                            have = min(len(pending[0]),
-                                       len(pending[1])) // block
-                    if not have:
-                        if self._stopping:
+                    if now - last_theirs > 0.25 and len(mic_pending) >= block:
+                        room = min(len(mic_pending) // block, RATE)
+                        theirs_pending += b"\x00" * (room * block)
+                        last_theirs = now
+                    elif now - last_mic > 0.25 and len(theirs_pending) >= block:
+                        room = min(len(theirs_pending) // block, RATE)
+                        mic_pending += b"\x00" * (room * block)
+                        last_mic = now
+                    have = min(len(mic_pending), len(theirs_pending)) // block
+                too_long = False
+                if have:
+                    take = min(have, 8)  # ≤ 0.5 s per lap keeps stops snappy
+                    left = mic_pending[:take * block]
+                    right = theirs_pending[:take * block]
+                    del mic_pending[:take * block]
+                    del theirs_pending[:take * block]
+                    stereo = bytearray()
+                    for index in range(0, len(left), SAMPLE_WIDTH):
+                        stereo += left[index:index + SAMPLE_WIDTH]
+                        stereo += right[index:index + SAMPLE_WIDTH]
+                    stereo = bytes(stereo)
+                    with self._lock:
+                        if self._wav is None:
                             return
-                        time.sleep(0.01)
-                        continue
-                take = min(have, 8)  # ≤ 0.5 s per lap keeps stops snappy
-                left = pending[0][:take * block]
-                right = pending[1][:take * block]
-                del pending[0][:take * block]
-                del pending[1][:take * block]
-                stereo = bytearray()
-                for index in range(0, len(left), SAMPLE_WIDTH):
-                    stereo += left[index:index + SAMPLE_WIDTH]
-                    stereo += right[index:index + SAMPLE_WIDTH]
-                stereo = bytes(stereo)
-                with self._lock:
-                    if self._wav is None:
-                        return
-                    self._wav.writeframes(stereo)
-                    self._frames += len(stereo) // (SAMPLE_WIDTH * 2)
-                    frames = self._frames
-                    too_long = self._frames >= self._max_frames
-                # One level pair per block, not one per lap: a lap can carry
-                # half a second of catch-up at once, and the overlay's
-                # waveform needs the steady block cadence to keep both sides
-                # moving evenly.
-                step = block * 2
-                for index in range(0, len(stereo), step):
-                    mine, theirs = stereo_levels(stereo[index:index + step])
+                        self._wav.writeframes(stereo)
+                        self._frames += len(stereo) // (SAMPLE_WIDTH * 2)
+                        too_long = self._frames >= self._max_frames
+                    step = block * 2
+                    for index in range(0, len(stereo), step):
+                        mine, theirs = stereo_levels(stereo[index:index + step])
+                        emits.append((mine, theirs))
+                        if len(emits) > 64:
+                            emits.popleft()  # stay near real time, drop stale
+                # The emitter runs on every lap: queued pairs leave one per
+                # block-time of wall clock, so bursts can never speed the
+                # overlay up, and a quiet stretch simply leaves the queue dry.
+                now = time.monotonic()
+                if next_emit < now - 0.25:
+                    next_emit = now  # resync after silence, never race
+                while emits and now >= next_emit:
+                    mine, theirs = emits.popleft()
                     self.levels.emit(mine, theirs)
-                # The file may run ahead of the sound (buffers drain in
-                # bursts), but the overlay must not: sleep off whatever the
-                # written frames lead the wall clock by, so one channel's
-                # audio can never speed the other channel's waveform up.
-                ahead = frames / RATE - (time.monotonic() - t0)
-                if ahead > 0.02:
-                    time.sleep(min(ahead, 0.1))
+                    next_emit += block_time
+                    now = time.monotonic()
                 if too_long:
                     self._stop_wasapi()
                     return
+                if emits:
+                    time.sleep(min(max(0.0, next_emit - now), 0.05))
+                elif not have:
+                    if self._stopping:
+                        return
+                    time.sleep(0.01)
         except (OSError, ValueError, wave.Error):
             pass
         if not self._stopping:

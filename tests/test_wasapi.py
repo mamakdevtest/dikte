@@ -74,10 +74,9 @@ class RecorderWasapi(OnWindows, DikteTest):
         self.path = os.path.join(self.root, "meet.wav")
 
     def wire(self, mic, loop):
-        sources = (mic, loop)
         self.enterContext(mock.patch.object(
-            audio, "_wasapi_sources", return_value=sources))
-        return sources
+            audio, "_wasapi_sources", return_value=(mic, (loop,))))
+        return mic, loop
 
     # Levels and died are emitted from the mixer thread, so the signals ride
     # a queued connection: without pumping the loop they would never land.
@@ -157,6 +156,35 @@ class RecorderWasapi(OnWindows, DikteTest):
             lambda: self.recorder.mic_received >= 3 * audio.CHUNK_BYTES))
         self.recorder.stop()
         self.assertEqual(self.recorder.mic_received, 3 * audio.CHUNK_BYTES)
+
+    def test_several_loopbacks_are_summed_into_the_far_side(self):
+        """The meeting app may play on any output; the far side hears all."""
+        self.enterContext(mock.patch.object(
+            audio, "_wasapi_sources",
+            return_value=(FakeSource([mono_chunk(0) for _ in range(4)]),
+                          (FakeSource([mono_chunk(4000) for _ in range(4)]),
+                           FakeSource([mono_chunk(4000) for _ in range(4)])))))
+        self.recorder.start(self.path, "Mic", "")
+        self.assertTrue(self.wait_for(
+            lambda: self.recorder._frames >= 4 * audio.CHUNK_FRAMES))
+        self.recorder.stop()
+        left, right = self.frames_of(self.path)
+        self.assertEqual(set(left), {0})
+        self.assertEqual(right[:4], [8000] * 4)
+
+    def test_levels_stay_paced_to_real_time_under_a_burst(self):
+        stamps = []
+        self.recorder.levels.connect(
+            lambda m, t: stamps.append(time.monotonic()))
+        self.wire(FakeSource([mono_chunk(16384) for _ in range(8)]),
+                  FakeSource([mono_chunk(8192) for _ in range(8)]))
+        self.recorder.start(self.path, "Mic", "Loop")
+        self.assertTrue(self.wait_for(lambda: len(stamps) >= 8, timeout=8.0))
+        self.recorder.stop()
+        # Eight blocks are half a second of meeting; the overlay may not be
+        # told about them in a blink.
+        self.assertGreaterEqual(stamps[-1] - stamps[0], 0.35)
+        self.assertLessEqual(len(stamps), 9)
 
     def test_a_silent_loopback_pads_zeros_and_keeps_recording(self):
         """No app is playing: the far side is silence, not a stalled file."""
@@ -399,7 +427,7 @@ class DictationWasapi(OnWindows, DikteTest):
                 side_effect=[wasapi.WasapiError("stale"), mic]), \
                 mock.patch.object(audio.wasapi, "open_loopback",
                                   return_value=loop):
-            got_mic, got_loop = audio._wasapi_sources("Stale Mic", "")
+            got_mic, (got_loop,) = audio._wasapi_sources("Stale Mic", "Named Out")
         self.assertIs(got_mic, mic)
         self.assertIs(got_loop, loop)
 
