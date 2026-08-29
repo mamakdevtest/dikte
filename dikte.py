@@ -91,9 +91,10 @@ def meeting_mic_silent(recording_seconds, mic_bytes):
 
 
 # The loopback carries mastered playback while the microphone carries one
-# quiet voice; the overlay's mic half gets display-only gain so it responds
-# as visibly as the other side. The recorded audio is never touched.
+# quiet voice; the overlay's halves get display-only gain so they respond
+# as visibly as each other. The recorded audio is never touched.
 MEETING_MINE_GAIN = 2.5
+MEETING_THEIRS_GAIN = 1.5
 
 
 def app_icon():
@@ -1003,7 +1004,10 @@ class Dikte:
         self._settle(MEETING, {"ok": False, "cancelled": True, "error": "cancelled"})
 
     def _on_meeting_levels(self, mine, theirs):
-        self.overlay.push_levels(min(1.0, mine * MEETING_MINE_GAIN), theirs)
+        # Display-only gains: loopback playback is mastered loud, a desk mic
+        # and a far-away voice are not; the watchdog reads the raw levels.
+        self.overlay.push_levels(min(1.0, mine * MEETING_MINE_GAIN),
+                                 min(1.0, theirs * MEETING_THEIRS_GAIN))
         if theirs >= 0.04:
             self._meeting_last_sound = self.meeting_elapsed.elapsed() / 1000.0
 

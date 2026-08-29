@@ -1759,7 +1759,8 @@ class Overlay(QWidget):
         painter.drawRoundedRect(
             QRectF(bars[0].left(), mid - 0.5, full_w + bar_w, 1.0), 0.5, 0.5)
         step = bars[1].left() - bars[0].left() if len(bars) > 1 else bar_w
-        scroll_x = max(self._wave.scroll, self._wave2.scroll) * step
+        mine_scroll = self._wave.scroll * step
+        theirs_scroll = self._wave2.scroll * step
         thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
         painter.save()
         painter.setClipRect(
@@ -1767,16 +1768,16 @@ class Overlay(QWidget):
                    bars[-1].right() - bars[0].left() + bar_w + step, HEIGHT),
             Qt.ClipOperation.IntersectClip)
         for index, (base, mine, theirs) in enumerate(zip(bars, mine_disp, theirs_disp)):
-            x = base.left() + scroll_x
             recency = 0.58 + 0.42 * index / last_index
-            for level, accent, up in (
-                (mine, mine_color, True),
-                (theirs, theirs_color, False),
+            for level, accent, up, scroll_x in (
+                (mine, mine_color, True, mine_scroll),
+                (theirs, theirs_color, False, theirs_scroll),
             ):
                 shaped = max(0.0, min(1.0, float(level)))
                 h = 2.5 + (shaped ** 0.85) * 21.5
                 if h > 24.0:
                     h = 24.0
+                x = base.left() + scroll_x
                 y = mid - 2.0 - h if up else mid + 2.0
                 if shaped < 0.04:
                     painter.setBrush(muted)

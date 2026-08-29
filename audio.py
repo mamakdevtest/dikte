@@ -659,6 +659,7 @@ class MeetingRecorder(QObject):
         block = CHUNK_FRAMES * SAMPLE_WIDTH  # mono bytes per side
         pending = [bytearray(), bytearray()]
         last_data = [time.monotonic(), time.monotonic()]
+        t0 = time.monotonic()
         try:
             while True:
                 for side in (0, 1):
@@ -707,6 +708,7 @@ class MeetingRecorder(QObject):
                         return
                     self._wav.writeframes(stereo)
                     self._frames += len(stereo) // (SAMPLE_WIDTH * 2)
+                    frames = self._frames
                     too_long = self._frames >= self._max_frames
                 # One level pair per block, not one per lap: a lap can carry
                 # half a second of catch-up at once, and the overlay's
@@ -716,6 +718,13 @@ class MeetingRecorder(QObject):
                 for index in range(0, len(stereo), step):
                     mine, theirs = stereo_levels(stereo[index:index + step])
                     self.levels.emit(mine, theirs)
+                # The file may run ahead of the sound (buffers drain in
+                # bursts), but the overlay must not: sleep off whatever the
+                # written frames lead the wall clock by, so one channel's
+                # audio can never speed the other channel's waveform up.
+                ahead = frames / RATE - (time.monotonic() - t0)
+                if ahead > 0.02:
+                    time.sleep(min(ahead, 0.1))
                 if too_long:
                     self._stop_wasapi()
                     return
