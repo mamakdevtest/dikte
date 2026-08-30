@@ -1,7 +1,47 @@
-# GOAL
+# GOAL — Overlay / Voice Reliability Pass (current)
 
-## Final goal
-Rebuild Dikte's production UX/UI so that it faithfully matches the exported reference prototype in `design/Dikte-Yeniden-Tasarım-Prototipi/` as a native PyQt6 application. The result must be pixel-conscious, preserve all real functionality/config semantics, and pass the existing behavioural tests.
+## Active mission
+Overlay stabilization, multi-activity stacking, concurrent recording architecture,
+durable voice jobs, model retries, Editing Level simplification, EN/TR parity.
+Principle: "Capture first and persist it. AI processing is retryable derived work."
+
+## In scope
+- Overlay lifecycle/visual stacking via OverlayCoordinator (chronological top→bottom, oldest at top)
+- Concurrent capture: meeting + dictation/agent can coexist on shared backends
+- Durable VoiceJobs (CAPTURED→TRANSCRIBED→PROCESSED/FAILED_RETRYABLE→COMPLETED) with atomic persistence
+- Retryable AI: dictation cleanup, meeting minutes, agent execution from latest checkpoint
+- History/Minutes retry UX (recoverable jobs visible, retry actions)
+- Settings simplification: single Editing Level (Shortening Freedom removed, backward compat)
+- Complete EN/TR parity for all changed surfaces
+
+## Out of scope
+- Webview/Electron, new third-party deps, repomix-output.xml / design export edits
+- Drive-by refactors beyond the listed surfaces
+
+## Constraints
+- Python 3.11+, stdlib+PyQt6 only
+- Cross-platform (Windows/Linux/macOS), local-first, single-instance IPC intact
+- Atomic writes, no data loss on derived-step failure
+- GUI-thread discipline
+
+## Acceptance criteria
+- Overlay expand/collapse predictable, transcript bounded (600px), waveform stable & independent of transcript
+- Multiple activities coexist deterministically; new activity doesn't destroy/collapse prior ones
+- Captured audio/transcript persisted before AI work; failure keeps source
+- Retry uses latest checkpoint (no re-transcribe when transcript exists)
+- Meeting minutes retry backward compatible
+- Old configs with ai_shortening_freedom load safely
+- EN/TR placeholder parity passes
+
+## Definition of Done
+- Implementation tasks in docs/ai/TASKS.md [x]
+- Relevant + full suite recorded in docs/ai/VERIFICATION.md (no predicted PASS)
+- git diff --check clean, no debug artifacts, no secrets
+- Context Ledger updated per ai/workflows.md
+
+---
+
+# GOAL (previous: prototype→production rebuild)
 
 ## Source-of-truth design directory
 `design/Dikte-Yeniden-Tasarım-Prototipi/` — authoritative visual and interaction contract. Primary entries: `index.html`, `general.html`, `api-models.html`, `cleanup-rules.html`, `agent.html`, `meeting.html`, `minutes.html`, `audio-file.html`, `shortcuts.html`, `history.html`, `overlay.html`, `assets/dikte.css`, `assets/dikte.js`, `DESIGN-HANDOFF.md`, `DESIGN-MANIFEST.json`. Reference screenshots in `docs/settings-*.webp` and `docs/design-reference.md`.

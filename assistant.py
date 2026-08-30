@@ -220,6 +220,37 @@ def working_dir(conf):
     return os.path.expanduser("~")
 
 
+def retry_ask(spoken_text, conf, on_stage=None, should_stop=None):
+    """Retry a failed agent ask from preserved spoken text.
+
+    Does NOT create a new session side-effect for a successfully answered
+    prior command: it checks whether the last stored session already contains
+    the answer and reuses it.  Spoken text is required; the caller should
+    keep the voice_jobs raw_transcript as the source.
+    Spoken audio preservation is handled by worker.py's voice_jobs entry; this
+    function only re-runs the agent step.
+    Returns (answer, warning) on the retry.
+    """
+    # Check idempotency: if the last session already holds this prompt's answer,
+    # don't duplicate it — return the stored answer's signal instead of re-running.
+    # Gateways store full message history; CLIs store session id.
+    name = provider(conf)
+    try:
+        last_messages = read_messages(name, conf["assistant_session_minutes"] * 60)
+        for msg in reversed(last_messages):
+            if isinstance(msg, dict) and msg.get("role") == "user" and msg.get("content") == spoken_text:
+                # Found prior identical user turn — if an assistant reply follows, consider it idempotent success
+                idx = last_messages.index(msg)
+                if idx + 1 < len(last_messages) and last_messages[idx + 1].get("role") == "assistant":
+                    # Return the previously stored answer rather than re-executing
+                    # (prevents duplicate side-effects for a successful prior run)
+                    # Caller can still force a true re-run by clearing the session first.
+                    return last_messages[idx + 1].get("content", ""), ""
+    except Exception:
+        pass
+    return ask(spoken_text, conf, on_stage=on_stage, should_stop=should_stop)
+
+
 def ask(prompt, conf, on_stage=None, should_stop=None):
     """Run the prompt through the configured agent. Returns (answer, warning).
 

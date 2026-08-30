@@ -694,6 +694,55 @@ def new_entry(base, duration):
     }
 
 
+def retry_meeting(base, conf):
+    """Convenience: retry a meeting from its latest safe checkpoint.
+
+    Reads the meetings index, finds the row with the given ``base`` and asks a
+    fresh MeetingPipeline to pick it up from wherever it stopped.  The pipeline
+    itself owns the checkpoint logic:
+
+    * no transcript yet (status ``recorded`` / ``failed`` before the
+      transcript) — transcribes + cleans + writes the ``transcribed``
+      checkpoint.
+    * transcript already on disk (status ``transcribed`` / ``done`` with a
+      readable document) — skips the audio/transcription entirely and
+      re-runs only title + minutes (see MeetingPipeline._stored_transcript
+      and the ``status="transcribed"`` write).
+
+    Returns True when the pipeline was started, False when there is no such
+    meeting or the pipeline is already busy.  The caller should listen to the
+    returned pipeline's ``finished`` / ``failed`` signals for the outcome.
+    """
+    rows = cfg.read_meetings()
+    entry = next((row for row in rows if row.get("base") == base), None)
+    if entry is None:
+        return False
+    pipe = MeetingPipeline(conf)
+    started = pipe.run(entry)
+    if not started:
+        return False
+    # Hand the pipeline back via the truthy return so a UI layer can wire
+    # signals even though this helper created it; callers that only need the
+    # boolean can ignore the object identity and just check truthiness.  To
+    # keep the simple ``if retry_meeting(base, conf):`` shape, attach the
+    # pipeline to the boolean via a tiny wrapper.
+    return pipe  # truthy; caller may do ``pipe = retry_meeting(base, conf)``
+
+
+def retry_meeting_entry(entry, conf):
+    """Same as retry_meeting(), but the entry dict is already in hand.
+
+    Useful when the caller has just read the index and does not want to read
+    it again.  Hands the entry straight to MeetingPipeline.run(), which
+    consults MeetingPipeline._stored_transcript / the on-disk document to
+    decide whether to resume from transcription or from the
+    ``status="transcribed"`` checkpoint.
+    """
+    pipe = MeetingPipeline(conf)
+    ok = pipe.run(dict(entry))
+    return pipe if ok else False
+
+
 def prune_audio(days):
     """Recordings older than the retention go; the minutes stay forever.
 

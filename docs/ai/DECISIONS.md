@@ -1,4 +1,15 @@
-# DECISIONS
+# DECISIONS — Overlay / Voice Reliability Pass
+
+- **Activity ordering** — chronological top→bottom; oldest `created_order` at top. `OverlayCoordinator.ordered()` returns sorted order. Newest appended at bottom per user example (meeting first → meeting top, dictation second → below, agent third → bottom).
+- **Concurrent capture** — `audio.concurrent_capture_info()` / `can_concurrent_capture()` show Pulse/PipeWire, WASAPI shared-mode, and AVFoundation all allow concurrent Recorder + MeetingRecorder (server/HAL duplication). No fan-out hub required; `dikte.py:start_meeting()` keeps live dictation on shared backends, falls back to old stop-on-DirectShow. Documented per-platform rationale.
+- **Durable VoiceJobs** — `voice_jobs.py` with `voice_jobs.jsonl`, atomic tmp→replace, statuses CAPTURED/TRANSCRIBED/PROCESSED/COMPLETED/FAILED_RETRYABLE, fields {id,kind,ts,status,audio_path,raw_transcript,error_stage,provider,model,duration,retry_count}; `worker.py` persists before claiming checkpoint (copy audio before CAPTURED), skips re-transcribe when raw exists, retry_checkpoint logic.
+- **Audio preservation** — failed processing always retains source audio (voice_jobs.should_keep_audio override); successful keeps per policy (new default retain). History recovery shows retryable state.
+- **ai_shortening_freedom migration** — deprecated in DEFAULTS, silently clamped on load, not persisted on save, folded into Editing Level 1..5 descriptions; old configs load without crash.
+- **Agent retry idempotency** — `assistant.retry_ask()` checks stored messages for prior identical user turn + assistant reply; returns cached rather than re-executing when already successful (prevents duplicate side-effects).
+
+---
+
+# DECISIONS (previous)
 
 - **Design system freeze** — `assets/dikte.css` `:root` and `[data-theme=light]` are the single source of truth. Frozen verbatim into `ui/theme.py` as `DARK`/`LIGHT` dicts (keys `canvas`, `sidebar`, `surface`, `surface2`, `field`, `border`, `borderStrong`, `fg`, `fg2`, `fg3`, `terra`, `terraDeep`, `sage`, `sageDark`, `ok`, `warn`, `err`, `info`, `inkBtn`, `onInk`) plus `RADII` {r1:4,r2:6,r3:8,r4:12}. `stylesheet(theme)` emits one global QSS; `apply(theme)` reapplies to `QApplication`.
 

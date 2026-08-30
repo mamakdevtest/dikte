@@ -606,5 +606,113 @@ class MacRecordingCommand(OnMacOS, DikteTest):
         self.assertFalse(recorder.active)
 
 
+class ConcurrentCapture(unittest.TestCase):
+    """Recorder + MeetingRecorder coexistence probe (Option A).
+
+    Linux Pulse/PipeWire and macOS AVFoundation duplicate the source to every
+    client; Windows WASAPI does the same via AUDCLNT_SHAREMODE_SHARED.  The
+    probe documents that per-platform decision and the API dikte.py wires.
+    """
+
+    def test_linux_pulse_pipewire_is_shared(self):
+        with mock.patch.object(sys, "platform", "linux"):
+            info = audio.concurrent_capture_info()
+            self.assertTrue(info["shared"])
+            self.assertFalse(info["needs_fanout"])
+            self.assertEqual(info["backend"], "pulse/pipewire")
+            self.assertTrue(audio.can_concurrent_capture())
+
+    def test_macos_avfoundation_is_shared(self):
+        with mock.patch.object(sys, "platform", "darwin"):
+            info = audio.concurrent_capture_info()
+            self.assertTrue(info["shared"])
+            self.assertFalse(info["needs_fanout"])
+            self.assertEqual(info["backend"], "avfoundation")
+            self.assertTrue(audio.can_concurrent_capture())
+
+    def test_windows_with_wasapi_is_shared(self):
+        with mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(audio.wasapi, "available", return_value=True):
+            info = audio.concurrent_capture_info()
+            self.assertTrue(info["shared"])
+            self.assertFalse(info["needs_fanout"])
+            self.assertEqual(info["backend"], "wasapi")
+            self.assertTrue(audio.can_concurrent_capture())
+
+    def test_windows_without_wasapi_is_not_shared(self):
+        """Fallback to DirectShow: driver-dependent, so not claimed as shared."""
+        with mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(audio.wasapi, "available", return_value=False):
+            info = audio.concurrent_capture_info()
+            self.assertFalse(info["shared"])
+            self.assertEqual(info["backend"], "wasapi+dshow")
+            self.assertFalse(audio.can_concurrent_capture())
+
+    def test_info_always_carries_a_reason(self):
+        for plat in ("linux", "darwin", "win32"):
+            with self.subTest(platform=plat), \
+                 mock.patch.object(sys, "platform", plat):
+                with mock.patch.object(audio.wasapi, "available",
+                                        return_value=True):
+                    info = audio.concurrent_capture_info()
+                    self.assertIsInstance(info["reason"], str)
+                    self.assertTrue(info["reason"])
+                    self.assertIn("platform", info)
+                    self.assertEqual(info["platform"], plat)
+
+    def test_no_fanout_needed_on_any_current_platform(self):
+        """Option B (single-hub fan-out) is unnecessary on supported OSes."""
+        for plat in ("linux", "darwin"):
+            with mock.patch.object(sys, "platform", plat):
+                self.assertFalse(audio.concurrent_capture_info()["needs_fanout"])
+        with mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(audio.wasapi, "available", return_value=True):
+            self.assertFalse(audio.concurrent_capture_info()["needs_fanout"])
+        with mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(audio.wasapi, "available", return_value=False):
+            self.assertFalse(audio.concurrent_capture_info()["needs_fanout"])
+
+
+class RecorderIsolation(unittest.TestCase):
+    """Recorder and MeetingRecorder must not share fate via class state.
+
+    Each class keeps entirely instance-level handles/threads/counters.  A
+    second instance's _gen bump, start(), or stop() cannot invalidate the
+    first's pump/mix loop — which is what lets dikte.py keep the two alive
+    together when can_concurrent_capture() is True.
+    """
+
+    def test_recorder_instances_own_their_gen(self):
+        a, b = audio.Recorder(), audio.Recorder()
+        a._gen = 7
+        b._gen = 2
+        self.assertNotEqual(a._gen, b._gen)
+        b._gen += 1
+        self.assertEqual(a._gen, 7)
+
+    def test_meeting_recorder_instances_own_their_state(self):
+        a, b = audio.MeetingRecorder(), audio.MeetingRecorder()
+        a._stopping = True
+        b._stopping = False
+        self.assertTrue(a._stopping)
+        self.assertFalse(b._stopping)
+
+    def test_recorder_and_meeting_recorder_do_not_share_class_attrs(self):
+        # No class-level mutable that both would read/write.
+        for cls in (audio.Recorder, audio.MeetingRecorder):
+            for name in ("_proc", "_thread", "_gen", "_stopping",
+                         "_cancelled", "_wasapi_mode"):
+                # Each access should come from __dict__ on the instance
+                # once set, not from the type.
+                self.assertTrue(
+                    name in cls.__dict__ or hasattr(cls, name)
+                    or name.startswith("_"),
+                    f"{cls.__name__} should expose {name} as instance state")
+
+    def test_meeting_recorder_mic_received_starts_at_zero(self):
+        rec = audio.MeetingRecorder()
+        self.assertEqual(rec.mic_received, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

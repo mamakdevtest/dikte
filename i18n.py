@@ -852,6 +852,7 @@ TR = {
     # --- AI ------------------------------------------------------------
     "AI Text Processing": "Yapay Zeka Metin İşleme",
     "Editing Level": "Düzenleme Seviyesi",
+    # Deprecated: kept for backward compat but no longer shown
     "Shortening Freedom": "Kısaltma Özgürlüğü",
     "Show result overlay after dictation": "Dikte sonrası sonuç balonunu göster",
     "When enabled, the final transcript appears in a small overlay with Copy and Close actions. Auto Paste behavior is unchanged.":
@@ -867,8 +868,13 @@ TR = {
         "Dengeli okunabilirlik: cümleler yeniden kurulabilir ama anlam ve önemli detaylar korunur. Gerçek özetleme yok.",
     "Stronger rewriting, merging redundancies, polished written language. Shortening bounded by Shortening Freedom.":
         "Daha güçlü yeniden yazma, gereksiz tekrarların birleştirilmesi, cilalı yazılı dil. Kısaltma, Kısaltma Özgürlüğü ile sınırlı.",
+    # Deprecated shortening refs kept for compat; new level descriptions below fold shortening in:
+    "Stronger rewriting, merging redundancies, polished written language. Bounded shortening is allowed but important details must remain.":
+        "Daha güçlü yeniden yazma, gereksiz tekrarların birleştirilmesi, cilalı yazılı dil. Sınırlı kısaltmaya izin verilir ama önemli detaylar kalmalıdır.",
     "Intensive rewriting allowed. Aggressive shortening still needs Shortening Freedom; level alone does not summarize.":
         "Yoğun yeniden yazmaya izin verilir. Agresif kısaltma yine de Kısaltma Özgürlüğüne bağlıdır; seviye tek başına özetlemez.",
+    "Intensive rewriting and moderate shortening allowed. Important facts must remain; level alone does not grant unrestricted summarization.":
+        "Yoğun yeniden yazma ve sınırlı kısaltmaya izin verilir. Önemli bilgiler kalmalıdır; seviye tek başına sınırsız özetleme hakkı vermez.",
     "Preserve length: a 3-minute speech is not turned into 3 sentences. Only filler/repetition is removed.":
         "Uzunluk korunur: 3 dakikalık konuşma 3 cümleye çevrilmez. Yalnızca dolgu/tekrar çıkarılır.",
     "Only obvious filler/redundancy removed.":
@@ -883,6 +889,26 @@ TR = {
         "Gerektiğinde özetleme kullanılabilir.",
     "Even at level 5, with 0% shortening, aggressive summarization is forbidden.":
         "Seviye 5 olsa bile %0 kısaltmada agresif özetleme yasaktır.",
+
+    # --- voice jobs / retry -------------------------------------------
+    "Retry processing": "İşlemeyi yeniden dene",
+    "Retry transcription": "Yazıya çevirmeyi yeniden dene",
+    "Retry meeting processing": "Toplantıyı yeniden işle",
+    "Retry agent": "Ajanı yeniden çalıştır",
+    "Processing failed": "İşleme başarısız",
+    "Audio preserved": "Ses kaydı korundu",
+    "Transcript preserved": "Transkript korundu",
+    "Retry": "Yeniden dene",
+    "Retrying…": "Yeniden deneniyor…",
+    "Nothing to retry": "Yeniden denenecek bir şey yok",
+    "Nothing to retry: transcript is empty": "Yeniden denenecek bir şey yok: transkript boş",
+    "Audio no longer available for retry": "Yeniden deneme için ses artık mevcut değil",
+    "Voice job not found": "Ses görevi bulunamadı",
+    "Recording": "Kayıt",
+    "Processing": "İşleniyor",
+    "Failed but recoverable": "Başarısız ama kurtarılabilir",
+    "Completed": "Tamamlandı",
+    "Unknown": "Bilinmiyor",
 
     # --- overlay live / result -----------------------------------------
     "Live transcript": "Canlı transkript",

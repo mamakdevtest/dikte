@@ -15,13 +15,12 @@ def build(window):
           "decide how much it may touch your words."),
     )
 
-    # --- AI Text Processing controls ---
-    from PyQt6.QtWidgets import QGroupBox, QFormLayout, QHBoxLayout, QSlider, QSpinBox, QLabel
-    from PyQt6.QtCore import Qt
+    # --- AI Text Processing controls — single Editing Level only ---
+    from PyQt6.QtWidgets import QGroupBox, QFormLayout, QHBoxLayout, QSpinBox, QLabel
     ai_box = QGroupBox(t("AI Text Processing"))
     ai_form = QFormLayout(ai_box)
     ai_form.setContentsMargins(20, 16, 20, 12)
-    # Editing Level 1..5
+    # Editing Level 1..5 — sole policy (Shortening Freedom removed, folded into level)
     from ..widgets import SegmentedControl
     window.ai_edit_level = SegmentedControl([
         (t("1 Minimum"), 1), (t("2 Light"), 2), (t("3 Balanced"), 3), (t("4 Free"), 4), (t("5 Intensive"), 5)
@@ -30,39 +29,11 @@ def build(window):
     window.ai_edit_spin = QSpinBox()
     window.ai_edit_spin.setRange(1, 5)
     window.ai_edit_spin.setVisible(False)
-    ai_edit_row = QHBoxLayout()
-    ai_edit_row.addWidget(window.ai_edit_level)
-    ai_edit_row.addWidget(window.ai_edit_spin)
-    ai_edit_container = window._row(window.ai_edit_level) if hasattr(window, "_row") else window.ai_edit_level
-    # Use the segmented control directly
     ai_form.addRow(t("Editing Level"), window.ai_edit_level)
     window.ai_edit_desc = QLabel("")
     window.ai_edit_desc.setWordWrap(True)
     window.ai_edit_desc.setProperty("note", "info")
     ai_form.addRow(window.ai_edit_desc)
-    # Shortening Freedom 0..100
-    window.ai_shortening_slider = QSlider(Qt.Orientation.Horizontal)
-    window.ai_shortening_slider.setRange(0, 100)
-    window.ai_shortening_slider.setSingleStep(5)
-    window.ai_shortening_slider.setPageStep(10)
-    window.ai_shortening_spin = QSpinBox()
-    window.ai_shortening_spin.setRange(0, 100)
-    window.ai_shortening_spin.setSuffix(" %")
-    # Sync slider and spin
-    window.ai_shortening_slider.valueChanged.connect(window.ai_shortening_spin.setValue)
-    window.ai_shortening_spin.valueChanged.connect(window.ai_shortening_slider.setValue)
-    window.ai_shortening_slider.valueChanged.connect(
-        lambda v: window._ai_shortening_changed(v) if hasattr(window, "_ai_shortening_changed") else None)
-    short_row = QHBoxLayout()
-    short_row.addWidget(window.ai_shortening_slider, 1)
-    short_row.addWidget(window.ai_shortening_spin)
-    short_container = QWidget()
-    short_container.setLayout(short_row)
-    ai_form.addRow(t("Shortening Freedom"), short_container)
-    window.ai_shortening_desc = QLabel("")
-    window.ai_shortening_desc.setWordWrap(True)
-    window.ai_shortening_desc.setProperty("note", "info")
-    ai_form.addRow(window.ai_shortening_desc)
     outer.addWidget(ai_box)
 
     inner = QTabWidget()

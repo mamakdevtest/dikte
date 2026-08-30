@@ -1,4 +1,32 @@
-# VERIFICATION
+# VERIFICATION — Overlay / Voice Reliability Pass (2026-08-30)
+
+Date: 2026-08-30 (UTC) | Linux, Python 3.12+, PyQt6 offscreen
+
+## Commands and results
+
+### Targeted suites
+- `python -m unittest tests.test_i18n tests.test_config tests.test_voice_jobs tests.test_worker tests.test_meeting tests.test_audio tests.test_overlay_refinement tests.test_overlay_meeting tests.test_cleanup --verbose` → **430 OK** (0.889s) — i18n placeholder parity (Table), config round-trip + ai_shortening_freedom migration, voice_jobs CRUD/atomic/retry_checkpoint, worker pipeline including voice_jobs retry paths (cleanup-only, transcription), meeting pipeline including _stored_transcript reuse + retry_meeting helper, audio pulse/dshow/avfoundation + concurrent capture checks, overlay refinement + meeting
+- `python -m unittest tests.test_i18n tests.test_config tests.test_voice_jobs tests.test_worker tests.test_meeting tests.test_audio tests.test_overlay_refinement tests.test_overlay_meeting --verbose` → **379 OK** (0.755s) — before history/i18n retry wiring
+- `python -m unittest tests.test_voice_jobs --verbose` → **36 OK** isolated
+- `python -m py_compile dikte.py audio.py voice_jobs.py worker.py config.py assistant.py overlay.py ui/overlay_coordinator.py settings_ui.py i18n.py` → exit 0
+
+### Full suite
+- `python -m unittest discover --verbose` → **1352 OK, 1 error** in 88.9s
+  - Error: `tests.test_hotkey.Windows.test_windows_hotkey_start_stop_lifecycle` — `AttributeError: module 'ctypes' has no attribute 'windll'` — Windows-only code path exercised on Linux offscreen; pre-existing, unrelated to this pass
+
+### Git / static checks
+- `git diff --check` → **PASS** (exit 0)
+- `git diff --stat` → 14 tracked M + 3 untracked (tests/test_voice_jobs.py, ui/overlay_coordinator.py, voice_jobs.py); no repomix-output.xml, no design export, no temp WAV in tree
+- `python tools/ai_sync.py --check` → not executed yet (Phase B gate)
+
+## Gaps / notes
+- Agent retry idempotency guard reads assistant.json (gateway messages) or session id; true side-effect duplication still possible for non-idempotent agent tools — documented in DECISIONS
+- Concurrent capture: DirectShow fallback (WASAPI unavailable) reports shared=False; dikte.py falls back to stop_recording() there — correct fallback
+- History retry UX is minimal (list + Retry button); progressive disclosure sufficient for current scope
+
+---
+
+# VERIFICATION (previous)
 
 Date: 2026-08-26 (UTC)
 Environment: Windows win32, Python 3.12.7, PyQt6 offscreen

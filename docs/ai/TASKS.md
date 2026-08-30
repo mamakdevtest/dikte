@@ -1,6 +1,31 @@
-# TASKS
+# TASKS — Overlay / Voice Reliability Pass
 
-## Implementation
+## Overlay / Voice Reliability Pass
+
+### Implementation
+- [x] T0 — Restore execution context and inspect live state
+- [x] T1 — Reproduce overlay defects (systematic debugging, 6 defects mapped with repro tests)
+- [x] T2 — Lock Activity/OverlayCoordinator contract (chronological top→bottom, oldest at top)
+- [x] T3 — Lock durable Voice Job contract (CAPTURED→TRANSCRIBED→PROCESSED/COMPLETED/FAILED_RETRYABLE)
+- [x] T4 — Concurrent audio capture architecture (audio.concurrent_capture_info/can_concurrent_capture; fan-out not needed on supported platforms)
+- [x] T5 — Implement OverlayCoordinator + visual stack (ui/overlay_coordinator.py, dikte.py wired)
+- [x] T6 — Fix overlay responsive UI behavior (6 defects patched: live_button_rect, cache, collapsed, clip, expand anchor, bounded growth)
+- [x] T7 — Implement durable capture/checkpoints (voice_jobs.py + worker.py checkpoints, audio preservation)
+- [x] T8 — Meeting coexistence + recovery (meeting no longer kills dictation on shared mic; retry_meeting helper; processing state stays visible)
+- [x] T9 — Dictation recovery (worker.py retry_from_job: transcript→cleanup-only, audio→transcription)
+- [x] T10 — Agent recovery (assistant.retry_ask with idempotency, voice_jobs kind=agent, dikte retry_agent_from_job)
+- [x] T11 — Remove Shortening Freedom as separate product setting (ui/pages/cleanup.py, config.py, settings_ui.py, i18n)
+- [x] T12 — i18n + deterministic regression coverage (retry/voice-job strings + history retry UX)
+
+### Final Verification
+- [x] V1 — Targeted tests (430 OK: voice_jobs + overlay + worker + meeting + config/i18n/cleanup)
+- [x] V2 — Full suite (1352/1353 OK; 1 error = Linux-on-Windows hotkey env, pre-existing)
+- [x] V3 — Git/diff/debug-artifact review (git diff --check PASS; repomix not touched; no temp WAV)
+- [x] V4 — Compile check (python -m py_compile 8 modules → exit 0)
+
+---
+
+# TASKS (previous passes)
 
 - [x] T0 — Repository/UI contract discovery: inspect live `settings_ui.py`, `overlay.py`, `config.py`, `i18n.py`, `tests/test_ui.py`, `dikte.py` and full prototype export; produce prototype→production mapping (screen → widget/config)
 - [x] T1 — Extract native design system architecture: freeze `assets/dikte.css` `:root` + `[data-theme=light]` tokens into `ui/theme.py` (`DARK`/`LIGHT`/`RADII`/`TOKENS`), define QSS structure, reusable component patterns (SectionCard/SettingRow/etc), theme mechanism, icons (`ui/icons.py` from `dikte.js` ICONS), shell/sidebar/page/card architecture

@@ -1637,27 +1637,12 @@ class SettingsWindow(QDialog):
         self._update_ai_descriptions()
 
     def _ai_shortening_changed(self, value):
-        try:
-            value = max(0, min(100, int(value)))
-        except Exception:
-            value = 0
-        try:
-            if hasattr(self, "ai_shortening_spin"):
-                self.ai_shortening_spin.blockSignals(True)
-                self.ai_shortening_spin.setValue(value)
-                self.ai_shortening_spin.blockSignals(False)
-            if hasattr(self, "ai_shortening_slider"):
-                self.ai_shortening_slider.blockSignals(True)
-                self.ai_shortening_slider.setValue(value)
-                self.ai_shortening_slider.blockSignals(False)
-        except Exception:
-            pass
+        """Deprecated: Shortening Freedom removed, folded into Editing Level. No-op for compat."""
         self._update_ai_descriptions()
 
     def _update_ai_descriptions(self):
         try:
             edit = 3
-            short = 0
             if hasattr(self, "ai_edit_spin"):
                 try:
                     edit = int(self.ai_edit_spin.value())
@@ -1678,37 +1663,18 @@ class SettingsWindow(QDialog):
                         except Exception:
                             pass
                         break
-            if hasattr(self, "ai_shortening_slider"):
-                short = int(self.ai_shortening_slider.value())
-            elif hasattr(self, "ai_shortening_spin"):
-                short = int(self.ai_shortening_spin.value())
-            # descriptions per spec
+            # descriptions — shortening folded into level:
+            # L1 minimum preserve length, L2 light no shortening, L3 balanced no summarization,
+            # L4 free bounded shortening allowed, L5 intensive but no unlimited summarization
             descs = {
                 1: t("Only filler sounds, stutters, punctuation and obvious ASR errors are fixed. Length and structure are preserved."),
                 2: t("In addition to Minimum, obvious filler words and tiny grammar glitches are cleaned. No shortening."),
                 3: t("Balanced readability: sentences may be restructured, but meaning and important details are kept. No real summarization."),
-                4: t("Stronger rewriting, merging redundancies, polished written language. Shortening bounded by Shortening Freedom."),
-                5: t("Intensive rewriting allowed. Aggressive shortening still needs Shortening Freedom; level alone does not summarize."),
+                4: t("Stronger rewriting, merging redundancies, polished written language. Bounded shortening is allowed but important details must remain."),
+                5: t("Intensive rewriting and moderate shortening allowed. Important facts must remain; level alone does not grant unrestricted summarization."),
             }
             if hasattr(self, "ai_edit_desc"):
                 self.ai_edit_desc.setText(descs.get(edit, descs[3]))
-            if hasattr(self, "ai_shortening_desc"):
-                if short == 0:
-                    txt = t("Preserve length: a 3-minute speech is not turned into 3 sentences. Only filler/repetition is removed.")
-                elif short <= 24:
-                    txt = t("Only obvious filler/redundancy removed.")
-                elif short <= 49:
-                    txt = t("Light compression: almost all facts kept.")
-                elif short <= 74:
-                    txt = t("Moderate compression: important details kept.")
-                elif short <= 99:
-                    txt = t("Strong compression: important facts must remain.")
-                else:
-                    txt = t("Summarization may be used when useful.")
-                # invariant note
-                if edit == 5 and short == 0:
-                    txt += " " + t("Even at level 5, with 0% shortening, aggressive summarization is forbidden.")
-                self.ai_shortening_desc.setText(txt)
         except Exception:
             pass
 
@@ -1858,6 +1824,11 @@ class SettingsWindow(QDialog):
     # ---- history ---------------------------------------------------------
 
     def _load_history(self):
+        # Also refresh voice jobs list
+        try:
+            self._load_voice_jobs()
+        except Exception:
+            pass
         self.history.clear()
         for row in reversed(cfg.read_history(self.conf["history_limit"])):
             text = (row.get("text") or "").replace("\n", " ")
@@ -1915,6 +1886,90 @@ class SettingsWindow(QDialog):
         except OSError as exc:
             QMessageBox.warning(self, t("History"), t("Failed: {error}", error=exc))
         self._load_history()
+
+    # ---- voice jobs retry ------------------------------------------------
+
+    def _load_voice_jobs(self):
+        """Populate the Failed but recoverable voice jobs list."""
+        if not hasattr(self, "voice_jobs_list"):
+            return
+        self.voice_jobs_list.clear()
+        try:
+            import voice_jobs as _vj
+            jobs = [j for j in _vj.read_voice_jobs() if _vj.is_retryable(j)]
+        except Exception:
+            jobs = []
+        for job in reversed(jobs):
+            kind = job.get("kind", "?")
+            ts = job.get("ts", "")
+            err_stage = job.get("error_stage", "")
+            err_msg = (job.get("error_message") or "")[:60]
+            label = f"{kind} · {ts} · {err_stage}: {err_msg}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, job)
+            self.voice_jobs_list.addItem(item)
+        if hasattr(self, "voice_jobs_retry_btn"):
+            self.voice_jobs_retry_btn.setEnabled(bool(jobs))
+
+    def _retry_voice_job(self):
+        """Retry the selected failed voice job via the controller if available."""
+        if not hasattr(self, "voice_jobs_list"):
+            return
+        item = self.voice_jobs_list.currentItem()
+        if item is None:
+            items = [self.voice_jobs_list.item(i) for i in range(self.voice_jobs_list.count())]
+            if not items:
+                return
+            item = items[0]
+            self.voice_jobs_list.setCurrentItem(item)
+        job = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if not job or not job.get("id"):
+            return
+        job_id = job["id"]
+        # Prefer app controller (dikte.py retry helpers); fallback to pipeline directly
+        for attr in ("dashboard_window",):
+            pass
+        ctrl = None
+        try:
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is not None:
+                for w in app.topLevelWidgets():
+                    if hasattr(w, "retry_voice_job"):
+                        ctrl = w
+                        break
+        except Exception:
+            pass
+        # Fallback: try to find Dikte controller via parent chain
+        if ctrl is None:
+            try:
+                # settings_ui is hosted; check if caller passed controller
+                ctrl = getattr(self, "_controller", None)
+            except Exception:
+                ctrl = None
+        # Try controller first
+        ok = False
+        if ctrl is not None and hasattr(ctrl, "retry_voice_job"):
+            try:
+                ok = bool(ctrl.retry_voice_job(job_id))
+            except Exception:
+                ok = False
+        if not ok:
+            # Direct pipeline retry (no controller available in test)
+            try:
+                import voice_jobs as _vj
+                kind = job.get("kind") or "dictation"
+                cp = _vj.retry_checkpoint(job)
+                if cp is None:
+                    self.voice_jobs_list.clearSelection()
+                    return
+                # Show working state on the list item
+                item.setText(item.text() + f"  ·  {t('Retrying…')}")
+            except Exception:
+                pass
+        # Refresh list in a moment
+        from PyQt6.QtCore import QTimer as _Q
+        _Q.singleShot(800, self._load_voice_jobs)
 
     def _show_history_details(self, item=None):
         if item is None:
@@ -2201,15 +2256,11 @@ class SettingsWindow(QDialog):
             conf["file_cleanup_prompt"] or cfg.default_file_cleanup_prompt()
         )
         self.transcribe_prompt.setPlainText(conf["transcribe_prompt"])
-        # AI Text Processing — editing level + shortening freedom
+        # AI Text Processing — single Editing Level (shortening folded into level)
         try:
             edit_level = max(1, min(5, int(conf.get("ai_edit_level", 3))))
         except Exception:
             edit_level = 3
-        try:
-            shortening = max(0, min(100, int(conf.get("ai_shortening_freedom", 0))))
-        except Exception:
-            shortening = 0
         try:
             if hasattr(self, "ai_edit_level") and hasattr(self.ai_edit_level, "set_active"):
                 self.ai_edit_level.set_active(edit_level)
@@ -2222,17 +2273,7 @@ class SettingsWindow(QDialog):
                 self.ai_edit_spin.blockSignals(False)
         except Exception:
             pass
-        try:
-            if hasattr(self, "ai_shortening_slider"):
-                self.ai_shortening_slider.blockSignals(True)
-                self.ai_shortening_slider.setValue(shortening)
-                self.ai_shortening_slider.blockSignals(False)
-            if hasattr(self, "ai_shortening_spin"):
-                self.ai_shortening_spin.blockSignals(True)
-                self.ai_shortening_spin.setValue(shortening)
-                self.ai_shortening_spin.blockSignals(False)
-        except Exception:
-            pass
+        # Old shortening is ignored; no UI to load
         try:
             self._update_ai_descriptions()
         except Exception:
@@ -2532,7 +2573,7 @@ class SettingsWindow(QDialog):
         conf["file_timestamps"] = self.file_timestamps.isChecked()
         conf["file_cleanup"] = self.file_cleanup.isChecked()
 
-        # AI Text Processing
+        # AI Text Processing — single Editing Level (shortening not persisted)
         try:
             edit_val = 3
             if hasattr(self, "ai_edit_spin"):
@@ -2545,15 +2586,7 @@ class SettingsWindow(QDialog):
             conf["ai_edit_level"] = max(1, min(5, int(edit_val)))
         except Exception:
             pass
-        try:
-            short_val = 0
-            if hasattr(self, "ai_shortening_slider"):
-                short_val = int(self.ai_shortening_slider.value())
-            elif hasattr(self, "ai_shortening_spin"):
-                short_val = int(self.ai_shortening_spin.value())
-            conf["ai_shortening_freedom"] = max(0, min(100, int(short_val)))
-        except Exception:
-            pass
+        # Do NOT write ai_shortening_freedom — deprecated, removed from UI
 
         try:
             if hasattr(self, "result_overlay_enabled"):

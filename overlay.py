@@ -759,6 +759,8 @@ class Overlay(QWidget):
             return
         self._live_expanded = expanded
         self._layout_cache = None
+        self._live_measure_key = None
+        self._live_measure_h = 0.0
         self._resize_to_content()
         self._reposition()
         self.update()
@@ -793,7 +795,7 @@ class Overlay(QWidget):
             return _LIVE_COLLAPSED_H
         # Content-fit: the panel grows with the transcript, newest line at
         # the bottom, capped so it never towers over the screen.
-        key = (self._live_text, self.width())
+        key = (self._live_text, self.width(), self._live_expanded, len(self._live_lines))
         if getattr(self, "_live_measure_key", None) == key:
             return self._live_measure_h
         metrics = QFontMetrics(self._live_font())
@@ -811,25 +813,24 @@ class Overlay(QWidget):
         return height
 
     def _should_show_live(self):
+        if self.state == "meeting" and self._meeting_collapsed:
+            return False
         return bool(self._live_text) and (self.state in LIVE or self.state == PAUSED_STATE or self._paused)
 
     def _expand_button_rect(self):
         if not self._should_show_live():
             return QRectF()
-        # Expand/collapse lives inside the live panel, right-aligned, centered vertically
-        # Hit target 32x20, visual 24x16 — keeps waveform/Pause area untouched
+        # Expand/collapse anchored top-right so it stays stable while panel grows.
         w = self.width()
         size_w, size_h = 32.0, 20.0
         try:
             live_rect = self._layout()["live"]
             live_top = live_rect.top()
-            live_h = live_rect.height()
         except Exception:
             thinking_h = _THINKING_HEIGHT + _THINKING_GAP if (self._thinking_text and self.state == "busy") else 0
             live_top = thinking_h
-            live_h = self._live_height()
         x = w - size_w - 10.0
-        y = live_top + (live_h - size_h) / 2.0
+        y = live_top + 6.0
         if y < 1:
             y = 1
         return QRectF(x, y, size_w, size_h)
@@ -853,31 +854,16 @@ class Overlay(QWidget):
         self._conceal()
 
     def mousePressEvent(self, event):
-        # The wider live view is offered wherever a recording is running —
-        # dictation or a meeting. Checked first: it shares the pill with the
-        # meeting's collapse toggle and the pause/stop buttons.
+        # Priority: expand/pause/stop must not be swallowed by meeting collapse.
+        # So check expand and action buttons before the meeting collapse toggle.
         try:
             pos = event.position() if hasattr(event, "position") else event.pos()
             pt = QPointF(pos.x(), pos.y())
         except Exception:
             pt = QPointF(float(event.pos().x()), float(event.pos().y()))
-        if (self.state in LIVE or self.state == PAUSED_STATE) \
-                and self._live_button_rect.isValid() \
-                and self._live_button_rect.contains(pt):
-            self.livePopupRequested.emit()
-            event.accept()
-            return
-        # A meeting card expands or collapses where it stands; it has no
-        # pause API and nothing else to offer a click.
-        if self.interactive_live and self.state == "meeting":
-            self.toggle_meeting_collapsed()
-            event.accept()
-            return
-        # live expand toggle — inside live panel, right-aligned
+        # live expand toggle — inside live panel, right-aligned (highest priority in live area)
         if self.interactive_live and self._should_show_live():
             try:
-                pos = event.position() if hasattr(event, "position") else event.pos()
-                pt = QPointF(pos.x(), pos.y()) if hasattr(pos, "x") else QPointF(float(pos.x()), float(pos.y()))
                 expand_rect = self._expand_button_rect()
                 if expand_rect.isValid() and expand_rect.contains(pt):
                     self._expand_pressed = True
@@ -888,18 +874,13 @@ class Overlay(QWidget):
             except Exception:
                 pass
         if self.interactive_live and self._should_show_pause_button():
-            pos = event.position() if hasattr(event, "position") else event.pos()
-            try:
-                pt = QPointF(pos.x(), pos.y())
-            except Exception:
-                pt = QPointF(float(pos.x()), float(pos.y()))
             pause_rect = self._pause_button_rect()
             stop_rect = self._stop_button_rect()
             if not pause_rect.isValid():
                 pause_rect = self._pause_rect
             if not stop_rect.isValid():
                 stop_rect = self._stop_rect
-            if pause_rect.contains(pt):
+            if pause_rect.isValid() and pause_rect.contains(pt):
                 self._button_pressed = True
                 self._stop_pressed = False
                 if self._paused or self.state == PAUSED_STATE:
@@ -909,13 +890,26 @@ class Overlay(QWidget):
                 self.update(pause_rect.toRect())
                 event.accept()
                 return
-            if stop_rect.contains(pt):
+            if stop_rect.isValid() and stop_rect.contains(pt):
                 self._stop_pressed = True
                 self._button_pressed = False
                 self.stopRequested.emit()
                 self.update(stop_rect.toRect())
                 event.accept()
                 return
+        # The wider live view popup button
+        if (self.state in LIVE or self.state == PAUSED_STATE) \
+                and self._live_button_rect.isValid() \
+                and self._live_button_rect.contains(pt):
+            self.livePopupRequested.emit()
+            event.accept()
+            return
+        # A meeting card expands or collapses where it stands; it has no
+        # pause API and nothing else to offer a click. Checked last.
+        if self.interactive_live and self.state == "meeting":
+            self.toggle_meeting_collapsed()
+            event.accept()
+            return
         if self.dismissable and self.state == "busy":
             self.muted = True
             self.dismiss()
@@ -1142,6 +1136,7 @@ class Overlay(QWidget):
             "footer": footer,
             "main_top": offset,
         }
+        self._live_button_rect = QRectF(live_button)
         self._layout_cache_key = key
         self._layout_cache = layout
         return layout
@@ -1244,9 +1239,11 @@ class Overlay(QWidget):
         height = HEIGHT
         if self._thinking_text and self.state == "busy":
             height = int(height + _THINKING_GAP + _THINKING_HEIGHT)
-        if self._should_show_live():
+        # Collapsed meeting is strictly HEIGHT tall — live panel is suppressed.
+        collapsed = (self.state == "meeting" and self._meeting_collapsed)
+        if self._should_show_live() and not collapsed:
             height = int(height + _LIVE_GAP + self._live_height())
-        if self.state == "meeting":
+        if self.state == "meeting" and not collapsed:
             height = int(height + self._meeting_footer_height())
         self.resize(int(width), int(height))
 
@@ -1682,13 +1679,16 @@ class Overlay(QWidget):
         eased = getattr(self, "_reveal_progress", 1.0)
         full_w = bars[-1].right() - bars[0].left()
         need_clip = eased < 1.0
+        # Waveform lives at vertical offset (thinking + live gap + live height)
+        live_h = self._live_height() if self._should_show_live() else 0.0
+        live_gap = _LIVE_GAP if self._should_show_live() else 0.0
+        thinking_h = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+        offset = thinking_h + live_h + live_gap
         if need_clip:
             painter.save()
             center_x = bars[0].left() + full_w / 2
             half_w = full_w * eased / 2
-            # Clip should be vertically limited to main pill
-            thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
-            clip = QRectF(center_x - half_w, thinking_off, half_w * 2, HEIGHT)
+            clip = QRectF(center_x - half_w, offset, half_w * 2, HEIGHT)
             painter.setClipRect(clip)
         # The right edge is the live edge: recent bars are brighter, older
         # bars softly recede to the left without any artificial motion.
@@ -1699,10 +1699,9 @@ class Overlay(QWidget):
         last_index = max(1, len(display) - 1)
         step = bars[1].left() - bars[0].left() if len(bars) > 1 else bar_w
         scroll_x = self._wave.scroll * step
-        thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
         painter.save()
         painter.setClipRect(
-            QRectF(bars[0].left(), thinking_off,
+            QRectF(bars[0].left(), offset,
                    bars[-1].right() - bars[0].left() + bar_w + step, HEIGHT),
             Qt.ClipOperation.IntersectClip)
         for index, (base, level) in enumerate(zip(bars, display)):
@@ -1738,12 +1737,15 @@ class Overlay(QWidget):
         eased = getattr(self, "_reveal_progress", 1.0)
         full_w = bars[-1].right() - bars[0].left()
         need_clip = eased < 1.0
+        live_h = self._live_height() if self._should_show_live() else 0.0
+        live_gap = _LIVE_GAP if self._should_show_live() else 0.0
+        thinking_h = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
+        offset = thinking_h + live_h + live_gap
         if need_clip:
             painter.save()
             center_x = bars[0].left() + full_w / 2
             half_w = full_w * eased / 2
-            thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
-            clip = QRectF(center_x - half_w, thinking_off, half_w * 2, HEIGHT)
+            clip = QRectF(center_x - half_w, offset, half_w * 2, HEIGHT)
             painter.setClipRect(clip)
         painter.setPen(Qt.PenStyle.NoPen)
         r = bar_w / 2
@@ -1761,10 +1763,9 @@ class Overlay(QWidget):
         step = bars[1].left() - bars[0].left() if len(bars) > 1 else bar_w
         mine_scroll = self._wave.scroll * step
         theirs_scroll = self._wave2.scroll * step
-        thinking_off = _THINKING_HEIGHT + _THINKING_GAP if self._thinking_text else 0.0
         painter.save()
         painter.setClipRect(
-            QRectF(bars[0].left(), thinking_off,
+            QRectF(bars[0].left(), offset,
                    bars[-1].right() - bars[0].left() + bar_w + step, HEIGHT),
             Qt.ClipOperation.IntersectClip)
         for index, (base, mine, theirs) in enumerate(zip(bars, mine_disp, theirs_disp)):

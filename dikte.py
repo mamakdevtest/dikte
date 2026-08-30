@@ -142,6 +142,16 @@ class Dikte:
         self._accumulated_ms = 0
         self._segment_clock = QElapsedTimer()
 
+        # OverlayCoordinator: chronological stacking (oldest at top).
+        try:
+            from ui.overlay_coordinator import OverlayCoordinator, Activity
+            self._coordinator = OverlayCoordinator(self.conf["overlay_corner"])
+            _has_coordinator = True
+        except Exception:
+            self._coordinator = None
+            _has_coordinator = False
+            Activity = None  # type: ignore
+
         self.overlay = Overlay(self.conf["overlay_corner"], interactive_live=True)
         # The agent's indicator sits on top of the dictation one when both are
         # up, and drops into the corner when it is alone there.
@@ -155,6 +165,15 @@ class Dikte:
             self.result_overlay.closeRequested.connect(lambda: self.result_overlay.dismiss())
         except Exception:
             self.result_overlay = None
+        # Register overlays with coordinator (chronological: dictation oldest → agent → result newest at bottom)
+        if _has_coordinator and self._coordinator is not None:
+            try:
+                self._coordinator.register(Activity(id="dictation", kind="dictation", created_order=0, state="idle", widget=self.overlay))
+                self._coordinator.register(Activity(id="agent", kind="agent", created_order=1, state="idle", widget=self.ask_overlay))
+                if self.result_overlay is not None:
+                    self._coordinator.register(Activity(id="result", kind="processing", created_order=2, state="idle", widget=self.result_overlay))
+            except Exception:
+                pass
         # Wire recording pause/resume/stop from overlay pill
         self.overlay.pauseRequested.connect(lambda: self.pause_recording())
         self.overlay.resumeRequested.connect(lambda: self.resume_recording())
@@ -955,10 +974,26 @@ class Dikte:
     def start_meeting(self):
         if self.meeting_state != M_IDLE:
             return
-        # The meeting needs the microphone to itself: a dictation still
-        # holding the same device shares its packets badly on some drivers,
-        # and the meeting's half arrives starved.
-        self.stop_recording()
+        # Concurrent capture: on platforms where the mic is shared (Pulse/PipeWire,
+        # WASAPI shared-mode, AVFoundation), keep a live dictation alive.  On
+        # fallback audio paths that contend, stop it first so the meeting is not
+        # starved — audio is preserved.
+        _can_share = False
+        try:
+            _can_share = audio.can_concurrent_capture()
+        except Exception:
+            _can_share = False
+        if not _can_share:
+            self.stop_recording()
+        elif self.recording:
+            # Shared path: leave dictation's Recorder running; MeetingRecorder
+            # opens its own handles (independent _gen/_proc/_source).  Log the
+            # info for diagnostics.
+            try:
+                import logging as _log
+                _log.getLogger("dikte").debug("start_meeting: shared mic, keeping dictation alive")
+            except Exception:
+                pass
         base = meeting.new_base()
         _, wav_path = cfg.meeting_paths(base)
         self.meeting_recorder.start(
@@ -1083,11 +1118,15 @@ class Dikte:
         self._set_meeting_state(M_IDLE)
         self._settle(MEETING, {"ok": False, "base": _base, "error": error})
         first_line = error.strip().splitlines()[0]
-        self.overlay.show_error(t("Meeting failed: {error}", error=first_line))
+        # Keep processing state visible until user sees retry option: show as
+        # retryable warning rather than transient error.
+        self.overlay.show_warning(
+            t("Meeting failed: {error}", error=first_line), msec=9000)
         self.tray.showMessage(
             t("Dikte: the meeting could not be written up"),
             t("{error}\n\nThe recording has been kept. Settings → Minutes can "
-              "try again.", error=error),
+              "try again. ({retry})",
+              error=error, retry=t("Retry meeting processing")),
             QSystemTrayIcon.MessageIcon.Warning, 12000,
         )
 
@@ -1119,9 +1158,48 @@ class Dikte:
         wants_paste = self.paste_override.pop(owner, None)
         if owner == ASK:
             self.ask_pipeline.run(wav_path, duration, rms_values, ask=True,
-                                  paste=wants_paste)
+                                   paste=wants_paste)
         else:
             self.pipeline.run(wav_path, duration, rms_values, paste=wants_paste)
+
+    # ---- retry helpers (exposed for history/minutes UI) ------------------
+
+    def retry_voice_job(self, job_id):
+        """Retry a failed voice job (dictation/ask) from its checkpoint."""
+        job = None
+        try:
+            import voice_jobs
+            job = voice_jobs.get_voice_job(job_id)
+        except Exception:
+            return False
+        if job is None:
+            return False
+        kind = job.get("kind") or "dictation"
+        pipeline = self.ask_pipeline if kind == "agent" else self.pipeline
+        return pipeline.retry_from_job(job_id)
+
+    def retry_meeting_from_base(self, base):
+        """Retry meeting processing from latest safe checkpoint."""
+        try:
+            import meeting as _m
+            return _m.retry_meeting(base, self.conf)
+        except Exception:
+            return False
+
+    def retry_agent_from_job(self, job_id):
+        """Retry an agent voice job via its preserved transcript."""
+        try:
+            import voice_jobs
+            job = voice_jobs.get_voice_job(job_id)
+        except Exception:
+            return False
+        if job is None or job.get("kind") != "agent":
+            return False
+        raw = (job.get("raw_transcript") or "").strip()
+        if not raw:
+            return False
+        # Delegate to worker pipeline's retry (which handles agent path)
+        return self.ask_pipeline.retry_from_job(job_id)
 
     def _on_finished(self, _raw, text, warning):
         # clear live transcript preview on the recording overlay
@@ -1320,12 +1398,19 @@ class Dikte:
 
     def _apply_settings(self):
         try:
-            self.overlay.corner = self.conf["overlay_corner"]
-            self.ask_overlay.corner = self.conf["overlay_corner"]
+            corner = self.conf["overlay_corner"]
+            # Keep coordinator corner in sync before individual overlays
+            if getattr(self, "_coordinator", None) is not None:
+                try:
+                    self._coordinator.set_corner(corner)
+                except Exception:
+                    pass
+            self.overlay.corner = corner
+            self.ask_overlay.corner = corner
             # also move result overlay if exists
             try:
                 if hasattr(self, "result_overlay") and self.result_overlay is not None:
-                    self.result_overlay.corner = self.conf["overlay_corner"]
+                    self.result_overlay.corner = corner
                     if getattr(self.result_overlay, "showing", False):
                         self.result_overlay._reposition()
             except Exception:

@@ -12,6 +12,65 @@ Which programs do the capturing is a property of the machine, not of the code
 above: PulseAudio or PipeWire on Linux, AVFoundation through ffmpeg on macOS,
 DirectShow through ffmpeg on Windows. They are gathered into one group each
 near the bottom of this file, and a chooser picks between them.
+
+Concurrent capture (dictation + meeting at once)
+-------------------------------------------------
+Recorder (mono dictation / ask) and MeetingRecorder (stereo meeting) are
+designed to coexist: each instance owns its own subprocess handles, WASAPI
+sources, pump/mix threads, PCM buffers and generation counter (_gen). No
+class-level mutable state is shared, so starting one never invalidates the
+other's _gen or tears down its _proc/_source.
+
+Whether the *operating system* lets both hold the microphone at the same time
+is answered by can_concurrent_capture() / concurrent_capture_info() below:
+
+* Linux (PulseAudio / PipeWire): **yes**.  ``parec --record`` and
+  ``pw-record`` are Pulse clients; the server duplicates the source stream to
+  every client. Two concurrent ``parec`` processes against the same source
+  (e.g. a level meter plus a recorder) have been the normal case for years —
+  no exclusive open, no fan-out needed.
+
+* Windows (WASAPI): **yes**.  Both Recorder._dictation_source() and
+  MeetingRecorder._start_wasapi() open with ``AUDCLNT_SHAREMODE_SHARED``
+  (see wasapi.py: ``_SHARE_SHARED | _AUTOCONVERT``). The Audio Engine mixes
+  and duplicates the capture stream. The ffmpeg+DirectShow fallback *could*
+  contend if a driver exposes only an exclusive DirectShow pin, but that path
+  is only taken when WASAPI cannot serve both sides and the failure surfaces
+  as a start-time ``failed`` signal, not silent starvation.
+
+* macOS (AVFoundation via ffmpeg): **yes in practice**. Each
+  ``ffmpeg -f avfoundation`` invocation opens a new HAL client; the HAL
+  mixes/duplicates. Exclusive hog-mode drivers are rare and fail at open time
+  rather than starving the other client.
+
+DIKTE.PY INTEGRATION (the lead wires this; audio.py only provides the probe):
+
+    # dikte.py — Dikte.start_meeting()  (around line 961)
+    # BEFORE (kills dictation, data loss):
+    #     self.stop_recording()
+    # AFTER (let them coexist when the platform allows it):
+    #     from audio import can_concurrent_capture
+    #     if not can_concurrent_capture() or not self.recorder.session_active:
+    #         # No platform sharing or nothing to preserve — old behaviour.
+    #         self.stop_recording()
+    #     elif self.recorder.active or self.recorder.paused:
+    #         # Platform supports sharing; keep the dictation session alive and
+    #         # let MeetingRecorder.start() open its own handles. The two
+    #         # recorders use independent backends/handles so no _gen/_proc
+    #         # collision occurs.
+    #         pass
+    #     else:
+    #         # Session exists but pump already ended (e.g. max_seconds reached
+    #         # and awaiting stop) — still safe to start meeting.
+    #         pass
+    #     # ... then MeetingRecorder.start() as before ...
+
+If can_concurrent_capture() returns False (no backend, or a future platform
+that truly requires a single-hub fan-out), the fallback is the old
+``stop_recording()`` path.  Option B (single capture hub fanning PCM to
+multiple consumers) is therefore *not* implemented — it would only be needed
+if a platform were proven to need exclusive opens, which none of the
+currently supported platforms do.
 """
 
 import array
@@ -1562,3 +1621,118 @@ def default_input():
         except (wasapi.WasapiError, OSError, ValueError):
             return ""
     return ""
+
+
+# --- concurrent capture ------------------------------------------------
+
+
+def concurrent_capture_info():
+    """How this platform shares the microphone between two recorders.
+
+    Returns a dict describing the backend and whether Recorder and
+    MeetingRecorder can hold the mic at the same time.  The dict is
+    deliberately verbose so dikte.py can log it and so tests can assert on
+    specific fields without relying on sys.platform.
+
+    Keys:
+        platform: sys.platform string.
+        backend:  short label of the capture stack
+                  ("pulse/pipewire", "wasapi", "wasapi+dshow",
+                   "avfoundation", or "unknown").
+        shared:   bool — True when the OS duplicates the mic stream to
+                  multiple concurrent clients (i.e. Option A is safe).
+        reason:   human sentence explaining *why* shared has its value.
+        needs_fanout: bool — True only when exclusive opens make a single-hub
+                  fan-out (Option B) necessary.  Currently always False on the
+                  supported platforms; present so a future port can flip it
+                  without changing the call-site shape.
+    """
+    plat = sys.platform
+    if plat == "win32":
+        # WASAPI shared-mode path (the default) duplicates the stream; the
+        # DirectShow fallback may contend, but WASAPI is tried first and the
+        # failure is fail-fast, not silent starvation.
+        try:
+            has_wasapi = wasapi.available()
+        except (wasapi.WasapiError, OSError, ValueError):  # pragma: no cover
+            has_wasapi = False
+        if has_wasapi:
+            backend = "wasapi"
+            reason = (
+                "WASAPI capture and loopback are opened with "
+                "AUDCLNT_SHAREMODE_SHARED; the Audio Engine duplicates the "
+                "microphone stream to every shared-mode client."
+            )
+            return {
+                "platform": plat,
+                "backend": backend,
+                "shared": True,
+                "reason": reason,
+                "needs_fanout": False,
+            }
+        backend = "wasapi+dshow"
+        reason = (
+            "WASAPI is unavailable so meetings fall back to DirectShow via "
+            "ffmpeg. Dictation and meeting both open via ffmpeg's dshow "
+            "device; contention depends on the driver, but a failure "
+            "surfaces at open time rather than as silent starvation."
+        )
+        return {
+            "platform": plat,
+            "backend": backend,
+            "shared": False,
+            "reason": reason,
+            "needs_fanout": False,
+        }
+    if plat == "darwin":
+        return {
+            "platform": plat,
+            "backend": "avfoundation",
+            "shared": True,
+            "reason": (
+                "Each ffmpeg -f avfoundation invocation opens a new HAL "
+                "client; the HAL duplicates the microphone stream.  "
+                "Exclusive hog-mode drivers are rare and fail at open time."
+            ),
+            "needs_fanout": False,
+        }
+    # Everything else is treated as PulseAudio / PipeWire.
+    return {
+        "platform": plat,
+        "backend": "pulse/pipewire",
+        "shared": True,
+        "reason": (
+            "parec / pw-record are PulseAudio clients; the PulseAudio or "
+            "PipeWire server duplicates the source stream to every client, "
+            "so two concurrent recorders against the same source do not "
+            "contend.  Fan-out is unnecessary."
+        ),
+        "needs_fanout": False,
+    }
+
+
+def can_concurrent_capture():
+    """Whether Recorder and MeetingRecorder can safely record at once.
+
+    Convenience wrapper for dikte.py: True means start_meeting() may keep a
+    live dictation/ask session alive (no stop_recording() needed); False
+    means it should stop any active dictation first.
+
+    See concurrent_capture_info() for the per-platform rationale.
+    """
+    return concurrent_capture_info()["shared"]
+
+
+# --- isolation note ----------------------------------------------------
+#
+# Recorder and MeetingRecorder are intentionally free of class-level mutable
+# state.  Each instance keeps its own:
+#   _proc / _source / _sources, _thread / _readers, _wav / _log, _buffer /
+#   _queues / _mic_tap / _theirs_tap, _gen, _lock, _session_active/_paused, …
+# so that a second recorder started while the first is still capturing cannot
+# bump the first's _gen (the pump/mix loops exit when their captured gen no
+# longer equals the instance's current _gen, scoped to that instance) or
+# steal/close the first's subprocess/sources.  concurrent_capture_info()
+# documents the OS side of the same guarantee.  If a future platform reports
+# needs_fanout=True, these classes would need to be reworked to share a
+# single capture hub rather than allowing two concurrent opens.

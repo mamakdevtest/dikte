@@ -699,5 +699,135 @@ class ResolveLanguages(DikteTest):
         probe.assert_not_called()
 
 
+# --- retry helper (MeetingPipeline checkpoint coexistence) ---------------
+
+
+class RetryHelper(DikteTest):
+    """The convenience wrapper around MeetingPipeline's own checkpoint read."""
+
+    def setUp(self):
+        super().setUp()
+        self.conf = self.config(
+            providers=[gateway(models={"text": "some/cleanup",
+                                         "minutes": "some/minutes"})],
+            cleanup_provider="user/abc123", meeting_provider="user/abc123",
+            meeting_keep_audio=True, meeting_cleanup=False)
+        self.base = "20260802-120000"
+        self.doc, self.wav = cfg.meeting_paths(self.base)
+        self.wav.parent.mkdir(parents=True, exist_ok=True)
+        make_wav(self.wav, stereo(speech(1.0), speech(1.0, freq=220.0)), channels=2)
+        cfg.save_meeting(meeting.new_entry(self.base, 1.0))
+        # Make the document look like a past run already reached the
+        # status="transcribed" checkpoint (the body a retry resumes from).
+        self.transcript = "[00:00] Me: hello world"
+        self.doc.write_text(
+            meeting.build_document("Kickoff", "2026-08-02 12:00", 60.0,
+                                   "", self.transcript),
+            encoding="utf-8")
+
+    def test_retry_from_transcribed_skips_transcription(self):
+        cfg.update_meeting(self.base, status="transcribed")
+        with mock.patch.object(api, "transcribe_segments") as transcribe, \
+             mock.patch.object(api, "cleanup", return_value="# Kickoff\n\nDone."):
+            pipe = meeting.retry_meeting(self.base, self.conf)
+            self.assertTrue(bool(pipe))
+            # Wait for the background thread the helper started.
+            pipe._thread.join(timeout=5)
+        transcribe.assert_not_called()
+        self.assertEqual(cfg.read_meetings()[0]["status"], "done")
+
+    def test_retry_reads_the_stored_transcript_checkpoint(self):
+        cfg.update_meeting(self.base, status="transcribed")
+        seen_transcript = {}
+
+        def fake_cleanup(text, *args, **kwargs):
+            # The minutes call carries the stored transcript; capture it.
+            prompt = args[2] if len(args) > 2 else kwargs.get("prompt", "")
+            if "minutes" not in prompt.lower() and "tutanak" not in prompt.lower():
+                # title path — ignore
+                return "Kickoff"
+            seen_transcript["text"] = text
+            return "# Kickoff\n\nDone."
+
+        with mock.patch.object(api, "transcribe_segments") as transcribe, \
+             mock.patch.object(api, "cleanup", side_effect=fake_cleanup):
+            pipe = meeting.retry_meeting(self.base, self.conf)
+            pipe._thread.join(timeout=5)
+        transcribe.assert_not_called()
+        self.assertIn("hello world", seen_transcript.get("text", ""))
+
+    def test_retry_entry_variant_accepts_a_dict(self):
+        cfg.update_meeting(self.base, status="transcribed")
+        entry = cfg.read_meetings()[0]
+        with mock.patch.object(api, "transcribe_segments") as transcribe, \
+             mock.patch.object(api, "cleanup", return_value="# Kickoff\n\nDone."):
+            pipe = meeting.retry_meeting_entry(entry, self.conf)
+            self.assertTrue(bool(pipe))
+            pipe._thread.join(timeout=5)
+        transcribe.assert_not_called()
+
+    def test_retry_unknown_base_returns_false(self):
+        self.assertFalse(meeting.retry_meeting("20990101-000000", self.conf))
+
+    def test_retry_unknown_entry_dict_still_starts_from_that_dict(self):
+        # retry_meeting_entry does not re-read the index; it trusts the dict.
+        lonely = meeting.new_entry("20990101-000001", 1.0)
+        with mock.patch.object(api, "transcribe_segments",
+                                return_value=[(0.0, 1.0, "hi")]), \
+             mock.patch.object(api, "cleanup", return_value="# Kickoff\n\nDone."):
+            # Needs a wav for the recorded path; missing file is a failure
+            # but the helper still started the pipeline and returned it.
+            pipe = meeting.retry_meeting_entry(lonely, self.conf)
+            self.assertTrue(bool(pipe))
+            pipe._thread.join(timeout=5)
+        # Finished via the failed path (no wav), but it did run.
+        self.assertTrue(pipe is not False)
+
+
+class Coexistence(DikteTest):
+    """Meeting retry must not lose the transcript checkpoint.
+
+    This is the coexistence-adjacent guarantee: a meeting that already
+    reached status="transcribed" can be retried from that checkpoint while
+    other audio activity (e.g. a concurrent dictation's history row) is
+    untouched — the retry only touches the targeted base.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.conf = self.config(
+            providers=[gateway(models={"text": "some/cleanup",
+                                         "minutes": "some/minutes"})],
+            cleanup_provider="user/abc123", meeting_provider="user/abc123",
+            meeting_keep_audio=True, meeting_cleanup=False)
+        self.base = "20260802-130000"
+        self.doc, self.wav = cfg.meeting_paths(self.base)
+        self.wav.parent.mkdir(parents=True, exist_ok=True)
+        make_wav(self.wav, stereo(speech(1.0), silence(1.0)), channels=2)
+        cfg.save_meeting(meeting.new_entry(self.base, 1.0))
+        self.transcript = "[00:00] Me: coexistent"
+        self.doc.write_text(
+            meeting.build_document("Coexist", "2026-08-02 13:00", 60.0,
+                                   "", self.transcript),
+            encoding="utf-8")
+        cfg.update_meeting(self.base, status="transcribed")
+
+    def test_retry_leaves_other_meetings_alone(self):
+        other = "20260802-140000"
+        other_doc, other_wav = cfg.meeting_paths(other)
+        other_wav.parent.mkdir(parents=True, exist_ok=True)
+        make_wav(other_wav, stereo(silence(1.0), silence(1.0)), channels=2)
+        cfg.save_meeting(meeting.new_entry(other, 1.0))
+        before = {row["base"] for row in cfg.read_meetings()}
+
+        with mock.patch.object(api, "transcribe_segments") as transcribe, \
+             mock.patch.object(api, "cleanup", return_value="# Kickoff\n\nDone."):
+            pipe = meeting.retry_meeting(self.base, self.conf)
+            pipe._thread.join(timeout=5)
+        transcribe.assert_not_called()
+        after = {row["base"] for row in cfg.read_meetings()}
+        self.assertEqual(before, after)
+
+
 if __name__ == "__main__":
     unittest.main()

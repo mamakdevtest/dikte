@@ -19,6 +19,32 @@ def build(window):
         t("Every dictation and agent command, kept on this computer."),
     )
 
+    # Voice jobs retry section (failed but recoverable jobs)
+    try:
+        from PyQt6.QtWidgets import QGroupBox
+        window._voice_jobs_group = QGroupBox(t("Failed but recoverable"))
+        vj_layout = QVBoxLayout(window._voice_jobs_group)
+        from PyQt6.QtWidgets import QListWidget as _LW
+        window.voice_jobs_list = _LW()
+        window.voice_jobs_list.setWordWrap(True)
+        window.voice_jobs_list.setMaximumHeight(110)
+        vj_layout.addWidget(window.voice_jobs_list)
+        from PyQt6.QtWidgets import QHBoxLayout as _HL
+        vj_row = _HL()
+        window.voice_jobs_retry_btn = btn(t("Retry"), "secondary", "sm")
+        window.voice_jobs_retry_btn.clicked.connect(
+            lambda: getattr(window, "_retry_voice_job", lambda: None)())
+        window.voice_jobs_refresh_btn = btn(t("Reload"), "secondary", "sm")
+        window.voice_jobs_refresh_btn.clicked.connect(
+            lambda: getattr(window, "_load_voice_jobs", lambda: None)())
+        vj_row.addWidget(window.voice_jobs_retry_btn)
+        vj_row.addWidget(window.voice_jobs_refresh_btn)
+        vj_row.addStretch(1)
+        vj_layout.addLayout(vj_row)
+        outer.addWidget(window._voice_jobs_group)
+    except Exception:
+        pass
+
     window.history = QListWidget()
     window.history.setWordWrap(True)
     window.history.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
