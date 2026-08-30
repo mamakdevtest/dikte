@@ -122,6 +122,9 @@ class Dikte:
         self.ask_state = IDLE
         # Which of the two the microphone is currently serving, or None.
         self.recorder_owner = None
+        # Set from the first breath: _on_meeting_recorded reads it on every
+        # normal meeting end, not only while quitting.
+        self._quitting = False
         self.meeting_state = M_IDLE
         self.meeting_base = ""
         self.meeting_message = ""

@@ -648,7 +648,10 @@ class Overlay(QWidget):
         self._reveal_progress = 1.0
         self._reveal_t0 = 0.0
         self._appear()
-        self._hide_timer.start(msec)
+        if msec is None:
+            self._hide_timer.stop()
+        else:
+            self._hide_timer.start(msec)
 
     def show_paused(self, message="Paused"):
         """Paused style: waveform inactive, button becomes Resume."""
