@@ -908,7 +908,7 @@ class Overlay(QWidget):
                     return
             except Exception:
                 pass
-        if self.interactive_live and self._should_show_pause_button():
+        if self.interactive_live and self._should_show_stop_button():
             pause_rect = self._pause_button_rect()
             stop_rect = self._stop_button_rect()
             if not pause_rect.isValid():
@@ -1081,11 +1081,16 @@ class Overlay(QWidget):
         return self.state in ("recording", "asking", PAUSED_STATE) or self._paused
 
     def _should_show_stop_button(self):
-        # Same condition as pause — Stop is for the same recording session
+        if not self.interactive_live:
+            return False
+        # A meeting cannot be paused, but it can be ended: its Stop button
+        # finishes the recording and hands it to the minutes.
+        if self.state == "meeting":
+            return True
         return self._should_show_pause_button()
 
     def _action_group_rect(self):
-        if not self._should_show_pause_button():
+        if not self._should_show_stop_button():
             return QRectF()
         group_w = _ACTION_HIT + _ACTION_GAP + _STOP_HIT
         x = self.width() - group_w - 20.0
@@ -1112,8 +1117,7 @@ class Overlay(QWidget):
         return self._pause_button_rect()
 
     def _layout(self):
-        """Return stable logical subregions, rebuilding only after resize/state."""
-        show_action = self._should_show_pause_button()
+        show_action = self._should_show_stop_button()
         thinking = bool(self._thinking_text) and self.state == "busy"
         live = self._should_show_live()
         live_h = self._live_height() if live else 0.0
@@ -1561,6 +1565,7 @@ class Overlay(QWidget):
                     self._draw_meeting_footer(painter, cols)
             if self._should_show_pause_button():
                 self._draw_pause_button(painter)
+            if self._should_show_stop_button():
                 self._draw_stop_button(painter)
         else:
             self._draw_message(painter)

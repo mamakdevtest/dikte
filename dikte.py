@@ -973,6 +973,10 @@ class Dikte:
 
     def stop_recording(self):
         """Finish the recording normally (not discard) via overlay Stop."""
+        # A meeting's Stop ends the meeting and hands it to the minutes.
+        if self.meeting_state == M_RECORDING:
+            self.stop_meeting()
+            return True
         if self.recorder_owner == ASK and self.ask_state in (RECORDING, PAUSED):
             self.stop_ask()
             return True

@@ -27,11 +27,18 @@ from PyQt6.QtWidgets import (
 # Prevent accidental wheel changes when hovering dropdowns without focus
 try:
     _orig_combo_wheel = QComboBox.wheelEvent
+
     def _combo_wheel_no_accidental(self, event):
-        if not self.hasFocus():
+        # A combo the pointer merely passes over is scrolled past, not
+        # changed: a wheel the user meant for the page must never spend a
+        # different model on them.  The wheel counts only when the popup is
+        # open — that is a list being scrolled on purpose, with the choice
+        # still in the user's hand.
+        if not self.view().isVisible():
             event.ignore()
             return
         _orig_combo_wheel(self, event)
+
     QComboBox.wheelEvent = _combo_wheel_no_accidental
 except Exception:
     pass
