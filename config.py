@@ -1043,8 +1043,29 @@ def _ai_policy_text(edit_level, *args, **kwargs):
         return f"{header}\n\n{level}\n\n{length}\n\n{injection}"
 
 
+_history_lock = None
+try:
+    import threading as _cfg_thread
+    _history_lock = _cfg_thread.Lock()
+except Exception:
+    _history_lock = None
+
+_meetings_lock = None
+try:
+    import threading as _cfg_thread2
+    _meetings_lock = _cfg_thread2.Lock()
+except Exception:
+    _meetings_lock = None
+
+
 def append_history(entry):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    lock = globals().get("_history_lock")
+    if lock is not None:
+        with lock:
+            with open(HISTORY_FILE, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return
     with open(HISTORY_FILE, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
@@ -1069,6 +1090,15 @@ def read_history(limit=None):
 
 def _write_history(lines):
     """Replace the file in one go, so a crash cannot leave it half written."""
+    lock = globals().get("_history_lock")
+    if lock is not None:
+        with lock:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = HISTORY_FILE.with_suffix(".jsonl.tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.writelines(lines)
+            tmp.replace(HISTORY_FILE)
+        return
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp = HISTORY_FILE.with_suffix(".jsonl.tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -1139,6 +1169,16 @@ def read_meetings():
 
 
 def _write_meetings(rows):
+    lock = globals().get("_meetings_lock")
+    if lock is not None:
+        with lock:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = MEETINGS_FILE.with_suffix(".jsonl.tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                for row in rows:
+                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            tmp.replace(MEETINGS_FILE)
+        return
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp = MEETINGS_FILE.with_suffix(".jsonl.tmp")
     with open(tmp, "w", encoding="utf-8") as fh:

@@ -197,6 +197,10 @@ class Dikte:
         # The rolling preview of the words, for the pill's wider live view.
         self.live = livetext.LiveTranscriber(self.conf)
         self.live.partial.connect(self._on_live_partial)
+        # Meeting mic has its own transcriber so concurrent dictation + meeting
+        # do not intermix PCM (recorder.pending_bytes vs meeting pending_mic).
+        self.live_meeting_mine = livetext.LiveTranscriber(self.conf)
+        self.live_meeting_mine.partial.connect(self._on_live_meeting_mine_partial)
         # A meeting hears two voices; the second preview carries the far
         # side so the live panel can say who is speaking.
         self.live_theirs = livetext.LiveTranscriber(self.conf)
@@ -697,10 +701,26 @@ class Dikte:
         self.last_toggle.restart()
         return False
 
+    def _coordinator_notify(self, activity_id, state):
+        """Best-effort coordinator update + reflow."""
+        c = getattr(self, "_coordinator", None)
+        if c is None:
+            return
+        try:
+            act = c.get(activity_id)
+            if act is None:
+                return
+            act.state = state
+            c.update(act)
+            c.recompute_geometry()
+        except Exception:
+            pass
+
     def start(self):
         if self.state != IDLE or self.recording:
             return
         self.overlay.show_recording()
+        self._coordinator_notify("dictation", "recording")
         self._begin_recording(DICTATION)
         self._set_state(RECORDING)
 
@@ -708,6 +728,7 @@ class Dikte:
         if self.ask_state != IDLE or self.recording:
             return
         self.ask_overlay.show_recording(asking=True)
+        self._coordinator_notify("agent", "recording")
         self._begin_recording(ASK)
         self._set_ask_state(RECORDING)
 
@@ -725,12 +746,13 @@ class Dikte:
         self.recorder.start(self.conf["mic_target"], self.conf["max_seconds"])
 
     def _on_live_partial(self, text):
-        if self.meeting_state == M_RECORDING:
-            self._append_live_line("mine", text)
-            return
         self.overlay.set_live_transcript(text)
         if self.live_popup is not None and self.live_popup.isVisible():
             self.live_popup.set_text(text)
+
+    def _on_live_meeting_mine_partial(self, text):
+        if self.meeting_state == M_RECORDING:
+            self._append_live_line("mine", text)
 
     def _on_live_theirs_partial(self, text):
         if self.meeting_state == M_RECORDING:
@@ -958,7 +980,14 @@ class Dikte:
         seconds = self._current_seconds()
         self._recording_overlay().set_seconds(seconds)
         if self.capturing and self.recorder_owner is not None:
-            self.live.feed(self.recorder.pending_bytes())
+            # When meeting is recording, meeting mic is on live_meeting_mine,
+            # not on live — avoid intermixing dictation + meeting PCM.
+            if self.meeting_state != M_RECORDING:
+                self.live.feed(self.recorder.pending_bytes())
+            else:
+                # Still feed dictation PCM via live during concurrent capture
+                # but live is now isolated from meeting's mine.
+                self.live.feed(self.recorder.pending_bytes())
         # Only auto-stop while actively capturing, not while paused
         if self.capturing and seconds >= self.conf["max_seconds"]:
             (self.stop_ask if self.recorder_owner == ASK else self.stop)()
@@ -974,26 +1003,8 @@ class Dikte:
     def start_meeting(self):
         if self.meeting_state != M_IDLE:
             return
-        # Concurrent capture: on platforms where the mic is shared (Pulse/PipeWire,
-        # WASAPI shared-mode, AVFoundation), keep a live dictation alive.  On
-        # fallback audio paths that contend, stop it first so the meeting is not
-        # starved — audio is preserved.
-        _can_share = False
-        try:
-            _can_share = audio.can_concurrent_capture()
-        except Exception:
-            _can_share = False
-        if not _can_share:
-            self.stop_recording()
-        elif self.recording:
-            # Shared path: leave dictation's Recorder running; MeetingRecorder
-            # opens its own handles (independent _gen/_proc/_source).  Log the
-            # info for diagnostics.
-            try:
-                import logging as _log
-                _log.getLogger("dikte").debug("start_meeting: shared mic, keeping dictation alive")
-            except Exception:
-                pass
+        # Probe meeting start BEFORE dropping dictation: if meeting fails,
+        # dictation must stay alive (no data loss). Ordering matters.
         base = meeting.new_base()
         _, wav_path = cfg.meeting_paths(base)
         self.meeting_recorder.start(
@@ -1003,7 +1014,16 @@ class Dikte:
             self.conf["meeting_max_seconds"],
         )
         if not self.meeting_recorder.active:
-            return  # start() has already said what went wrong
+            return  # start() has already said what went wrong; dictation untouched
+        # Meeting started successfully — if mic is exclusive, stop dictation now.
+        _can_share = False
+        try:
+            _can_share = audio.can_concurrent_capture()
+        except Exception:
+            _can_share = False
+        if not _can_share and self.recording:
+            self.stop_recording()
+        # On shared path, dictation stays alive (independent _gen/_proc).
         self.meeting_base = base
         self._meeting_last_sound = 0.0
         self.meeting_elapsed.restart()
@@ -1013,7 +1033,7 @@ class Dikte:
         self._live_theirs_len = 0
         self._live_names = self.conf.speaker_names()
         if self.conf["live_transcript"]:
-            self.live.begin(language=self.conf.meeting_language_for("mine"))
+            self.live_meeting_mine.begin(language=self.conf.meeting_language_for("mine"))
             self.live_theirs.begin(
                 language=self.conf.meeting_language_for("theirs"))
         self.overlay.show_meeting()
@@ -1025,6 +1045,7 @@ class Dikte:
         self.meeting_ticker.stop()
         self._set_meeting_state(M_WORKING)
         self.overlay.show_busy(t("Ending the meeting…"))
+        self._coordinator_notify("dictation", "busy")
         self.meeting_recorder.stop()
 
     def cancel_meeting(self):
@@ -1032,7 +1053,7 @@ class Dikte:
             return
         self.meeting_ticker.stop()
         self.meeting_recorder.cancel()
-        self.live.end()
+        self.live_meeting_mine.end()
         self.live_theirs.end()
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
@@ -1055,7 +1076,7 @@ class Dikte:
                 meeting_remote_silent(seconds, seconds - self._meeting_last_sound),
                 meeting_mic_silent(seconds, self.meeting_recorder.mic_received))
         if self.meeting_state == M_RECORDING:
-            self.live.feed(self.meeting_recorder.pending_mic())
+            self.live_meeting_mine.feed(self.meeting_recorder.pending_mic())
             self.live_theirs.feed(self.meeting_recorder.pending_theirs())
         if self.state == IDLE:
             self.tray.setToolTip(
@@ -1065,7 +1086,7 @@ class Dikte:
             self.stop_meeting()
 
     def _on_meeting_recorded(self, path, duration):
-        self.live.end()
+        self.live_meeting_mine.end()
         self.live_theirs.end()
         entry = meeting.new_entry(self.meeting_base, duration)
         try:
@@ -1100,8 +1121,26 @@ class Dikte:
 
     def _on_meeting_progress(self, _base, message):
         self.meeting_message = message
-        if self.state == IDLE and self.meeting_state == M_WORKING:
+        # Always reflect meeting progress: keep tray tooltip updated regardless
+        # of dictation state so the user sees where the minutes are.
+        if self.meeting_state == M_WORKING:
             self.tray.setToolTip(message)
+            # Keep the overlay showing meeting progress — dictation busy must
+            # not hide minutes. Use show_busy only if overlay currently shows
+            # a stale dictation busy or hidden; otherwise preserve its state
+            # but ensure message is visible.
+            try:
+                # Prefer a dedicated meeting progress visual when meeting is
+                # the active busy job; fall back to tray-only for dictation busy.
+                if self.overlay.state in ("hidden", "done", "warning", "error"):
+                    self.overlay.show_busy(message)
+                elif self.overlay.state == "busy":
+                    # If already busy, just update the message so it reflects
+                    # the latest pipeline stage instead of a stale one.
+                    self.overlay.message = message
+                    self.overlay.update()
+            except Exception:
+                pass
 
     def _on_meeting_finished(self, base, title):
         self._set_meeting_state(M_IDLE)
@@ -1133,7 +1172,7 @@ class Dikte:
     def _on_meeting_error(self, message):
         """The recorder itself could not run."""
         self.meeting_ticker.stop()
-        self.live.end()
+        self.live_meeting_mine.end()
         self.live_theirs.end()
         if self.overlay.state == "meeting":
             self.overlay.dismiss()
@@ -1202,12 +1241,16 @@ class Dikte:
         return self.ask_pipeline.retry_from_job(job_id)
 
     def _on_finished(self, _raw, text, warning):
-        # clear live transcript preview on the recording overlay
-        try:
-            self.overlay.clear_live_transcript()
-            self.ask_overlay.clear_live_transcript()
-        except Exception:
-            pass
+        # Do not dismiss/hide meeting progress when dictation finishes.
+        # If meeting is still working, preserve its busy overlay instead of
+        # clearing the live transcript or showing dictation's done.
+        _meeting_working = (self.meeting_state == M_WORKING)
+        if not _meeting_working:
+            try:
+                self.overlay.clear_live_transcript()
+                self.ask_overlay.clear_live_transcript()
+            except Exception:
+                pass
         # decide result overlay vs legacy done indicator
         show_result = False
         try:
@@ -1216,27 +1259,33 @@ class Dikte:
             show_result = True
         if show_result and text:
             try:
-                if self.result_overlay is not None:
-                    # Dismiss the recording pill first, then show result
-                    try:
-                        self.overlay.dismiss()
-                    except Exception:
-                        pass
-                    # auto-hide time: longer when not auto-pasting, shorter when pasted
+                # When meeting is working, use result_overlay (separate widget)
+                # instead of overlay.show_done so meeting busy is not clobbered.
+                # If there's no result_overlay, suppress dictation done entirely
+                # while meeting is working.
+                if _meeting_working and self.result_overlay is None:
+                    pass
+                elif self.result_overlay is not None:
+                    if not _meeting_working:
+                        try:
+                            self.overlay.dismiss()
+                        except Exception:
+                            pass
                     auto_paste = bool(self.conf.get("auto_paste", True))
-                    msec = 4000 if auto_paste else None  # None = stay until close
+                    msec = 4000 if auto_paste else None
                     self.result_overlay.show_result(text, msec=msec)
                 else:
-                    # fallback to legacy
                     action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
                     self.overlay.show_done(t("{action}: {preview}", action=action, preview=_preview(text)))
             except Exception:
-                action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
-                self.overlay.show_done(t("{action}: {preview}", action=action, preview=_preview(text)))
+                if not _meeting_working:
+                    action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
+                    self.overlay.show_done(t("{action}: {preview}", action=action, preview=_preview(text)))
         else:
-            if warning:
-                # The text was still pasted, but cleanup did not run. Say so loudly:
-                # a rejected key otherwise looks exactly like working dictation.
+            if _meeting_working:
+                # Preserve meeting busy; don't overwrite with dictation warning/done.
+                pass
+            elif warning:
                 self.overlay.show_warning(
                     t("Pasted raw, cleanup failed: {error}", error=warning.splitlines()[0])
                 )

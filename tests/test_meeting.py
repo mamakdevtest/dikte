@@ -360,7 +360,8 @@ class Pipeline(DikteTest):
             worker.failed.connect(lambda *args: failures.append(args))
             worker._work(cfg.read_meetings()[0])
         self.assertIn("Settings", failures[0][1])
-        self.assertEqual(cfg.read_meetings()[0]["status"], "failed")
+        # Minutes failure after transcript checkpoint keeps transcribed (retry reuses transcript)
+        self.assertEqual(cfg.read_meetings()[0]["status"], "transcribed")
 
     def test_a_provider_none_of_the_roads_knows_is_a_dead_end(self):
         """The CLIs are not offered the job; a name that lands here anyway
@@ -377,7 +378,7 @@ class Pipeline(DikteTest):
         self.conf["local_llm_model"] = "gemma-3-4b-it-Q4_K_M.gguf"
         self.conf["meeting_cleanup"] = False
 
-        def local(text, conf, prompt, timeout):
+        def local(text, conf, prompt, timeout, aborter=None):
             if "professional title" in prompt:
                 return "Kickoff"
             return "# Kickoff\n\nAgreed."
@@ -422,12 +423,13 @@ class Pipeline(DikteTest):
         self.conf["meeting_cleanup"] = False
         self.run_pipeline(cleanup_fails=True)
         entry = cfg.read_meetings()[0]
-        self.assertEqual(entry["status"], "failed")
+        # Minutes-stage failure with transcript checkpoint keeps transcribed
+        self.assertEqual(entry["status"], "transcribed")
 
         with mock.patch.object(api, "transcribe_segments") as transcribe, \
                 mock.patch.object(api, "cleanup", return_value="# Kickoff\n\nAgreed."):
             worker = meeting.MeetingPipeline(self.conf)
-            worker._work(dict(entry, status="transcribed"))
+            worker._work(dict(entry))
         transcribe.assert_not_called()
         self.assertEqual(cfg.read_meetings()[0]["status"], "done")
 

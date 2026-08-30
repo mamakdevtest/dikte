@@ -29,10 +29,18 @@ def build(window):
     window.minutes_status.setWordWrap(True)
     outer.addWidget(window.minutes_status)
 
+    from PyQt6.QtWidgets import QTabWidget
+    tabs = QTabWidget()
     window.minutes_view = QPlainTextEdit()
     window.minutes_view.setReadOnly(True)
     window.minutes_view.setPlaceholderText(t("Pick a meeting to read it."))
-    outer.addWidget(window.minutes_view, 1)
+    window.minutes_raw_view = QPlainTextEdit()
+    window.minutes_raw_view.setReadOnly(True)
+    window.minutes_raw_view.setPlaceholderText(t("Raw transcript (hammadde) — original before AI cleanup."))
+    tabs.addTab(window.minutes_view, t("Minutes"))
+    tabs.addTab(window.minutes_raw_view, t("Raw (hammadde)"))
+    window.minutes_tabs = tabs
+    outer.addWidget(tabs, 1)
 
     copy = btn(t("Copy"), "secondary", "sm")
     copy.clicked.connect(

@@ -95,6 +95,7 @@ class MeetingPipeline(QObject):
         self._thread = None
         self._stop = threading.Event()
         self._base = ""
+        self._aborter = None
 
     @property
     def busy(self):
@@ -109,6 +110,10 @@ class MeetingPipeline(QObject):
         if self.busy:
             return False
         self._stop.clear()
+        try:
+            self._aborter = api.Aborter()
+        except Exception:
+            self._aborter = None
         self._base = entry.get("base", "")
         self._thread = threading.Thread(target=self._work, args=(dict(entry),),
                                         daemon=True)
@@ -117,10 +122,22 @@ class MeetingPipeline(QObject):
 
     def stop(self):
         self._stop.set()
+        aborter = self._aborter
+        if aborter is not None:
+            try:
+                aborter.abort()
+            except Exception:
+                pass
 
     def _check(self):
         if self._stop.is_set():
             raise Cancelled
+        aborter = self._aborter
+        if aborter is not None:
+            try:
+                aborter.check()
+            except api.Aborted:
+                raise Cancelled from None
 
     def _say(self, message):
         self.progress.emit(self._base, message)
@@ -165,26 +182,59 @@ class MeetingPipeline(QObject):
             self._discard_audio(wav_path)
             self.finished.emit(base, title)
 
+        except api.Aborted:
+            cfg.update_meeting(base, error=t("Stopped."))
+            self._say(t("Stopped."))
+            self.failed.emit(base, t("Stopped."))
         except Cancelled:
             cfg.update_meeting(base, error=t("Stopped."))
             self._say(t("Stopped."))
         except (api.ApiError, OSError, subprocess.SubprocessError, wave.Error) as exc:
-            # The audio stays put no matter what the keep setting says: it is the
-            # only copy of the meeting, and the run can be tried again from it.
-            cfg.update_meeting(base, status="failed", error=str(exc))
+            # Preserve transcript checkpoint for retry: if _work already wrote a
+            # transcript-only doc (checkpoint at status=transcribed) and minutes
+            # or title failed afterward, keep status=transcribed. Pre-checkpoint
+            # failures (transcription itself, silent audio, missing wav) stay failed.
+            _keep_transcribed = False
+            try:
+                # Probe: does a transcript checkpoint already exist on disk?
+                if doc_path.exists():
+                    txt = doc_path.read_text(encoding="utf-8")
+                    if TRANSCRIPT_MARKER in txt and read_transcript(txt).strip():
+                        _keep_transcribed = True
+            except Exception:
+                pass
+            if _keep_transcribed:
+                cfg.update_meeting(base, status="transcribed", error=str(exc))
+            else:
+                cfg.update_meeting(base, status="failed", error=str(exc))
             self.failed.emit(base, str(exc))
         finally:
             if workdir:
                 shutil.rmtree(workdir, ignore_errors=True)
 
     def _stored_transcript(self, entry, doc_path):
-        """The transcript an earlier run already paid for, or ''."""
-        if entry.get("status") not in ("transcribed", "done"):
-            return ""
+        """The transcript an earlier run already paid for, or ''.
+
+        Also trusts a transcript marker on disk even when status is still
+        'failed'/'recorded' (orphan transcript from a minutes-stage failure)
+        so retry does not re-pay transcription of an hour.
+        """
+        # Fast path: status already signals transcript exists
+        if entry.get("status") in ("transcribed", "done"):
+            try:
+                return read_transcript(doc_path.read_text(encoding="utf-8"))
+            except OSError:
+                return ""
+        # Legacy/orphan: minutes-stage failure leaves transcript on disk but status=failed/recorded
         try:
-            return read_transcript(doc_path.read_text(encoding="utf-8"))
+            txt = doc_path.read_text(encoding="utf-8")
+            if TRANSCRIPT_MARKER in txt:
+                t = read_transcript(txt)
+                if t.strip():
+                    return t
         except OSError:
-            return ""
+            pass
+        return ""
 
     def _transcribe(self, wav_path, workdir):
         conf = self.conf
@@ -222,7 +272,7 @@ class MeetingPipeline(QObject):
                     (start + offset, end + offset, text)
                     for start, end, text in api.transcribe_segments(
                         target, chunk_path, language=languages[speaker],
-                        prompt=hint
+                        prompt=hint, aborter=self._aborter
                     )
                 ])
             segments.extend((start, end, text, speaker) for start, end, text in heard)
@@ -246,7 +296,7 @@ class MeetingPipeline(QObject):
                     (start + offset, end + offset, text)
                     for start, end, text in api.transcribe_segments(
                         target, chunk_path, language=languages[speaker],
-                        prompt=hint
+                        prompt=hint, aborter=self._aborter
                     )
                 ])
                 segments.extend((start, end, text, speaker)
@@ -358,7 +408,7 @@ class MeetingPipeline(QObject):
             if len(blocks) > 1:
                 self._say(t("Cleaning up {index}/{count}…",
                             index=index, count=len(blocks)))
-            out.append(cleanup.run(block, conf, prompt, timeout=600))
+            out.append(cleanup.run(block, conf, prompt, timeout=600, aborter=self._aborter))
         return "\n".join(out)
 
     def _title(self, transcript):
@@ -383,7 +433,7 @@ class MeetingPipeline(QObject):
         conf = self.conf
         provider = conf["meeting_provider"]
         if provider == "local":
-            return cleanup._local(text, conf, prompt, 600)
+            return cleanup._local(text, conf, prompt, 600, aborter=self._aborter)
         who = providers.provider(conf, provider)
         if who is not None and who.transport == "http":
             model = (providers.custom_model(conf, provider, "minutes")
@@ -394,7 +444,7 @@ class MeetingPipeline(QObject):
                 text, providers.credential(conf, provider), model, prompt,
                 reasoning=conf["meeting_reasoning"],
                 base_url=providers.base_url(conf, provider), timeout=600,
-                provider=provider, service=who.name,
+                provider=provider, service=who.name, aborter=self._aborter,
             )
         raise api.ApiError(t("Unknown provider."))
 
@@ -412,7 +462,7 @@ class MeetingPipeline(QObject):
         conf = self.conf
         provider = conf["meeting_provider"]
         if provider == "local":
-            return cleanup._local(transcript, conf, conf.meeting_prompt(), 600)
+            return cleanup._local(transcript, conf, conf.meeting_prompt(), 600, aborter=self._aborter)
         who = providers.provider(conf, provider)
         if who is not None and who.transport == "http":
             model = (providers.custom_model(conf, provider, "minutes")
@@ -427,7 +477,7 @@ class MeetingPipeline(QObject):
                 transcript, providers.credential(conf, provider), model,
                 conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
                 base_url=providers.base_url(conf, provider), timeout=600,
-                provider=provider, service=who.name,
+                provider=provider, service=who.name, aborter=self._aborter,
             )
         # A name none of the branches knows — a CLI this road was never meant
         # to run on, or a typo in the file. A loud dead end rather than a
@@ -748,13 +798,23 @@ def prune_audio(days):
 
     A kept recording is a second chance at the minutes, not an archive —
     past the retention it is only disk someone forgot about.
+    Never prune a recording that is the only recovery source (status not done/transcribed).
     """
     if days <= 0:
         return 0
+    # Build set of bases whose status is still recoverable — never prune their wav
+    try:
+        rows = cfg.read_meetings()
+        recoverable = {r.get("base") for r in rows if r.get("status") not in ("done", "transcribed")}
+    except Exception:
+        recoverable = set()
     cutoff = time.time() - days * 86400
     removed = 0
     for wav in cfg.MEETINGS_DIR.glob("*.wav"):
         try:
+            base = wav.stem
+            if base in recoverable:
+                continue
             if wav.stat().st_mtime < cutoff:
                 wav.unlink()
                 removed += 1

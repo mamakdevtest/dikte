@@ -1,0 +1,5 @@
+- Requires settings tabs to enforce unsaved-changes guard: block tab switch and window close when dirty with Save/Discard/Cancel prompt, allow free navigation when clean with no prompt. Confidence: 0.95
+- Requires meeting minutes to use two-layer transcript model: raw transcript persisted as "Hammadde (raw)" and AI-cleaned result shown as primary output inside same document (split via TRANSCRIPT_MARKER), both separately visible. Confidence: 0.92
+- Requires meeting persistence to be loss-less: transcript checkpoint must survive minutes/cleanup/title failures (keep status transcribed not failed), retry must reuse stored transcript without re-transcribing, and audio pruning must never delete recoverable (non-done/transcribed) recordings. Confidence: 0.9
+- Wants Overlay/Indicator settings page stripped of heavy preview visuals (Overlay states grid, _ov_widget/_state_card demos) — keep only minimal info placeholder, not the product overlay itself. Confidence: 0.9
+- Communicates and expects UI strings in Turkish (e.g., Hammadde, Tutanak). Confidence: 0.85

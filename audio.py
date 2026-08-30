@@ -1685,6 +1685,8 @@ def concurrent_capture_info():
             "needs_fanout": False,
         }
     if plat == "darwin":
+        if not _cached_which("ffmpeg"):
+            return {"platform": plat, "backend": "avfoundation", "shared": False, "reason": "ffmpeg not found.", "needs_fanout": False}
         return {
             "platform": plat,
             "backend": "avfoundation",
@@ -1696,7 +1698,17 @@ def concurrent_capture_info():
             ),
             "needs_fanout": False,
         }
-    # Everything else is treated as PulseAudio / PipeWire.
+    # Everything else is treated as PulseAudio / PipeWire — but only if
+    # the tooling is actually present.
+    has_tool = bool(_cached_which("parec") or _cached_which("pw-record") or _cached_which("ffmpeg"))
+    if not has_tool:
+        return {
+            "platform": plat,
+            "backend": "pulse/pipewire",
+            "shared": False,
+            "reason": "No parecs/pw-record/ffmpeg found — cannot assess shared capture; assuming exclusive.",
+            "needs_fanout": False,
+        }
     return {
         "platform": plat,
         "backend": "pulse/pipewire",

@@ -539,6 +539,15 @@ class SettingsWindow(QDialog):
         _theme.apply(self._theme)
         self.shell.set_theme(self._theme)
         self._load()
+        self._baseline = self._snapshot_settings()
+        self._navigating = False
+        self._pending_index = -1
+        self._prev_index = self.tabs.currentIndex()
+        try:
+            self.tabs.currentChanged.connect(self._on_tab_change_requested)
+            self.shell.tabs.currentChanged.connect(self._on_tab_change_requested)
+        except Exception:
+            pass
         # Apply persisted sidebar compact (manual preference) — auto responsive overrides at <920
         try:
             initial_compact = bool(self.conf.get("sidebar_compact", False)) or self.width() < 920
@@ -1717,15 +1726,44 @@ class SettingsWindow(QDialog):
         row = self._selected_meeting()
         if not row:
             self.minutes_view.clear()
+            if hasattr(self, "minutes_raw_view"):
+                self.minutes_raw_view.clear()
             self.minutes_retry.setEnabled(False)
             return
         doc_path, _wav = cfg.meeting_paths(row["base"])
         try:
-            self.minutes_view.setPlainText(doc_path.read_text(encoding="utf-8"))
+            full = doc_path.read_text(encoding="utf-8")
         except OSError:
             self.minutes_view.setPlainText(
                 row.get("error") or t("Nothing has been written yet.")
             )
+            if hasattr(self, "minutes_raw_view"):
+                try:
+                    from meeting import read_transcript as _rt
+                    # Try orphan read even when status != done/transcribed
+                    raw = _rt(full) if 'full' in locals() else ""
+                except Exception:
+                    raw = ""
+                self.minutes_raw_view.setPlainText(raw or t("Nothing has been written yet."))
+            busy = self.meetings is not None and self.meetings.busy
+            self.minutes_retry.setEnabled(
+                self.meetings is not None and not busy and row.get("status") != "done"
+            )
+            return
+        # Split doc into minutes vs raw via marker
+        try:
+            from meeting import read_transcript as _rt, TRANSCRIPT_MARKER as _TM
+            raw = _rt(full)
+            if _TM in full:
+                minutes_part = full.split(_TM)[0].strip()
+            else:
+                minutes_part = full.strip()
+                raw = ""
+        except Exception:
+            minutes_part, raw = full, ""
+        self.minutes_view.setPlainText(minutes_part or t("Nothing has been written yet."))
+        if hasattr(self, "minutes_raw_view"):
+            self.minutes_raw_view.setPlainText(raw or t("Nothing has been written yet."))
         busy = self.meetings is not None and self.meetings.busy
         self.minutes_retry.setEnabled(
             self.meetings is not None and not busy and row.get("status") != "done"
@@ -1981,6 +2019,151 @@ class SettingsWindow(QDialog):
         if row is not None:
             dlg = HistoryDetailsDialog(row, self)
             dlg.exec()
+
+    # ---- dirty guard (T-1) ------------------------------------------
+
+    def _snapshot_settings(self):
+        """Project current widget values into a dict snapshot for dirty check."""
+        out = {}
+        try:
+            out["ui_language"] = (self.ui_language.currentData() or "auto") if hasattr(self, "ui_language") else "auto"
+            out["mic_target"] = (self.mic.currentData() or "") if hasattr(self, "mic") else ""
+            out["language"] = (self.language.currentData() or "auto") if hasattr(self, "language") else "auto"
+            out["auto_paste"] = bool(self.auto_paste.isChecked()) if hasattr(self, "auto_paste") else False
+            out["paste_shortcut"] = (self.paste_shortcut.currentText().strip() if hasattr(self, "paste_shortcut") else "")
+            out["restore_clipboard"] = bool(self.restore_clipboard.isChecked()) if hasattr(self, "restore_clipboard") else False
+            out["overlay_corner"] = (self.corner.currentData() or "bottom-left") if hasattr(self, "corner") else "bottom-left"
+            out["max_seconds"] = int(self.max_seconds.value()) if hasattr(self, "max_seconds") else 300
+            out["skip_silent"] = bool(self.skip_silent.isChecked()) if hasattr(self, "skip_silent") else True
+            out["live_transcript"] = bool(self.live_transcript.isChecked()) if hasattr(self, "live_transcript") else True
+            out["keep_audio"] = bool(self.keep_audio.isChecked()) if hasattr(self, "keep_audio") else False
+            out["transcribe_provider"] = (self.transcribe_provider.currentData() or "local") if hasattr(self, "transcribe_provider") else "local"
+            out["transcribe_model"] = (self.transcribe_model.currentText().strip() if hasattr(self, "transcribe_model") else "")
+            out["cleanup_enabled"] = bool(self.cleanup_enabled.isChecked()) if hasattr(self, "cleanup_enabled") else True
+            out["cleanup_provider"] = (self.cleanup_provider.currentData() or "local") if hasattr(self, "cleanup_provider") else "local"
+            out["transcribe_prompt"] = (self.transcribe_prompt.toPlainText().strip() if hasattr(self, "transcribe_prompt") else "")
+            out["cleanup_prompt"] = (self.cleanup_prompt.toPlainText().strip() if hasattr(self, "cleanup_prompt") else "")
+            out["assistant_provider"] = (self.assistant_provider.currentData() or "claude") if hasattr(self, "assistant_provider") else "claude"
+            out["meeting_provider"] = (self.meeting_provider.currentData() or "local") if hasattr(self, "meeting_provider") else "local"
+            out["ai_edit_level"] = 3
+            if hasattr(self, "ai_edit_spin"):
+                try: out["ai_edit_level"] = int(self.ai_edit_spin.value())
+                except Exception: pass
+            elif hasattr(self, "ai_edit_level"):
+                for b in getattr(self.ai_edit_level, "buttons", []):
+                    if b.isChecked():
+                        try: out["ai_edit_level"] = int(b.property("value") or 3)
+                        except Exception: pass
+                        break
+            out["history_limit"] = int(self.history_limit.value()) if hasattr(self, "history_limit") else 200
+        except Exception:
+            pass
+        return out
+
+    def _is_dirty(self):
+        try:
+            baseline = getattr(self, "_baseline", None)
+            if baseline is None:
+                return False
+            cur = self._snapshot_settings()
+            return cur != baseline
+        except Exception:
+            return False
+
+    def _prompt_unsaved(self):
+        """Show Save/Discard/Cancel. Returns 'save'|'discard'|'cancel'."""
+        from PyQt6.QtWidgets import QMessageBox as _MB
+        box = _MB(self)
+        box.setWindowTitle(t("Dikte Settings"))
+        box.setText(t("You have unsaved changes. Save before leaving?"))
+        save_btn = box.addButton(t("Save"), _MB.ButtonRole.AcceptRole)
+        discard_btn = box.addButton(t("Discard"), _MB.ButtonRole.DestructiveRole)
+        cancel_btn = box.addButton(t("Cancel"), _MB.ButtonRole.RejectRole)
+        box.setDefaultButton(save_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == save_btn:
+            return "save"
+        if clicked == discard_btn:
+            return "discard"
+        return "cancel"
+
+    def _on_tab_change_requested(self, new_index):
+        if getattr(self, "_navigating", False):
+            # internal navigation (our own revert or programmatic)
+            self._prev_index = new_index
+            return
+        prev = getattr(self, "_prev_index", -1)
+        if prev == new_index:
+            self._prev_index = new_index
+            return
+        if not self._is_dirty():
+            self._prev_index = new_index
+            return
+        # dirty — gate the switch
+        self._navigating = True
+        # revert visually first
+        try:
+            self.tabs.blockSignals(True)
+            self.shell.tabs.blockSignals(True)
+            self.tabs.setCurrentIndex(prev)
+            self.shell.tabs.setCurrentIndex(prev)
+        finally:
+            self.tabs.blockSignals(False)
+            self.shell.tabs.blockSignals(False)
+        choice = self._prompt_unsaved()
+        if choice == "save":
+            self._save()
+            try:
+                self._baseline = self._snapshot_settings()
+            except Exception:
+                pass
+            self._navigating = False
+            self._prev_index = prev
+            # now allow the requested navigation
+            self._navigating = True
+            try:
+                self.tabs.setCurrentIndex(new_index)
+                self.shell.tabs.setCurrentIndex(new_index)
+            finally:
+                self._navigating = False
+            self._prev_index = new_index
+        elif choice == "discard":
+            self._baseline = self._snapshot_settings()
+            # keep current dirty values? User said discard → reload from conf
+            try:
+                self._load()
+                self._baseline = self._snapshot_settings()
+            except Exception:
+                pass
+            self._navigating = False
+            self._prev_index = prev
+            self._navigating = True
+            try:
+                self.tabs.setCurrentIndex(new_index)
+                self.shell.tabs.setCurrentIndex(new_index)
+            finally:
+                self._navigating = False
+            self._prev_index = new_index
+        else:  # cancel
+            self._navigating = False
+
+    def closeEvent(self, event):
+        if self._is_dirty():
+            choice = self._prompt_unsaved()
+            if choice == "save":
+                self._save()
+                try:
+                    self._baseline = self._snapshot_settings()
+                except Exception:
+                    pass
+                event.accept()
+            elif choice == "discard":
+                event.accept()
+            else:
+                event.ignore()
+                return
+        super().closeEvent(event)
 
     def _history_menu(self, pos):
         item = self.history.itemAt(pos)
@@ -2621,6 +2804,10 @@ class SettingsWindow(QDialog):
             print(f"dikte: could not trim the history ({exc})", file=sys.stderr)
         self._load_history()  # the trim may just have dropped rows from the list
 
+        try:
+            self._baseline = self._snapshot_settings()
+        except Exception:
+            pass
         try:
             self.applied.emit()
         except Exception as exc:

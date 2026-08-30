@@ -23,6 +23,19 @@
 - [x] V3 — Git/diff/debug-artifact review (git diff --check PASS; repomix not touched; no temp WAV)
 - [x] V4 — Compile check (python -m py_compile 8 modules → exit 0)
 
+## Concurrency Hang Fix (update 2)
+- [x] T13 — MeetingPipeline abort wiring (api.Aborter → all api.* calls, stop→abort, Aborted→failed)
+- [x] T14 — Progress visibility fix (tray always on M_WORKING, overlay busy preserved, dismiss suppressed while M_WORKING)
+- [x] T15 — Live feed isolation (live_meeting_mine separate transcriber, no PCM intermix)
+- [x] T16 — start_meeting ordering (probe first, stop only on success + non-shared)
+- [x] T17 — Platform detection hardening (audio.concurrent_capture_info tool probe)
+- [x] T18 — File lock TOCTOU fix (voice_jobs read→write under single lock, config history/meetings locks)
+- [x] T19 — Coordinator reflow (start/stop Meeting + start recording notify + recompute)
+
+### Hang Fix Verification
+- [x] V5 — Targeted hang suite (227 meet/audio/worker/voice_jobs OK after fix)
+- [x] V6 — Compile + diff + ai_sync OK
+
 ---
 
 # TASKS (previous passes)

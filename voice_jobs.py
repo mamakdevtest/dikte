@@ -106,29 +106,77 @@ def save_voice_job(entry):
         row["ts"] = time.strftime("%Y-%m-%d %H:%M:%S")
     if not row.get("status"):
         row["status"] = STATUS_CAPTURED
-    # normalize kind
     if row.get("kind") not in KINDS:
         row["kind"] = KIND_DICTATION
-    rows = read_voice_jobs()
-    for idx, existing in enumerate(rows):
-        if existing.get("id") == row["id"]:
-            rows[idx] = row
-            break
-    else:
-        rows.append(row)
-    _write_voice_jobs(rows)
+    with _VOICE_JOBS_LOCK:
+        # Use internal unsynchronized read to stay inside the lock window.
+        f = _file()
+        try:
+            with open(f, encoding="utf-8") as fh:
+                lines = fh.readlines()
+        except (FileNotFoundError, OSError):
+            lines = []
+        rows = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+                if isinstance(r, dict) and r.get("id"):
+                    rows.append(r)
+            except json.JSONDecodeError:
+                continue
+        for idx, existing in enumerate(rows):
+            if existing.get("id") == row["id"]:
+                rows[idx] = row
+                break
+        else:
+            rows.append(row)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".jsonl.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+        tmp.replace(f)
     return row
 
 
 def update_voice_job(job_id, **changes):
     """Patch one row by id, return updated row or None."""
-    rows = read_voice_jobs()
-    for row in rows:
-        if row.get("id") == job_id:
-            row.update(changes)
-            _write_voice_jobs(rows)
-            return row
-    return None
+    with _VOICE_JOBS_LOCK:
+        f = _file()
+        try:
+            with open(f, encoding="utf-8") as fh:
+                lines = fh.readlines()
+        except (FileNotFoundError, OSError):
+            lines = []
+        rows = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+                if isinstance(r, dict) and r.get("id"):
+                    rows.append(r)
+            except json.JSONDecodeError:
+                continue
+        found = None
+        for row in rows:
+            if row.get("id") == job_id:
+                row.update(changes)
+                found = row
+                break
+        if found is None:
+            return None
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".jsonl.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+        tmp.replace(f)
+        return found
 
 
 def delete_voice_job(job_id):

@@ -7,6 +7,14 @@
 - **ai_shortening_freedom migration** — deprecated in DEFAULTS, silently clamped on load, not persisted on save, folded into Editing Level 1..5 descriptions; old configs load without crash.
 - **Agent retry idempotency** — `assistant.retry_ask()` checks stored messages for prior identical user turn + assistant reply; returns cached rather than re-executing when already successful (prevents duplicate side-effects).
 
+## Concurrency Hang Fix
+- **Meeting abort** — `api.Aborter` added to `MeetingPipeline`; all `transcribe_segments/cleanup` pass `aborter`; `stop()` aborts, `Aborted` mapped to `failed("Stopped.")` so `M_WORKING` never stalls 600/3600 s.
+- **Progress visibility** — `M_WORKING` progress always updates overlay+tray even while dictation is busy; dictation `dismiss`/`show_done` suppressed while `M_WORKING`.
+- **Live isolation** — `live_meeting_mine` separates meeting mic PCM from dictation `live`.
+- **start order** — probe meeting first; drop dictation only on success + exclusive.
+- **File locks** — `voice_jobs` TOCTOU closed (read→write under lock), `config` history/meetings serialized.
+- **Platform probe** — `concurrent_capture_info` checks tool presence before claiming shared.
+
 ---
 
 # DECISIONS (previous)

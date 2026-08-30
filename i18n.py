@@ -917,4 +917,12 @@ TR = {
     "Copy": "Kopyala",
     "Result": "Sonuç",
     "Transcription completed": "Transkripsiyon tamamlandı",
+
+    # dirty guard
+    "You have unsaved changes. Save before leaving?": "Kaydedilmemiş değişikliklerin var. Ayrılmadan önce kaydetmek ister misin?",
+    "Discard": "Vazgeçmeden bırak",
+    # minutes raw
+    "Minutes": "Tutanak",
+    "Raw (hammadde)": "Ham (hammadde)",
+    "Raw transcript (hammadde) — original before AI cleanup.": "Ham transkript (hammadde) — yapay zeka düzeltmeden önceki hâli.",
 }

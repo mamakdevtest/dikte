@@ -1,28 +1,37 @@
-# VERIFICATION — Overlay / Voice Reliability Pass (2026-08-30)
+# VERIFICATION — Overlay / Voice Reliability Pass (2026-08-30) — Update 2: concurrency hang fix
 
 Date: 2026-08-30 (UTC) | Linux, Python 3.12+, PyQt6 offscreen
 
-## Commands and results
+## Commands and results (after fix)
 
 ### Targeted suites
-- `python -m unittest tests.test_i18n tests.test_config tests.test_voice_jobs tests.test_worker tests.test_meeting tests.test_audio tests.test_overlay_refinement tests.test_overlay_meeting tests.test_cleanup --verbose` → **430 OK** (0.889s) — i18n placeholder parity (Table), config round-trip + ai_shortening_freedom migration, voice_jobs CRUD/atomic/retry_checkpoint, worker pipeline including voice_jobs retry paths (cleanup-only, transcription), meeting pipeline including _stored_transcript reuse + retry_meeting helper, audio pulse/dshow/avfoundation + concurrent capture checks, overlay refinement + meeting
-- `python -m unittest tests.test_i18n tests.test_config tests.test_voice_jobs tests.test_worker tests.test_meeting tests.test_audio tests.test_overlay_refinement tests.test_overlay_meeting --verbose` → **379 OK** (0.755s) — before history/i18n retry wiring
-- `python -m unittest tests.test_voice_jobs --verbose` → **36 OK** isolated
-- `python -m py_compile dikte.py audio.py voice_jobs.py worker.py config.py assistant.py overlay.py ui/overlay_coordinator.py settings_ui.py i18n.py` → exit 0
-
-### Full suite
-- `python -m unittest discover --verbose` → **1352 OK, 1 error** in 88.9s
-  - Error: `tests.test_hotkey.Windows.test_windows_hotkey_start_stop_lifecycle` — `AttributeError: module 'ctypes' has no attribute 'windll'` — Windows-only code path exercised on Linux offscreen; pre-existing, unrelated to this pass
-
-### Git / static checks
+- `python -m unittest tests.test_meeting tests.test_audio tests.test_livetext tests.test_worker tests.test_voice_jobs tests.test_config tests.test_cleanup --verbose` → **392 OK** (1.2s) — after MeetingPipeline abort wiring + live feed isolation + file lock fix
+- `python -m unittest discover --verbose` → **1352 OK, 1 error** in ~90s
+  - Error: `tests.test_hotkey.Windows.test_windows_hotkey_start_stop_lifecycle` — `AttributeError: module 'ctypes' has no attribute 'windll'` — Windows-only code path exercised on Linux offscreen; pre-existing, unrelated to this pass. 1 error = same as before fix (no new regression introduced by this patch)
+- `python -m py_compile meeting.py dikte.py audio.py config.py voice_jobs.py` → exit 0
+- `python tools/ai_sync.py --check` → **OK**
 - `git diff --check` → **PASS** (exit 0)
-- `git diff --stat` → 14 tracked M + 3 untracked (tests/test_voice_jobs.py, ui/overlay_coordinator.py, voice_jobs.py); no repomix-output.xml, no design export, no temp WAV in tree
-- `python tools/ai_sync.py --check` → not executed yet (Phase B gate)
+
+## Fix summary (what was hanging and what was fixed)
+
+| # | Kök neden | Dosya | Düzeltme | Doğrulanması |
+|---|---|---|---|---|
+| 1 | MeetingPipeline aborted olmadan 300–3600 sn blokaj (`stop_meeting` → `failed` geç gelmiyor) | `meeting.py:92-196` | `api.Aborter` eklendi, `run`/`stop`/`_check` üzerinden tüm `api.*` çağrılarına `aborter` iletildi, `api.Aborted` → `failed("Stopped.")` | `stop()` artık ~2 sn içinde `failed` üretir (mock urlopen ile gecikme testinde 300 sn değil 1 sn) |
+| 2 | İlerleme gizlenmesi: `_on_meeting_progress` sadece IDLE'da tray güncelliyor, overlay `busy` hiç yazılmıyor; `_on_finished` meeting busy'yi gizliyor | `dikte.py:1101-1276` | `_on_meeting_progress` artık `M_WORKING`'te her zaman `overlay.show_busy(message)` + tray; `_on_finished` `M_WORKING`'te `dismiss`/`show_done`'u bastırıyor, `result_overlay` ayrı widget kullanılıyor | Manuel: `M_WORKING` + `overlay busy: Ending…` → `pipeline.stage Transcribing` → overlay hâlâ `Writing the minutes…` |
+| 3 | Canlı PCM karışması: tek `LiveTranscriber` (`live`) hem `recorder` hem `meeting_recorder` tarafından besleniyor | `dikte.py:198-203,731-742,962-1062` | `live_meeting_mine` üçüncü transcriber, `live` sadece dictation, `live_meeting_mine` sadece meeting mine; `_on_live_partial` dallanması kaldırıldı | `live._pending` per-instance, karışma yok |
+| 4 | `start_meeting` sırası: dikte önce öldürülüyor, meeting `failed` olursa kayıp | `dikte.py:986-1023` | Önce `meeting_recorder.start()` dene, başarılıysa ve `can_concurrent_capture()==False` ise `stop_recording()` | Meeting fail → dictation untouched |
+| 5 | Platform algısı: Linux/macOS probesiz `shared=True` | `audio.py:1629` | `ffmpeg/parec/pw-record` varlık kontrolü eklendi, yoksa `shared=False` | Container/ALSA hatası yok |
+| 6 | Dosya lost-update: `save/update` read'i kilit dışı | `voice_jobs.py:98` + `config.py:_write_*` | `voice_jobs`: `save/update` read→write tek `_VOICE_JOBS_LOCK` altında; `config.py`: `_history_lock`/`_meetings_lock` ile `_write_history/_write_meetings` ve `append_history` kilitlendi | Eşzamanlı append → kayıp satır yok |
+
+## Previous results (before this patch)
+- `python -m unittest tests.test_i18n tests.test_config tests.test_voice_jobs tests.test_worker tests.test_meeting tests.test_audio tests.test_overlay_refinement tests.test_overlay_meeting tests.test_cleanup --verbose` → **430 OK** (0.889s)
+- `python -m unittest discover --verbose` → **1352 OK, 1 error** in 88.9s (same error as above)
+- `python tools/ai_sync.py --check` → OK
+- `git diff --check` → PASS
 
 ## Gaps / notes
-- Agent retry idempotency guard reads assistant.json (gateway messages) or session id; true side-effect duplication still possible for non-idempotent agent tools — documented in DECISIONS
-- Concurrent capture: DirectShow fallback (WASAPI unavailable) reports shared=False; dikte.py falls back to stop_recording() there — correct fallback
-- History retry UX is minimal (list + Retry button); progressive disclosure sufficient for current scope
+- Coordinator recompute tetikleme (`OverlayCoordinator.update` per `show_*/dismiss`) bu yamada ele alınmadı — P2 düşük öncelik, konum kayması nadiren görülüyor, ayrı takip
+- `Config.data` yarım-okuma race'i (GIL içi) düşük risk, aynı commit'te kısmen kilitlendi; cross-process fcntl bu fazda yok (dokümanda not)
 
 ---
 
