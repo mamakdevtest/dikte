@@ -944,4 +944,17 @@ TR = {
     "Raw (hammadde)": "Ham (hammadde)",
     "Raw transcript (hammadde) — original before AI cleanup.": "Ham transkript (hammadde) — yapay zeka düzeltmeden önceki hâli.",
     "Polish with AI": "Yapay zekayla düzenle",
+    "AI picks the best format": "AI en uygun formatı seçsin",
+    "Format": "Format",
+    # prompt creator
+    "Prompt Creator": "Prompt Oluşturucu",
+    "Preview": "Önizleme",
+    "Source": "Kaynak",
+    "Prompts": "Promptlar",
+    "Meeting Summary Prompts": "Toplantı Özeti Promptları",
+    "Edit meeting summary prompts": "Toplantı özeti promptlarını düzenle",
+    "Style": "Stil",
+    "Restore default": "Varsayılana döndür",
+    "Custom prompts replace the built-in format template.": "Özel promptlar, yerleşik format şablonunun yerine geçer.",
+    "Cancel": "İptal",
 }

@@ -3,7 +3,8 @@
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit,
+    QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 import config as cfg
@@ -11,6 +12,37 @@ from i18n import t
 
 from ..widgets import btn
 from . import page, scrolled
+
+
+class MarkdownView(QTextBrowser):
+    """The minutes viewer: renders Markdown in Preview mode, raw source in Source mode."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._md_raw = ""
+        self._md_source = False
+        self.setOpenExternalLinks(True)
+        self.setReadOnly(True)
+
+    def set_markdown(self, text):
+        """Remember the raw Markdown and show it (rendered, unless Source mode is on)."""
+        self._md_raw = text or ""
+        if self._md_source:
+            self.setPlainText(self._md_raw)
+        else:
+            self.setMarkdown(self._md_raw)
+
+    def set_source_mode(self, on):
+        """Preview → rendered Markdown; Source → the raw text as it was fed in."""
+        self._md_source = bool(on)
+        if self._md_source:
+            self.setPlainText(self._md_raw)
+        else:
+            self.setMarkdown(self._md_raw)
+
+    def clear(self):
+        self._md_raw = ""
+        super().clear()
 
 
 def build(window):
@@ -25,14 +57,43 @@ def build(window):
     window.minutes_list.currentItemChanged.connect(window._show_minutes)
     outer.addWidget(window.minutes_list)
 
+    # Style picker + AI-auto + Preview/Source toggle
+    style_row = QHBoxLayout()
+    window.minutes_style_label = QLabel("")
+    window.minutes_style_label.setObjectName("meta")
+    style_row.addWidget(window.minutes_style_label)
+    style_row.addStretch(1)
+    window.minutes_auto = QCheckBox(t("AI picks the best format"))
+    window.minutes_auto.setChecked(True)
+    window.minutes_style = QComboBox()
+    for key in cfg.STYLE_KEYS:
+        window.minutes_style.addItem(
+            cfg.STYLE_LABELS_TR.get(key, key), key)
+    window.minutes_style.setEnabled(False)
+
+    def _on_auto_toggled(checked):
+        window.minutes_style.setEnabled(not checked)
+
+    window.minutes_auto.toggled.connect(_on_auto_toggled)
+    style_row.addWidget(window.minutes_auto)
+    style_row.addWidget(QLabel(t("Format")))
+    style_row.addWidget(window.minutes_style)
+    window.minutes_view_toggle = QComboBox()
+    window.minutes_view_toggle.addItem(t("Preview"), "preview")
+    window.minutes_view_toggle.addItem(t("Source"), "source")
+    window.minutes_view_toggle.setCurrentIndex(0)
+    window.minutes_view_toggle.currentIndexChanged.connect(
+        lambda: window.minutes_view.set_source_mode(
+            window.minutes_view_toggle.currentData() == "source"))
+    style_row.addWidget(window.minutes_view_toggle)
+    outer.addLayout(style_row)
+
     window.minutes_status = QLabel("")
     window.minutes_status.setWordWrap(True)
     outer.addWidget(window.minutes_status)
 
-    from PyQt6.QtWidgets import QTabWidget
     tabs = QTabWidget()
-    window.minutes_view = QPlainTextEdit()
-    window.minutes_view.setReadOnly(True)
+    window.minutes_view = MarkdownView()
     window.minutes_view.setPlaceholderText(t("Pick a meeting to read it."))
     window.minutes_raw_view = QPlainTextEdit()
     window.minutes_raw_view.setReadOnly(True)

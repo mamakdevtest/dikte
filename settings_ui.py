@@ -61,6 +61,7 @@ from i18n import t
 from ui import theme as _theme
 from ui.local_models import LocalModelBox
 from ui.shell import AppShell, NAV as _NAV
+from ui.widgets import btn
 from ui.pages import (
     agent as agent_page,
     audiofile as audiofile_page,
@@ -514,6 +515,10 @@ class SettingsWindow(QDialog):
         bl.setContentsMargins(20, 10, 20, 12)
         bl.addStretch(1)
         bl.addWidget(buttons)
+        self.minutes_prompt_btn = btn(t("Prompts"), "secondary", "sm")
+        self.minutes_prompt_btn.setToolTip(t("Edit meeting summary prompts"))
+        self.minutes_prompt_btn.clicked.connect(self._open_prompt_creator)
+        bl.addWidget(self.minutes_prompt_btn)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1744,9 +1749,11 @@ class SettingsWindow(QDialog):
         try:
             full = doc_path.read_text(encoding="utf-8")
         except OSError:
-            self.minutes_view.setPlainText(
-                row.get("error") or t("Nothing has been written yet.")
-            )
+            msg = row.get("error") or t("Nothing has been written yet.")
+            if hasattr(self.minutes_view, "set_markdown"):
+                self.minutes_view.set_markdown(msg)
+            else:
+                self.minutes_view.setPlainText(msg)
             if hasattr(self, "minutes_raw_view"):
                 try:
                     from meeting import read_transcript as _rt
@@ -1771,7 +1778,19 @@ class SettingsWindow(QDialog):
                 raw = ""
         except Exception:
             minutes_part, raw = full, ""
-        self.minutes_view.setPlainText(minutes_part or t("Nothing has been written yet."))
+        if hasattr(self.minutes_view, "set_markdown"):
+            self.minutes_view.set_markdown(
+                minutes_part or t("Nothing has been written yet."))
+        else:
+            self.minutes_view.setPlainText(
+                minutes_part or t("Nothing has been written yet."))
+        if hasattr(self, "minutes_style_label"):
+            style_key = row.get("style") or ""
+            if style_key in cfg.STYLE_LABELS_TR:
+                self.minutes_style_label.setText(
+                    t("Format") + ": " + cfg.STYLE_LABELS_TR[style_key])
+            else:
+                self.minutes_style_label.setText("")
         if hasattr(self, "minutes_raw_view"):
             self.minutes_raw_view.setPlainText(raw or t("Nothing has been written yet."))
         busy = self.meetings is not None and self.meetings.busy
@@ -1792,6 +1811,13 @@ class SettingsWindow(QDialog):
             return
         if self.meetings is not None and self.meetings.busy:
             return
+        # The user's chosen style travels with this run
+        try:
+            row = dict(row)
+            row["style"] = self._minutes_style_key()
+        except Exception:
+            pass
+
         # Reuse MeetingPipeline: ensure transcript exists on disk to avoid re-transcribe
         try:
             doc_path, _ = cfg.meeting_paths(row["base"])
@@ -1814,10 +1840,30 @@ class SettingsWindow(QDialog):
         except Exception as exc:
             self.minutes_status.setText(t("Failed: {error}", error=exc))
 
+    def _minutes_style_key(self):
+        """The style the user picked for a write-up: auto or an explicit key.
+
+        Rules: the AI-auto checkbox wins over the combo; the choice is also
+        persisted as the default for every standalone minutes run.
+        """
+        key = "auto"
+        try:
+            if hasattr(self, "minutes_auto") and not self.minutes_auto.isChecked():
+                key = self.minutes_style.currentData() or "auto"
+        except Exception:
+            key = "auto"
+        try:
+            self.conf["meeting_style"] = key
+        except Exception:
+            pass
+        return key
+
     def _retry_minutes(self):
         row = self._selected_meeting()
         if not row or self.meetings is None or self.meetings.busy:
             return
+        row = dict(row)
+        row["style"] = self._minutes_style_key()
         self.meetings.run(row)
         self.minutes_retry.setEnabled(False)
         self.minutes_status.setText(t("Working…"))
@@ -1892,6 +1938,61 @@ class SettingsWindow(QDialog):
         except OSError as exc:
             self.minutes_status.setText(t("Failed: {error}", error=exc))
             QMessageBox.warning(self, t("Minutes"), t("Failed: {error}", error=exc))
+
+    def _open_prompt_creator(self):
+        """Edit per-style custom meeting summary prompts."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(t("Meeting Summary Prompts"))
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        style_combo = QComboBox()
+        for key in cfg.STYLE_KEYS:
+            style_combo.addItem(cfg.STYLE_LABELS_TR.get(key, key), key)
+        form.addRow(t("Style"), style_combo)
+        editor = QPlainTextEdit()
+        editor.setMinimumSize(600, 260)
+        form.addRow(editor)
+        hint = QLabel(t("Custom prompts replace the built-in format template."))
+        hint.setWordWrap(True)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText(t("Save"))
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        restore = QPushButton(t("Restore default"))
+        buttons.addButton(restore, QDialogButtonBox.ButtonRole.ResetRole)
+        layout = QVBoxLayout(dlg)
+        layout.addLayout(form)
+        layout.addWidget(hint)
+        layout.addWidget(buttons)
+
+        custom = dict(self.conf["meeting_custom_prompts"] or {})
+
+        def builtin_for(key):
+            if key == "auto":
+                return cfg.meeting_auto_pick_prompt()
+            return cfg.meeting_style_template(key)
+
+        def load(key):
+            editor.setPlainText(custom.get(key, "") or builtin_for(key))
+
+        style_combo.currentIndexChanged.connect(
+            lambda _index: load(style_combo.currentData()))
+        load(style_combo.currentData())
+        restore.clicked.connect(lambda: editor.setPlainText(builtin_for(style_combo.currentData())))
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            key = style_combo.currentData()
+            text = editor.toPlainText().strip()
+            if not text or text == builtin_for(key):
+                custom.pop(key, None)
+            else:
+                custom[key] = text
+            self.conf["meeting_custom_prompts"] = custom
+            try:
+                self.conf.save()
+            except Exception:
+                pass
 
     def _on_minutes_progress(self, _base, message):
         self.minutes_status.setText(message)
@@ -2581,8 +2682,17 @@ class SettingsWindow(QDialog):
         self.meeting_prompt.setPlainText(
             conf["meeting_prompt"] or cfg.default_meeting_prompt()
         )
-
+        # Minutes style picker: auto checkbox wins over the combo
+        if hasattr(self, "minutes_auto") and hasattr(self, "minutes_style"):
+            self.minutes_auto.blockSignals(True)
+            try:
+                self.minutes_auto.setChecked(conf.get("meeting_style") == "auto")
+                self._select_data(self.minutes_style, conf.get("meeting_style", "auto"))
+            finally:
+                self.minutes_auto.blockSignals(False)
+            self.minutes_style.setEnabled(not self.minutes_auto.isChecked())
         self.file_timestamps.setChecked(conf["file_timestamps"])
+
         self.file_cleanup.setChecked(conf["file_cleanup"])
         self.file_path = ""
 

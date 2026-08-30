@@ -173,12 +173,12 @@ class MeetingPipeline(QObject):
                     # so the list says what the meeting was before it says it
                     # is done.
                     cfg.update_meeting(base, title=generated)
-            self._say(t("Writing the minutes…"))
-            minutes = self._minutes(transcript)
+            minutes, minutes_style = self._minutes(
+                transcript, entry.get("style"))
             minutes_model = self._minutes_model()
             title = self._write(doc_path, minutes, transcript, entry)
             cfg.update_meeting(base, status="done", error="", title=title,
-                               model=minutes_model)
+                               model=minutes_model, style=minutes_style)
             self._discard_audio(wav_path)
             self.finished.emit(base, title)
 
@@ -448,9 +448,8 @@ class MeetingPipeline(QObject):
             )
         raise api.ApiError(t("Unknown provider."))
 
-    def _minutes(self, transcript):
+    def _minutes(self, transcript, style=None):
         """Whoever the meeting provider is set to, handed the whole transcript.
-
         The local default takes the same road a local cleanup does — llama.cpp
         on this machine, no key and no bill — so a meeting configured on
         nothing still gets its minutes when a model has been downloaded. The
@@ -458,31 +457,59 @@ class MeetingPipeline(QObject):
         which address and which model is the registry's to say, a user's own
         gateway included. The CLIs are not offered the job: a minutes run is
         one long request, not a session.
+
+        Returns (minutes, style): the produced text and the style key that
+        actually generated it — "auto" resolves to one of the twelve styles
+        before the model writes a single section.
         """
         conf = self.conf
         provider = conf["meeting_provider"]
+        style = style or conf["meeting_style"] or "auto"
+        if style == "auto":
+            style = self._pick_style(transcript)
+        prompt = conf.meeting_prompt(style)
         if provider == "local":
-            return cleanup._local(transcript, conf, conf.meeting_prompt(), 600, aborter=self._aborter)
+            return (cleanup._local(transcript, conf, prompt, 600,
+                                   aborter=self._aborter), style)
         who = providers.provider(conf, provider)
         if who is not None and who.transport == "http":
             model = (providers.custom_model(conf, provider, "minutes")
                      if who.custom else conf["meeting_model"])
             if not model:
-                # An empty box would ride to the gateway and come back as its
-                # own complaint about a nameless model; this one names the fix.
                 raise api.ApiError(t(
                     "{service} has no minutes model chosen. Pick one in "
                     "Settings.", service=who.name))
-            return api.cleanup(
-                transcript, providers.credential(conf, provider), model,
-                conf.meeting_prompt(), reasoning=conf["meeting_reasoning"],
+            text = api.cleanup(
+                transcript, providers.credential(conf, provider), model, prompt,
+                reasoning=conf["meeting_reasoning"],
                 base_url=providers.base_url(conf, provider), timeout=600,
                 provider=provider, service=who.name, aborter=self._aborter,
             )
-        # A name none of the branches knows — a CLI this road was never meant
-        # to run on, or a typo in the file. A loud dead end rather than a
-        # quiet re-route to somebody else's bill.
+            return text, style
         raise api.ApiError(t("Unknown provider."))
+
+    def _pick_style(self, transcript):
+        """Ask once which of the twelve styles fits this transcript best.
+
+        The question rides on a short head of the transcript — enough to hear
+        what kind of meeting it was, a fraction of the cost of a full pass.
+        The reply is parsed to a known style key; anything unrecognisable
+        falls back to the executive summary rather than failing the write-up.
+        """
+        conf = self.conf
+        head = (transcript or "").strip()[:1800]
+        if not head:
+            return "executive"
+        prompt = cfg.meeting_auto_pick_prompt()
+        try:
+            answer = self._ask_model(head, prompt)
+        except (api.ApiError, OSError, subprocess.SubprocessError, wave.Error):
+            return "executive"
+        text = (answer or "").strip().lower()
+        for token in re.findall(r"[a-z_0-9]+", text):
+            if token in cfg.STYLE_KEYS and token != "auto":
+                return token
+        return "executive"
 
     def _minutes_model(self):
         """The name the history row records for whoever wrote the minutes."""
