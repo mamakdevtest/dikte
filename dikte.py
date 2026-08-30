@@ -128,8 +128,8 @@ class Dikte:
         # When the other side's channel last carried sound, in recording
         # seconds; zero means the recording counts from its first moment.
         self._meeting_last_sound = 0.0
+        self.dashboard_window = None
         self.settings_window = None
-        self._quitting = False
         # A request that asked to be told how its run ended waits in here until
         # the run gets there, keyed by which of the three it was waiting on.
         self._waiters = {}
@@ -307,8 +307,8 @@ class Dikte:
         self.menu.addMenu(self.meetings_menu)
         self.menu.addSeparator()
 
-        self.settings_action = QAction(_ic("sliders"), t("Settings…"), self.menu)
-        self.settings_action.triggered.connect(self.open_settings)
+        self.settings_action = QAction(_ic("dashboard"), t("Dashboard…"), self.menu)
+        self.settings_action.triggered.connect(self.open_dashboard)
         self.menu.addAction(self.settings_action)
 
         self.restart_action = QAction(_ic("restart"), t("Restart"), self.menu)
@@ -348,7 +348,7 @@ class Dikte:
         if doc.exists():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(doc)))
         else:
-            self.open_settings()
+            self.open_dashboard()
 
     def _tray_clicked(self, reason):
         if reason != QSystemTrayIcon.ActivationReason.Trigger:
@@ -559,7 +559,8 @@ class Dikte:
                 "ask-cancel": self.cancel_ask,
                 "ask-reset": self.reset_conversation,
                 "meeting-cancel": self.cancel_meeting,
-                "settings": self.open_settings,
+                "settings": self.open_dashboard,
+                "dashboard": self.open_dashboard,
                 "reload": self.reload_settings,
                 "restart": self.restart,
                 "quit": self.app.quit,
@@ -1228,19 +1229,59 @@ class Dikte:
         if len(message) > len(first_line):
             self.tray.showMessage("Dikte", message, QSystemTrayIcon.MessageIcon.Warning, 8000)
 
-    # ---- settings ---------------------------------------------------------
+    # ---- dashboard / settings ---------------------------------------------
 
-    def open_settings(self):
-        if self.settings_window is None:
-            self.settings_window = SettingsWindow(self.conf, self.meetings)
-            self.settings_window.applied.connect(self._apply_settings)
-            self.settings_window.finished.connect(self._settings_closed)
-        self.settings_window.show()
-        self.settings_window.raise_()
-        self.settings_window.activateWindow()
+    def open_dashboard(self, page=None):
+        """Dashboard is the primary window — settings lives inside it."""
+        if self.dashboard_window is None:
+            try:
+                from ui.app_window import DashboardWindow
+                self.dashboard_window = DashboardWindow(self.conf, self.meetings, controller=self)
+                self.dashboard_window.applied.connect(self._apply_settings)
+                self.dashboard_window.finished.connect(self._dashboard_closed)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                # fallback to old settings window
+                return self.open_settings(page=page)
+        # deep-link to a settings tab if requested
+        if page:
+            try:
+                mapping = {"general": 1, "api": 2, "cleanup": 3, "agent": 4, "meeting": 5, "minutes": 6, "audio": 7, "shortcuts": 8, "history": 9}
+                idx = mapping.get(page, None)
+                if idx is not None and hasattr(self.dashboard_window, "shell"):
+                    self.dashboard_window.shell.set_page(idx)
+            except Exception:
+                pass
+        self.dashboard_window.show()
+        self.dashboard_window.raise_()
+        self.dashboard_window.activateWindow()
+
+    def _dashboard_closed(self, *_):
+        QTimer.singleShot(0, lambda: setattr(self, "dashboard_window", None))
+
+    def open_settings(self, page=None):
+        # Dashboard is now the single settings surface; keep alias for IPC/legacy
+        # If dashboard exists, bring it and optionally navigate
+        if self.dashboard_window is not None:
+            if page:
+                try:
+                    mapping = {"general": 1, "api": 2, "cleanup": 3, "agent": 4, "meeting": 5, "minutes": 6, "audio": 7, "shortcuts": 8, "history": 9}
+                    idx = mapping.get(page, page)
+                    if isinstance(idx, str):
+                        # try numeric
+                        idx = int(idx)
+                    self.dashboard_window.shell.set_page(int(idx))
+                except Exception:
+                    pass
+            self.dashboard_window.show()
+            self.dashboard_window.raise_()
+            self.dashboard_window.activateWindow()
+            return
+        # No dashboard yet — open it (which contains all settings)
+        return self.open_dashboard(page=page)
 
     def _settings_closed(self, *_):
-        # Don't drop the object while its own signal is still being delivered.
         QTimer.singleShot(0, lambda: setattr(self, "settings_window", None))
 
     def _apply_local(self):
@@ -1289,16 +1330,16 @@ class Dikte:
                         self.result_overlay._reposition()
             except Exception:
                 pass
-            self._apply_local()
             self._build_tray()
             self._refresh_tray()
-            # Notify open settings window to refresh its engine card from runtime target
-            try:
-                if getattr(self, "settings_window", None) is not None and self.settings_window is not None:
-                    if hasattr(self.settings_window, "_refresh_engine_card"):
-                        self.settings_window._refresh_engine_card()
-            except Exception:
-                pass
+            # Notify open windows to refresh engine card
+            for attr in ("dashboard_window", "settings_window"):
+                try:
+                    win = getattr(self, attr, None)
+                    if win is not None and hasattr(win, "_refresh_engine_card"):
+                        win._refresh_engine_card()
+                except Exception:
+                    pass
             # Where the desktop has no shortcut registry of its own, the listener is
             # not the fallback the setting offers to turn on: it is the only way the
             # keys arrive at all, so it runs whatever the setting says.
@@ -1311,16 +1352,14 @@ class Dikte:
             print(f"dikte: failed to apply settings: {exc}", file=sys.stderr)
 
     def restart(self):
-        """Replace this process with a fresh one, picking up code and settings.
-
-        Windows has no POSIX execv — close down, remove the pipe name, and spawn
-        the new process detached so it outlives this one. On POSIX, execv keeps
-        the PID and fd table, which is the behaviour callers expect when they
-        watch 'dikte restart' (e.g. an update script that waits for the new
-        process to answer on the IPC socket).
-        """
-        if self.settings_window is not None:
-            self.settings_window.close()
+        """Replace this process with a fresh one, picking up code and settings."""
+        for attr in ("dashboard_window", "settings_window"):
+            try:
+                win = getattr(self, attr, None)
+                if win is not None:
+                    win.close()
+            except Exception:
+                pass
         if sys.platform == "win32":
             self.shutdown()
             QLocalServer.removeServer(SERVER_NAME)
@@ -1510,11 +1549,11 @@ def run_app(args):
     server.newConnection.connect(on_connection)
     app.aboutToQuit.connect(dikte.shutdown)
 
-    # A normal GUI launch (no explicit action command) or explicit "settings"
-    # command opens the Settings window. If a transcription provider cannot
-    # run yet, Settings is opened regardless.
-    if command in ("", "settings") or not dikte.conf.transcribe_ready():
-        dikte.open_settings()
+    # A normal GUI launch (no explicit action command) or explicit "settings"/"dashboard"
+    # command opens the Dashboard. If a transcription provider cannot run yet, Dashboard
+    # is opened regardless (it shows the API page).
+    if command in ("", "settings", "dashboard") or not dikte.conf.transcribe_ready():
+        dikte.open_dashboard()
     elif command == "toggle":
         QTimer.singleShot(0, dikte.toggle)
     elif command == "ask":
@@ -1523,6 +1562,7 @@ def run_app(args):
         QTimer.singleShot(0, dikte.toggle_meeting)
 
     return app.exec()
+
 
 
 if __name__ == "__main__":

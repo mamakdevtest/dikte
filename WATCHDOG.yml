@@ -1,0 +1,14 @@
+advisors:
+  - name: default
+  - name: M3 GLICLoud
+    model: gmi-cloud/MiniMaxAI/MiniMax-M3:xhigh
+    tools:
+      - read
+      - bash
+      - edit
+      - debug
+      - glob
+      - grep
+      - inspect_image
+      - web_search
+      - write
