@@ -186,6 +186,12 @@ class AppShell(QWidget):
         model = QLabel(whisper_label)
         model.setStyleSheet("font-size: 12.5px; font-weight: 600;")
         model.setWordWrap(False)
+        model.setMinimumWidth(0)
+        try:
+            from PyQt6.QtWidgets import QSizePolicy as _SP
+            model.setSizePolicy(_SP.Policy.Expanding, _SP.Policy.Fixed)
+        except Exception:
+            pass
         # keep reference for dynamic updates
         self._engine_model_label = model
         top.addWidget(model, 1)
@@ -212,16 +218,22 @@ class AppShell(QWidget):
         """Update the engine card to show the selected transcribe provider/model."""
         try:
             if hasattr(self, "_engine_model_label") and self._engine_model_label is not None:
-                # Show provider + model, e.g. "Deepgram · nova-3" or "Local whisper · ggml-small.bin"
-                display = provider_label or _t("Local whisper")
+                # Sidebar is only 226px — keep label short, prefer model over provider prefix.
+                # Show just model (or provider if no model) to avoid truncation to "Deepgram · no".
                 if model_text:
-                    # Truncate long model names
-                    short = model_text
-                    if len(short) > 28:
-                        short = short[:25] + "…"
-                    display = f"{provider_label} · {short}" if provider_label else short
+                    short = model_text.strip().strip("'\"")
+                    if len(short) > 22:
+                        short = short[:19] + "…"
+                    display = short
+                else:
+                    display = provider_label or _t("Local whisper")
                 self._engine_model_label.setText(display)
-                self._engine_model_label.setToolTip(f"{provider_label} — {model_text}" if model_text else provider_label)
+                # Full "Provider · model" in tooltip
+                try:
+                    tip = f"{provider_label} · {model_text}" if provider_label and model_text else (provider_label or model_text or "")
+                    self._engine_model_label.setToolTip(tip)
+                except Exception:
+                    pass
             if hasattr(self, "_engine_chip") and self._engine_chip is not None:
                 # Chip shows provider short name
                 # Find label inside chip

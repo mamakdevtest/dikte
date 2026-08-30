@@ -48,6 +48,13 @@ def build(window):
     window.minutes_retry = btn(t("Write it up"), "secondary", "sm")
     window.minutes_retry.clicked.connect(window._retry_minutes)
     window.minutes_retry.setEnabled(False)
+    try:
+        window.minutes_polish = btn(t("Polish with AI"), "secondary", "sm")
+        window.minutes_polish.clicked.connect(window._polish_minutes)
+        window.minutes_polish.setEnabled(False)
+        outer.addWidget(window.minutes_polish)
+    except Exception:
+        pass
     save_md = btn(t("Save as .md"), "secondary", "sm")
     save_md.clicked.connect(window._save_minutes_md)
     folder = btn(t("Open the folder"), "secondary", "sm")

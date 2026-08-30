@@ -266,7 +266,7 @@ def build(window):
     # last 5 dictations
     left_list_card = SectionCard(t("Recent dictations"), t("Last 5"))
     lst = QListWidget()
-    lst.setMaximumHeight(160)
+    lst.setMaximumHeight(130)
     try:
         import config
         rows = list(reversed(config.read_history(limit=5)))
@@ -299,7 +299,7 @@ def build(window):
     # last 3 meetings
     right_list_card = SectionCard(t("Recent meetings"), t("Last 3"))
     ml = QListWidget()
-    ml.setMaximumHeight(160)
+    ml.setMaximumHeight(130)
     try:
         import config as cfg
         import meeting as mt

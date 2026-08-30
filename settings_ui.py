@@ -1768,6 +1768,41 @@ class SettingsWindow(QDialog):
         self.minutes_retry.setEnabled(
             self.meetings is not None and not busy and row.get("status") != "done"
         )
+        if hasattr(self, "minutes_polish"):
+            try:
+                has_raw = bool(raw.strip())
+                self.minutes_polish.setEnabled(has_raw and not busy)
+            except Exception:
+                pass
+
+    def _polish_minutes(self):
+        """Re-run AI polish (minutes) on the existing raw transcript."""
+        row = self._selected_meeting()
+        if not row:
+            return
+        if self.meetings is not None and self.meetings.busy:
+            return
+        # Reuse MeetingPipeline: ensure transcript exists on disk to avoid re-transcribe
+        try:
+            doc_path, _ = cfg.meeting_paths(row["base"])
+            if not doc_path.exists():
+                # Nothing to polish — trigger normal pipeline instead
+                self._retry_minutes()
+                return
+            # Force transcribed status so _stored_transcript reuse fires
+            # (row may be done already — run is idempotent via _stored_transcript).
+            stored = cfg.read_meetings()
+            found = next((r for r in stored if r.get("base")==row["base"]), None)
+            if found is not None and found.get("status") not in ("transcribed","done"):
+                # Promote to transcribed if raw exists
+                from meeting import read_transcript as _rt2
+                txt = doc_path.read_text(encoding="utf-8")
+                if _rt2(txt).strip():
+                    cfg.update_meeting(row["base"], status="transcribed")
+            self.meetings.run(row)
+            self.minutes_status.setText(t("Writing the minutes…"))
+        except Exception as exc:
+            self.minutes_status.setText(t("Failed: {error}", error=exc))
 
     def _retry_minutes(self):
         row = self._selected_meeting()

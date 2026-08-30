@@ -173,7 +173,8 @@ def build(window):
     prompt_label.setWordWrap(True)
     outer.addWidget(prompt_label)
     window.meeting_prompt = QPlainTextEdit()
-    window.meeting_prompt.setMinimumHeight(200)
+    window.meeting_prompt.setMinimumHeight(120)
+    window.meeting_prompt.setMaximumHeight(180)
     outer.addWidget(window.meeting_prompt, 1)
     reset = btn(t("Reset to default"))
     reset.clicked.connect(

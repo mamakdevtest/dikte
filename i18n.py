@@ -925,4 +925,5 @@ TR = {
     "Minutes": "Tutanak",
     "Raw (hammadde)": "Ham (hammadde)",
     "Raw transcript (hammadde) — original before AI cleanup.": "Ham transkript (hammadde) — yapay zeka düzeltmeden önceki hâli.",
+    "Polish with AI": "Yapay zekayla düzenle",
 }
