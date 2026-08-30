@@ -909,6 +909,12 @@ TR = {
     "Failed but recoverable": "Başarısız ama kurtarılabilir",
     "Completed": "Tamamlandı",
     "Unknown": "Bilinmiyor",
+    "Could not preserve recording safely": "Ses kaydı güvenle saklanamadı",
+    "Cannot start {activity} while the meeting microphone is active on this device. Finish the meeting or choose a shareable input.":
+        "Bu aygıtta toplantı mikrofonu etkinken {activity} başlatılamaz. "
+        "Toplantıyı bitirin veya paylaşılabilir bir giriş seçin.",
+    "dictation": "dikte",
+    "agent": "ajan",
 
     # --- overlay live / result -----------------------------------------
     "Live transcript": "Canlı transkript",

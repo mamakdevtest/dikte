@@ -77,11 +77,14 @@ class ResultOverlay(QWidget):
     copyRequested = pyqtSignal(str)
     closeRequested = pyqtSignal()
     expandChanged = pyqtSignal(bool)
+    overlayGeometryChanged = pyqtSignal()
+    concealed = pyqtSignal()
 
     def __init__(self, corner="bottom-left", below=None, parent=None):
         super().__init__(None)
         self.corner = corner
         self.below = below
+        self._overlay_coordinator = None
         self._concealed = True
         self._text = ""
         self._preview = ""
@@ -128,6 +131,16 @@ class ResultOverlay(QWidget):
     @property
     def text(self):
         return self._text
+
+    def set_overlay_coordinator(self, coordinator):
+        """Bind this transient card to an activity-stack layout authority."""
+        self._overlay_coordinator = coordinator
+        if coordinator is not None:
+            self.below = None
+
+    @property
+    def overlay_coordinator(self):
+        return self._overlay_coordinator
 
     def _label_font_obj(self):
         if self._label_font is None:
@@ -210,6 +223,10 @@ class ResultOverlay(QWidget):
             self.resize(COLLAPSED_WIDTH, COLLAPSED_HEIGHT)
 
     def _reposition(self):
+        coordinator = self._overlay_coordinator
+        if coordinator is not None:
+            coordinator.recompute_geometry()
+            return
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         if screen is None:
             return
@@ -223,12 +240,15 @@ class ResultOverlay(QWidget):
         self.move(int(x), int(y))
 
     def _conceal(self):
+        was_showing = self.showing
         self._concealed = True
         self.hide()
         self._expanded = False
         self._hover_expand = False
         self._hover_copy = False
         self._hover_close = False
+        if was_showing:
+            self.concealed.emit()
 
     def dismiss(self):
         self._hide_timer.stop()
@@ -340,6 +360,7 @@ class ResultOverlay(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self.overlayGeometryChanged.emit()
         self.update()
 
     # ---- painting -------------------------------------------------------

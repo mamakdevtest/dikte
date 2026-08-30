@@ -6,3 +6,4 @@
 - Communicates and expects UI strings in Turkish (e.g., Hammadde, Tutanak). Confidence: 0.85
 - Prefers visible GUI testing over headless/offscreen: wants the app launched in a directly visible window the user can see, with thorough per-tab and overlay visual inspection to analyze and fix bugs. Confidence: 0.88
 - Prefers meeting pipeline fixes to be validated by live reproduction on real recordings — expects agent to run MeetingPipeline on actual .wav files and inspect generated .md / meetings.jsonl status rather than only reviewing code. Confidence: 0.88
+- Expects assistant to recall and summarize recent work on demand via persistent memory (claude-mem timeline/memory_search) and git history (log/status/diff), valuing continuity of context across sessions without re-explaining. Confidence: 0.85

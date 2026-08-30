@@ -502,7 +502,10 @@ DEFAULTS = {
     # While recording, the newest seconds are transcribed on a roll so the
     # words show up as they are spoken. Same provider as dictation.
     "live_transcript": True,
-    "keep_audio": False,
+    # Voice jobs retain their source recording by default. Deleting a source
+    # is an explicit user action, never an implicit consequence of successful
+    # derived processing.
+    "keep_audio": True,
     "history_limit": 200,
     "file_timestamps": False,
     "file_cleanup": True,
@@ -553,11 +556,9 @@ DEFAULTS = {
     "assistant_timeout": 240,
 
     # --- AI text processing (editing level) -------------------
-    # ai_shortening_freedom is deprecated: kept in DEFAULTS for backward compat
-    # but folded into ai_edit_level. Old configs may still contain it; it is
-    # silently ignored/migrated on load and not persisted on save.
+    # Shortening is part of the Editing Level policy. The former independent
+    # slider is intentionally absent; old config files are ignored on load.
     "ai_edit_level": 3,               # 1..5, 3 = Balanced (readability without summarization)
-    "ai_shortening_freedom": 0,       # deprecated 0..100, 0 = preserve length/information
     "result_overlay_enabled": True,  # show result overlay after dictation
     "sidebar_compact": False,         # persisted compact preference (auto may override transiently)
 }
@@ -647,21 +648,14 @@ class Config:
         stored_prompt = self.data["cleanup_prompt"].strip()
         if stored_prompt and _fingerprint(stored_prompt) in LEGACY_PROMPTS:
             self.data["cleanup_prompt"] = ""
-        # Clamp AI policy values and coerce booleans
-        # ai_shortening_freedom is deprecated: clamp safely but do not affect policy
+        # Clamp the sole AI editing policy and coerce booleans.
         try:
             self.data["ai_edit_level"] = max(1, min(5, int(self.data.get("ai_edit_level", 3))))
         except Exception:
             self.data["ai_edit_level"] = 3
-        # Deprecated shortening: silently clamp if present, migration is to ignore it
-        try:
-            if "ai_shortening_freedom" in self.data:
-                self.data["ai_shortening_freedom"] = max(0, min(100, int(self.data.get("ai_shortening_freedom", 0))))
-            else:
-                # Keep deprecated key at 0 for backward compat in memory if missing
-                self.data["ai_shortening_freedom"] = 0
-        except Exception:
-            self.data["ai_shortening_freedom"] = 0
+        # Legacy files may carry the former independent shortening slider. It
+        # has no runtime representation and is omitted on the next save.
+        self.data.pop("ai_shortening_freedom", None)
         self.data["result_overlay_enabled"] = bool(self.data.get("result_overlay_enabled", True))
         self.data["sidebar_compact"] = bool(self.data.get("sidebar_compact", False))
         i18n.set_language(self.data["ui_language"])
@@ -719,10 +713,8 @@ class Config:
     def save(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         tmp = CONFIG_FILE.with_suffix(".json.tmp")
-        # Do NOT persist deprecated ai_shortening_freedom — old configs load it but new saves omit it
-        persist = {k: v for k, v in self.data.items() if k != "ai_shortening_freedom"}
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(persist, fh, ensure_ascii=False, indent=2)
+            json.dump(self.data, fh, ensure_ascii=False, indent=2)
         try:
             os.chmod(tmp, 0o600)
         except OSError:

@@ -120,5 +120,23 @@ class Table(unittest.TestCase):
                 translated.format(**{key: "x" for key in names})
 
 
+class VoiceReliabilityParity(DikteTest):
+    """Changed recovery/capture copy must not fall through to English in TR."""
+
+    SOURCES = (
+        "Could not preserve recording safely",
+        "Cannot start {activity} while the meeting microphone is active on this device. Finish the meeting or choose a shareable input.",
+        "dictation",
+        "agent",
+    )
+
+    def test_capture_recovery_strings_have_real_turkish_translations(self):
+        i18n.set_language("tr")
+        for source in self.SOURCES:
+            with self.subTest(source=source):
+                self.assertIn(source, i18n.TR)
+                self.assertNotEqual(i18n.t(source, activity="dikte"), source)
+
+
 if __name__ == "__main__":
     unittest.main()

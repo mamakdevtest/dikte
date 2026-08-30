@@ -38,21 +38,51 @@ _paste_lock = threading.Lock()
 
 
 def _persistent_audio_copy(wav_path, job_id=""):
-    """Copy wav to DATA_DIR/recordings/<job_id>.wav and return that path (or '').
+    """Atomically persist a recording and return its durable path.
 
-    Durable before claiming checkpoint: caller persists job after this succeeds.
+    ``""`` is deliberately a hard failure for the caller. A temporary WAV is
+    not a capture checkpoint, so derived work must not start until the copy is
+    in the recordings directory and flushed to disk.
     """
+    temporary = None
     try:
         cfg.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
         base = job_id or time.strftime("%Y%m%d-%H%M%S")
         dst = cfg.RECORDINGS_DIR / f"{base}.wav"
-        # avoid collision
         if dst.exists():
             dst = cfg.RECORDINGS_DIR / f"{base}-{uuid.uuid4().hex[:6]}.wav"
-        shutil.copy2(wav_path, str(dst))
+        temporary = dst.with_suffix(dst.suffix + f".{uuid.uuid4().hex}.tmp")
+        shutil.copyfile(wav_path, temporary)
+        with open(temporary, "rb+") as fh:
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, dst)
+        if os.name != "nt":
+            try:
+                parent_fd = os.open(cfg.RECORDINGS_DIR, os.O_RDONLY)
+            except OSError:
+                parent_fd = None
+            if parent_fd is not None:
+                try:
+                    os.fsync(parent_fd)
+                finally:
+                    os.close(parent_fd)
         return str(dst)
     except OSError:
+        if temporary is not None:
+            try:
+                pathlib.Path(temporary).unlink(missing_ok=True)
+            except OSError:
+                pass
         return ""
+
+
+def _update_job_checkpoint(job_id, **changes):
+    """Persist a checkpoint or stop before this run can claim success."""
+    updated = voice_jobs.update_voice_job(job_id, **changes)
+    if updated is None:
+        raise voice_jobs.PersistenceError("Voice job no longer exists")
+    return updated
 
 
 def _should_keep_audio_for_job(job, conf):
@@ -112,7 +142,7 @@ class Pipeline(QObject):
         )
         self._thread.start()
 
-    def retry_from_job(self, job_id):
+    def retry_from_job(self, job_id, *, confirm_agent=False):
         """Retry a failed/retryable voice job from its durable checkpoint.
 
         - If raw transcript exists but cleanup failed → retry cleanup only from
@@ -133,14 +163,34 @@ class Pipeline(QObject):
         # Don't retry completed jobs
         if job.get("status") == voice_jobs.STATUS_COMPLETED:
             return False
+        if (job.get("kind") == voice_jobs.KIND_AGENT and not confirm_agent):
+            # CLI and gateway backends cannot prove that a request which lost
+            # its response was not already accepted.  Persist the explicit
+            # boundary so the UI can ask before sending a second command.
+            try:
+                _update_job_checkpoint(job_id, retry_requires_confirmation=True)
+            except (OSError, voice_jobs.PersistenceError) as exc:
+                self.failed.emit(str(exc))
+                return False
+            self.failed.emit(t(
+                "This agent request may already have run. Confirm before retrying it."
+            ))
+            return False
         self._stop.clear()
         self._pause.set()
         # Increment retry count durably before work
         try:
             cur = int(job.get("retry_count") or 0)
-        except Exception:
+        except (TypeError, ValueError):
             cur = 0
-        voice_jobs.update_voice_job(job_id, retry_count=cur + 1)
+        try:
+            _update_job_checkpoint(
+                job_id, retry_count=cur + 1,
+                retry_requires_confirmation=False,
+            )
+        except (OSError, voice_jobs.PersistenceError) as exc:
+            self.failed.emit(str(exc))
+            return False
         self._thread = threading.Thread(
             target=self._retry_work,
             args=(job_id,),
@@ -167,16 +217,15 @@ class Pipeline(QObject):
         if cp == "transcription":
             audio_path = job.get("audio_path") or ""
             if not audio_path or not os.path.exists(audio_path):
-                # fall back to any persistent copy we can find or original
                 self.failed.emit(t("Audio no longer available for retry"))
                 try:
-                    voice_jobs.update_voice_job(
+                    _update_job_checkpoint(
                         job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
                         error_stage="transcription",
                         error_message="audio missing",
                     )
-                except Exception:
-                    pass
+                except (OSError, voice_jobs.PersistenceError) as exc:
+                    self.failed.emit(str(exc))
                 return
             duration = float(job.get("duration") or 0) or 1.0
             ask = bool(job.get("kind") == voice_jobs.KIND_AGENT)
@@ -194,35 +243,40 @@ class Pipeline(QObject):
         started = time.monotonic()
         text = raw
         warning = ""
+        # Delivery idempotency: a job whose result already reached the user
+        # (paste done, history written) has nothing left to redo.  Re-running
+        # cleanup would spend a model call and re-paste; re-appending history
+        # would duplicate the entry.  Close it out from its checkpoint.
+        if job.get("delivery_state") == "delivered" and (job.get("result_text") or "").strip():
+            try:
+                _update_job_checkpoint(job_id, status=voice_jobs.STATUS_COMPLETED,
+                                       error_stage="", error_message="")
+            except (OSError, voice_jobs.PersistenceError) as exc:
+                self.failed.emit(str(exc))
+                return
+            self.finished.emit(raw, job.get("result_text") or raw, warning)
+            return
         try:
-            self._wait_if_paused()
-            # Determine whether cleanup is expected for this kind
             wants_cleanup = (conf["assistant_cleanup"] if ask else conf["cleanup_enabled"])
             if wants_cleanup:
                 self.stage.emit(t("Cleaning up…"))
                 try:
                     text = cleanup.run(raw, conf, conf.cleanup_prompt())
                     # durable: checkpoint after cleanup
-                    try:
-                        voice_jobs.update_voice_job(
-                            job_id, status=voice_jobs.STATUS_PROCESSED,
-                            provider=job.get("provider") or "",
-                            model=job.get("model") or "",
-                            error_stage="", error_message="",
-                        )
-                    except Exception:
-                        pass
+                    _update_job_checkpoint(
+                        job_id, status=voice_jobs.STATUS_PROCESSED,
+                        provider=job.get("provider") or "",
+                        model=job.get("model") or "",
+                        error_stage="", error_message="",
+                    )
                 except api.ApiError as exc:
                     text = raw
                     warning = str(exc)
                     print(f"dikte: cleanup failed: {exc}", file=sys.stderr)
-                    try:
-                        voice_jobs.update_voice_job(
-                            job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                            error_stage="cleanup", error_message=str(exc),
-                        )
-                    except Exception:
-                        pass
+                    _update_job_checkpoint(
+                        job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                        error_stage="cleanup", error_message=str(exc),
+                    )
                     # Still preserve source audio; do not delete
                     self.finished.emit(raw, text, warning)
                     return
@@ -235,33 +289,38 @@ class Pipeline(QObject):
                     self._wait_if_paused()
                     return self._stop.is_set()
                 try:
-                    text, denied = assistant.ask(
+                    _update_job_checkpoint(
+                        job_id, agent_attempt_state="submitted",
+                        agent_question=question,
+                        assistant_provider=assistant.provider(conf),
+                        assistant_model=assistant.model(conf),
+                    )
+                    text, denied = assistant.retry_ask(
                         question, conf,
                         on_stage=lambda s: (self._wait_if_paused(), self.stage.emit(s))[1],
                         should_stop=should_stop,
+                        confirmed=True,
+                    )
+                    _update_job_checkpoint(
+                        job_id, agent_attempt_state="response_saved",
+                        agent_response=text,
                     )
                     warning = "\n".join(x for x in (warning, denied) if x)
                     if denied:
-                        try:
-                            voice_jobs.update_voice_job(
-                                job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                                error_stage="agent", error_message=denied,
-                            )
-                        except Exception:
-                            pass
+                        _update_job_checkpoint(
+                            job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                            error_stage="agent", error_message=denied,
+                        )
                         self.finished.emit(raw, text, warning)
                         return
                 except assistant.Cancelled:
                     self.cancelled.emit()
                     return
                 except (assistant.AssistantError, api.ApiError) as exc:
-                    try:
-                        voice_jobs.update_voice_job(
-                            job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                            error_stage="agent", error_message=str(exc),
-                        )
-                    except Exception:
-                        pass
+                    _update_job_checkpoint(
+                        job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                        error_stage="agent", error_message=str(exc),
+                    )
                     print(f"dikte: {exc}", file=sys.stderr)
                     self.failed.emit(str(exc))
                     return
@@ -318,21 +377,18 @@ class Pipeline(QObject):
             except OSError as exc:
                 print(f"dikte: could not trim the history: {exc}", file=sys.stderr)
             # Mark completed durably before signalling success
-            try:
-                voice_jobs.update_voice_job(job_id, status=voice_jobs.STATUS_COMPLETED,
-                                            error_stage="", error_message="")
-            except Exception:
-                pass
+            _update_job_checkpoint(job_id, status=voice_jobs.STATUS_COMPLETED,
+                                   delivery_state="delivered", result_text=text,
+                                   error_stage="", error_message="")
             self.finished.emit(raw, text, warning)
         except assistant.Cancelled:
             self.cancelled.emit()
         except (api.ApiError, paste.PasteError, assistant.AssistantError) as exc:
             print(f"dikte: {exc}", file=sys.stderr)
-            try:
-                voice_jobs.update_voice_job(job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                                            error_stage="retry", error_message=str(exc))
-            except Exception:
-                pass
+            _update_job_checkpoint(job_id, status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                                   error_stage="retry", error_message=str(exc))
+            self.failed.emit(str(exc))
+        except (OSError, voice_jobs.PersistenceError) as exc:
             self.failed.emit(str(exc))
         except Exception as exc:
             traceback.print_exc()
@@ -379,8 +435,14 @@ class Pipeline(QObject):
             try:
                 new_id = uuid.uuid4().hex[:12]
                 persistent = _persistent_audio_copy(wav_path, new_id)
-                # durable audio_path: prefer persistent copy, else temp path (only recoverable copy)
-                audio_path = persistent or wav_path
+                if not persistent:
+                    # A temp path is not a durable capture checkpoint.  Do not
+                    # call any model or index a path that this pipeline will
+                    # subsequently delete; leave the only local copy untouched
+                    # for manual recovery and report the storage failure.
+                    self.failed.emit(t("Could not preserve recording safely"))
+                    return
+                audio_path = persistent
                 try:
                     t0 = conf.transcribe_target()
                     prov = getattr(t0, "provider", conf.get("transcribe_provider", "local"))
@@ -402,13 +464,19 @@ class Pipeline(QObject):
                     "model": mdl,
                     "duration": duration,
                     "retry_count": 0,
+                    "assistant_provider": assistant.provider(conf) if ask else "",
+                    "assistant_model": assistant.model(conf) if ask else "",
+                    "agent_attempt_state": "" if ask else None,
+                    "agent_question": "" if ask else None,
+                    "agent_response": "" if ask else None,
+                    "retry_requires_confirmation": False,
                 }
                 job = voice_jobs.save_voice_job(entry)
                 job_id = job["id"]
-            except Exception as exc:
+            except (OSError, voice_jobs.PersistenceError) as exc:
                 print(f"dikte: voice job capture failed: {exc}", file=sys.stderr)
-                job = None
-                job_id = None
+                self.failed.emit(t("Could not preserve recording safely"))
+                return
         elif job is not None:
             job_id = job.get("id")
 
@@ -444,16 +512,12 @@ class Pipeline(QObject):
                 except (api.ApiError, OSError) as exc:
                     # Transcription failed but audio exists → retryable
                     if job_id:
-                        try:
-                            voice_jobs.update_voice_job(
-                                job_id,
-                                status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                                error_stage="transcription",
-                                error_message=str(exc),
-                            )
-                            job = voice_jobs.get_voice_job(job_id)
-                        except Exception:
-                            pass
+                        job = _update_job_checkpoint(
+                            job_id,
+                            status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                            error_stage="transcription",
+                            error_message=str(exc),
+                        )
                     raise
 
                 if conf["filter_hallucinations"] and vad.looks_like_hallucination(raw, duration):
@@ -463,19 +527,15 @@ class Pipeline(QObject):
 
                 # Durable checkpoint after transcription
                 if job_id:
-                    try:
-                        voice_jobs.update_voice_job(
-                            job_id,
-                            status=voice_jobs.STATUS_TRANSCRIBED,
-                            raw_transcript=raw,
-                            provider=getattr(target, "provider", ""),
-                            model=getattr(target, "model", ""),
-                            error_stage="",
-                            error_message="",
-                        )
-                        job = voice_jobs.get_voice_job(job_id)
-                    except Exception:
-                        pass
+                    job = _update_job_checkpoint(
+                        job_id,
+                        status=voice_jobs.STATUS_TRANSCRIBED,
+                        raw_transcript=raw,
+                        provider=getattr(target, "provider", ""),
+                        model=getattr(target, "model", ""),
+                        error_stage="",
+                        error_message="",
+                    )
             else:
                 # Should not reach here for cleanup-only retry (handled via _retry_cleanup_only)
                 raw = (job.get("raw_transcript") or "") if job else ""
@@ -492,16 +552,12 @@ class Pipeline(QObject):
                 try:
                     text = cleanup.run(raw, conf, conf.cleanup_prompt())
                     if job_id:
-                        try:
-                            voice_jobs.update_voice_job(
-                                job_id,
-                                status=voice_jobs.STATUS_PROCESSED,
-                                error_stage="",
-                                error_message="",
-                            )
-                            job = voice_jobs.get_voice_job(job_id)
-                        except Exception:
-                            pass
+                        job = _update_job_checkpoint(
+                            job_id,
+                            status=voice_jobs.STATUS_PROCESSED,
+                            error_stage="",
+                            error_message="",
+                        )
                 except api.ApiError as exc:
                     # Keep the transcript, but never let the failure pass unseen:
                     # a rejected key would otherwise look like working dictation.
@@ -509,16 +565,12 @@ class Pipeline(QObject):
                     warning = str(exc)
                     print(f"dikte: cleanup failed: {exc}", file=sys.stderr)
                     if job_id:
-                        try:
-                            voice_jobs.update_voice_job(
-                                job_id,
-                                status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                                error_stage="cleanup",
-                                error_message=str(exc),
-                            )
-                            job = voice_jobs.get_voice_job(job_id)
-                        except Exception:
-                            pass
+                        job = _update_job_checkpoint(
+                            job_id,
+                            status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                            error_stage="cleanup",
+                            error_message=str(exc),
+                        )
 
             self._wait_if_paused()
             question = ""
@@ -531,37 +583,43 @@ class Pipeline(QObject):
                     self._wait_if_paused()
                     return self._stop.is_set()
                 try:
+                    if job_id:
+                        job = _update_job_checkpoint(
+                            job_id,
+                            agent_attempt_state="submitted",
+                            agent_question=question,
+                            assistant_provider=assistant.provider(conf),
+                            assistant_model=assistant.model(conf),
+                        )
                     text, denied = assistant.ask(
                         question, conf,
                         on_stage=lambda s: (self._wait_if_paused(), self.stage.emit(s))[1],
                         should_stop=should_stop,
                     )
+                    if job_id:
+                        job = _update_job_checkpoint(
+                            job_id,
+                            agent_attempt_state="response_saved",
+                            agent_response=text,
+                        )
                     warning = "\n".join(x for x in (warning, denied) if x)
                     if denied and job_id:
-                        try:
-                            voice_jobs.update_voice_job(
-                                job_id,
-                                status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                                error_stage="agent",
-                                error_message=denied,
-                            )
-                            job = voice_jobs.get_voice_job(job_id)
-                        except Exception:
-                            pass
+                        job = _update_job_checkpoint(
+                            job_id,
+                            status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                            error_stage="agent",
+                            error_message=denied,
+                        )
                 except assistant.Cancelled:
                     raise
                 except (assistant.AssistantError, api.ApiError) as exc:
                     if job_id:
-                        try:
-                            voice_jobs.update_voice_job(
-                                job_id,
-                                status=voice_jobs.STATUS_FAILED_RETRYABLE,
-                                error_stage="agent",
-                                error_message=str(exc),
-                            )
-                            job = voice_jobs.get_voice_job(job_id)
-                        except Exception:
-                            pass
+                        job = _update_job_checkpoint(
+                            job_id,
+                            status=voice_jobs.STATUS_FAILED_RETRYABLE,
+                            error_stage="agent",
+                            error_message=str(exc),
+                        )
                     raise
 
             wants_paste = (conf["assistant_paste"] if ask else conf["auto_paste"])
@@ -633,16 +691,16 @@ class Pipeline(QObject):
                         job = cur_job
                         self.finished.emit(raw, text, warning)
                     else:
-                        voice_jobs.update_voice_job(
+                        job = _update_job_checkpoint(
                             job_id,
                             status=voice_jobs.STATUS_COMPLETED,
+                            delivery_state="delivered", result_text=text,
                             error_stage="",
                             error_message="",
                         )
-                        job = voice_jobs.get_voice_job(job_id)
                         self.finished.emit(raw, text, warning)
-                except Exception:
-                    self.finished.emit(raw, text, warning)
+                except (OSError, voice_jobs.PersistenceError) as exc:
+                    self.failed.emit(str(exc))
             else:
                 self.finished.emit(raw, text, warning)
 
@@ -665,6 +723,10 @@ class Pipeline(QObject):
                         )
                     except Exception:
                         pass
+            self.failed.emit(str(exc))
+        except (OSError, voice_jobs.PersistenceError) as exc:
+            # Derived output may exist in memory, but cannot be called a
+            # completed run until its durable checkpoint has been written.
             self.failed.emit(str(exc))
         except Exception as exc:  # never fail silently
             traceback.print_exc()

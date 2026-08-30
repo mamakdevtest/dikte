@@ -1,8 +1,9 @@
-"""OverlayCoordinator — chronological stacking for N overlays in a corner.
+"""Chronological layout authority for independent overlay activities.
 
-Replaces the fixed ``below`` 2-deep chain with explicit chronological
-ordering (oldest at top). Handles gaps, collapsed states, and screen
-positioning; keeps ``below`` pointer in sync for backward compatibility.
+An activity belongs to the coordinator for its complete visible lifetime.
+The coordinator, rather than a widget's legacy ``below`` relationship, owns
+its corner placement.  This keeps an expanding card from moving itself into a
+neighbour's slot and makes removal close gaps immediately.
 """
 from __future__ import annotations
 
@@ -29,8 +30,8 @@ class Activity:
 
     id: str
     kind: str
-    created_order: int
-    state: str
+    created_order: int = -1
+    state: str = "recording"
     # Optional live widget reference; coordinator positions it if present.
     widget: object = field(default=None, compare=False, repr=False)
     collapsed: bool = False
@@ -78,7 +79,7 @@ class OverlayCoordinator:
     # -- CRUD ---------------------------------------------------------
 
     def register(self, activity: Activity) -> Activity:
-        """Add an activity. Assigns ``created_order`` if negative/unset."""
+        """Add and place an activity as one atomic lifecycle operation."""
         if activity.id in self._activities:
             raise ValueError(f"activity {activity.id!r} already registered")
         if activity.created_order < 0:
@@ -87,9 +88,11 @@ class OverlayCoordinator:
         else:
             # advance counter past explicit order
             self._next_order = max(self._next_order, activity.created_order + 1)
-        # store copy to avoid external mutation? Keep same object intentionally
-        # so widget references stay live, but ordering keys are stable.
+        # Keep the same object so widget references and lifecycle state remain
+        # live, while ``created_order`` stays immutable after registration.
         self._activities[activity.id] = activity
+        self._bind_widget(activity.widget)
+        self.recompute_geometry()
         return activity
 
     def update(self, activity: Activity) -> Activity:
@@ -104,12 +107,18 @@ class OverlayCoordinator:
         existing.expanded = bool(activity.expanded)
         if activity.widget is not None:
             existing.widget = activity.widget
+        self._bind_widget(existing.widget)
+        self.recompute_geometry()
         return existing
 
     def remove(self, activity_or_id) -> Optional[Activity]:
-        """Remove by Activity or id; returns removed activity or None."""
+        """Remove an activity and immediately reflow every survivor."""
         key = activity_or_id.id if isinstance(activity_or_id, Activity) else str(activity_or_id)
-        return self._activities.pop(key, None)
+        removed = self._activities.pop(key, None)
+        if removed is not None:
+            self._unbind_widget(removed.widget)
+            self.recompute_geometry()
+        return removed
 
     def get(self, activity_id: str) -> Optional[Activity]:
         return self._activities.get(activity_id)
@@ -123,6 +132,35 @@ class OverlayCoordinator:
 
     def __contains__(self, activity_id: str) -> bool:
         return activity_id in self._activities
+
+    # -- widget ownership ---------------------------------------------
+
+    def _bind_widget(self, widget) -> None:
+        """Tell a widget that its position is coordinator-managed.
+
+        Overlay-family widgets implement ``set_overlay_coordinator``.  The
+        light fallback keeps geometry-only test doubles usable without making
+        an unmanaged legacy ``below`` chain part of the runtime contract.
+        """
+        if widget is None:
+            return
+        setter = getattr(widget, "set_overlay_coordinator", None)
+        if callable(setter):
+            setter(self)
+        else:
+            setattr(widget, "_overlay_coordinator", self)
+
+    def _unbind_widget(self, widget) -> None:
+        """Release a widget when its activity is no longer active."""
+        if widget is None:
+            return
+        if getattr(widget, "_overlay_coordinator", None) is not self:
+            return
+        setter = getattr(widget, "set_overlay_coordinator", None)
+        if callable(setter):
+            setter(None)
+        else:
+            setattr(widget, "_overlay_coordinator", None)
 
     # -- geometry -----------------------------------------------------
 
@@ -160,7 +198,7 @@ class OverlayCoordinator:
         - Oldest at smallest y (top of stack).
         - Gaps collapsed cleanly on removal.
         - Collapsed activities use their smaller height.
-        - Updates each widget's ``below`` pointer for backward compatibility.
+        - Managed widgets never use a legacy ``below`` pointer for placement.
         - Positions widgets via ``move(x, y)`` when available.
 
         Returns ``ordered()`` for convenience.
@@ -225,41 +263,6 @@ class OverlayCoordinator:
                 except Exception:
                     pass
 
-        # Backward-compat: chain ``below`` pointers oldest→newest
-        # bottom chain: below is the item directly beneath (larger y for top,
-        # or smaller? Original: below is visually below (larger y for top,
-        # smaller y for bottom?) Simplify: chain in ordered order: each item's
-        # below is the previous item (older). Top stacking test expects deterministic.
-        for idx, act in enumerate(ordered):
-            widget = act.widget
-            if widget is None:
-                continue
-            if idx == 0:
-                below_widget = None
-            else:
-                below_widget = ordered[idx - 1].widget
-            try:
-                # Only assign if widget has attribute
-                if hasattr(widget, "below"):
-                    widget.below = below_widget  # type: ignore
-            except Exception:
-                pass
-            # Update stacked flag if method exists
-            try:
-                if hasattr(widget, "_stacked"):
-                    # Reflect whether below is showing
-                    showing = False
-                    if below_widget is not None and hasattr(below_widget, "showing"):
-                        showing = bool(below_widget.showing)
-                    elif below_widget is not None and hasattr(below_widget, "isVisible"):
-                        try:
-                            showing = bool(below_widget.isVisible())
-                        except Exception:
-                            showing = False
-                    widget._stacked = showing  # type: ignore
-            except Exception:
-                pass
-
         return ordered
 
     # -- convenience --------------------------------------------------
@@ -269,4 +272,6 @@ class OverlayCoordinator:
         self.recompute_geometry()
 
     def clear(self):
+        for activity in self._activities.values():
+            self._unbind_widget(activity.widget)
         self._activities.clear()

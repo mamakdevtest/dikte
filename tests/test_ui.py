@@ -49,8 +49,18 @@ def release(widget):
     deleteLater only runs on an event loop these tests do not spin, and an
     unturned loop leaks every window: on Windows the leaked widgets eat the
     process's bounded GDI objects and the run hangs a few windows in.
+
+    A settings window whose fields the test changed is torn down by the
+    fixture, not closed by a user, so the unsaved-changes dialog must not
+    appear here: a modal exec() with no one to answer it hangs the run.
+    Syncing the baseline first makes the close a clean programmatic one.
     """
     from PyQt6.QtCore import QEvent
+    if hasattr(widget, "_baseline") and hasattr(widget, "_snapshot_settings"):
+        try:
+            widget._baseline = widget._snapshot_settings()
+        except Exception:
+            pass
     widget.close()
     widget.deleteLater()
     QApplication.sendPostedEvents(widget, QEvent.Type.DeferredDelete)

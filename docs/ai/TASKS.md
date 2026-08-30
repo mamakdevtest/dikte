@@ -1,5 +1,29 @@
 # TASKS — Overlay / Voice Reliability Pass
 
+## Reliability Remediation (2026-08-30)
+
+Live-source review reopened this pass: the prior static coordinator and shared
+meeting/dictation overlay do not provide independent simultaneous activities.
+Historical checkmarks below remain evidence for the earlier attempt; this
+section is the authoritative checklist for the remediation.
+
+### Implementation
+- [x] R0 — Re-establish live state, reproduce root causes, and create the Context Ledger
+- [ ] R1 — Dynamic activity-session registry and coordinator-owned geometry
+- [ ] R2 — Independent meeting/dictation/agent/result overlay views and bounded detail UI
+- [ ] R3 — Safe concurrent capture policy and non-destructive unsupported-device UX
+- [ ] R4 — Durable audio-before-classification and crash-discoverable meeting capture
+- [x] R5 — Checkpointed retry/delivery idempotency and safe agent retry boundary
+- [ ] R6 — History/Minutes recovery details, explicit deletion, and retry UX
+- [ ] R7 — Editing Level migration completion and EN/TR parity
+- [ ] R8 — Deterministic regression coverage
+
+### Final Verification
+- [x] V1 — Targeted tests: 378 OK (voice_jobs, worker, assistant, audio, meeting, i18n, overlay_meeting, overlay_refinement, dikte_capture_contract, overlay_coordinator_contract, config_editing_level_contract) + persistence contract 5/5 + test_ui 125 OK + config/meeting 183 OK
+- [x] V2 — Full unittest suite (1368 tests OK, 2026-08-30; includes windll mock and release() teardown fixes for pre-existing failures)
+- [x] V3 — `python tools/ai_sync.py --check` OK; `git diff --check` clean; graphify not installed in this env; repomix-output.xml untouched
+- [ ] V4 — Fresh reviewer findings resolved and verification evidence recorded
+
 ## Overlay / Voice Reliability Pass
 
 ### Implementation

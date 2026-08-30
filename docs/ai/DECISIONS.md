@@ -1,5 +1,22 @@
 # DECISIONS — Overlay / Voice Reliability Pass
 
+## Reliability Remediation (2026-08-30)
+
+- **Activity ownership** — activities are per successful logical run, not
+  permanent widget slots. Their immutable run/job IDs own visual state and
+  their coordinator alone places coordinator-managed widgets.
+- **Source retention** — source audio for successful and recoverable voice
+  jobs remains until explicit user deletion. No VAD or downstream-model path
+  may delete the only source copy.
+- **Capture limitation** — when runtime capability does not positively permit
+  another microphone owner, the newer voice capture is refused with translated
+  guidance. The active recording is never stopped to make room.
+- **Live detail** — each activity keeps a stable recording strip; detail is an
+  in-card scroll surface capped at 600 px, with a stable inverse control.
+- **Agent unknown outcome** — a provider call with no durable proof of
+  acceptance/result requires user confirmation before resubmission. Retry is
+  otherwise checkpointed and must not repeat delivery/history.
+
 - **Activity ordering** — chronological top→bottom; oldest `created_order` at top. `OverlayCoordinator.ordered()` returns sorted order. Newest appended at bottom per user example (meeting first → meeting top, dictation second → below, agent third → bottom).
 - **Concurrent capture** — `audio.concurrent_capture_info()` / `can_concurrent_capture()` show Pulse/PipeWire, WASAPI shared-mode, and AVFoundation all allow concurrent Recorder + MeetingRecorder (server/HAL duplication). No fan-out hub required; `dikte.py:start_meeting()` keeps live dictation on shared backends, falls back to old stop-on-DirectShow. Documented per-platform rationale.
 - **Durable VoiceJobs** — `voice_jobs.py` with `voice_jobs.jsonl`, atomic tmp→replace, statuses CAPTURED/TRANSCRIBED/PROCESSED/COMPLETED/FAILED_RETRYABLE, fields {id,kind,ts,status,audio_path,raw_transcript,error_stage,provider,model,duration,retry_count}; `worker.py` persists before claiming checkpoint (copy audio before CAPTURED), skips re-transcribe when raw exists, retry_checkpoint logic.

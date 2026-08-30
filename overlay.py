@@ -52,7 +52,9 @@ _LIVE_PAD = 10.0
 # to a dot and the clock.
 _MEETING_FOOTER_H = 34.0
 _MEETING_GAP = 6.0
-_MEETING_COLLAPSED_W = 176.0
+# Compact hides supplemental meeting detail, not the capture strip.  This
+# still fits the real waveform, status and timer at a readable width.
+_MEETING_COLLAPSED_W = 360.0
 _FRAME_MS = 25
 _QUIET_FRAME_MS = 120
 _BUSY_FRAME_MS = 90
@@ -360,11 +362,14 @@ class Overlay(QWidget):
     thinkingChanged = pyqtSignal(str)
     liveTranscriptChanged = pyqtSignal(str)
     liveExpandedChanged = pyqtSignal(bool)
+    overlayGeometryChanged = pyqtSignal()
+    concealed = pyqtSignal()
 
     def __init__(self, corner="bottom-left", below=None, dismissable=False, interactive_live=False):
         super().__init__(None)
         self.corner = corner
         self.below = below
+        self._overlay_coordinator = None
         self.dismissable = dismissable
         self.interactive_live = interactive_live
         self.muted = False
@@ -417,6 +422,8 @@ class Overlay(QWidget):
         self._meeting_mic_warning = False
         self._meeting_collapsed = False
         self._meeting_font_cache = None
+        self._meeting_toggle_rect = QRectF()
+        self._hover_meeting_toggle = False
 
         flags = (
             Qt.WindowType.FramelessWindowHint
@@ -453,6 +460,22 @@ class Overlay(QWidget):
         self._hide_timer.timeout.connect(self._conceal)
 
     # ---- public API --------------------------------------------------
+
+    def set_overlay_coordinator(self, coordinator):
+        """Make ``coordinator`` the sole owner of this widget's position.
+
+        Unmanaged overlays retain their legacy ``below`` behavior.  A managed
+        activity must never reposition itself from that relationship because a
+        transcript resize would otherwise overwrite the chronological stack.
+        """
+        self._overlay_coordinator = coordinator
+        if coordinator is not None:
+            self.below = None
+            self._stacked = False
+
+    @property
+    def overlay_coordinator(self):
+        return self._overlay_coordinator
 
     def show_recording(self, asking=False):
         """The same ribbon either way, in a different colour when what is being
@@ -518,6 +541,7 @@ class Overlay(QWidget):
         self._meeting_collapsed = False
         self._layout_cache = None
         self._hide_timer.stop()
+        self._set_meeting_toggle_accessibility()
         self._appear()
 
     def set_meeting_warning(self, warning: bool, mic: bool = False):
@@ -555,10 +579,18 @@ class Overlay(QWidget):
             self._layout_cache = None
             self._resize_to_content()
             self._reposition()
+            self._set_meeting_toggle_accessibility()
             self.update()
 
     def toggle_meeting_collapsed(self):
         self.set_meeting_collapsed(not self._meeting_collapsed)
+
+    def _set_meeting_toggle_accessibility(self):
+        if self.state != "meeting":
+            return
+        label = t("Expand") if self._meeting_collapsed else t("Collapse")
+        self.setToolTip(label)
+        self.setAccessibleDescription(label)
 
     @property
     def meeting_collapsed(self):
@@ -904,12 +936,14 @@ class Overlay(QWidget):
             self.livePopupRequested.emit()
             event.accept()
             return
-        # A meeting card expands or collapses where it stands; it has no
-        # pause API and nothing else to offer a click. Checked last.
+        # A meeting card's detail toggle has a fixed target.  Do not make a
+        # waveform or transcript click unexpectedly collapse the activity.
         if self.interactive_live and self.state == "meeting":
-            self.toggle_meeting_collapsed()
-            event.accept()
-            return
+            toggle_rect = self._layout().get("meeting_toggle", QRectF())
+            if toggle_rect.isValid() and toggle_rect.contains(pt):
+                self.toggle_meeting_collapsed()
+                event.accept()
+                return
         if self.dismissable and self.state == "busy":
             self.muted = True
             self.dismiss()
@@ -961,6 +995,12 @@ class Overlay(QWidget):
             if hover_stop != self._hover_stop:
                 self._hover_stop = hover_stop
                 self.update(stop_rect.toRect())
+        meeting_toggle = self._layout().get("meeting_toggle", QRectF())
+        if self.interactive_live and meeting_toggle.isValid():
+            hover_toggle = meeting_toggle.contains(pt)
+            if hover_toggle != self._hover_meeting_toggle:
+                self._hover_meeting_toggle = hover_toggle
+                self.update(meeting_toggle.toRect())
         event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -988,6 +1028,9 @@ class Overlay(QWidget):
         if self._hover_expand:
             self._hover_expand = False
             self.update(self._expand_button_rect().toRect())
+        if self._hover_meeting_toggle:
+            self._hover_meeting_toggle = False
+            self.update(self._layout().get("meeting_toggle", QRectF()).toRect())
         super().leaveEvent(event)
 
     @property
@@ -1118,6 +1161,11 @@ class Overlay(QWidget):
             live_rect = QRectF(0.0, live_top, float(self.width()), live_h)
         else:
             live_rect = QRectF()
+        meeting_toggle = QRectF()
+        if self.state == "meeting":
+            # Fixed between the status dot and waveform in both compact and
+            # detailed states, avoiding the timer and transcript controls.
+            meeting_toggle = QRectF(46.0, offset + 18.0, 28.0, 36.0)
         footer_h = self._meeting_footer_height()
         footer = (QRectF(0.0, offset + HEIGHT + _MEETING_GAP,
                          float(self.width()), _MEETING_FOOTER_H)
@@ -1134,9 +1182,11 @@ class Overlay(QWidget):
             "thinking": QRectF(0.0, 0.0, float(self.width()), _THINKING_HEIGHT) if thinking else QRectF(),
             "live": live_rect,
             "footer": footer,
+            "meeting_toggle": meeting_toggle,
             "main_top": offset,
         }
         self._live_button_rect = QRectF(live_button)
+        self._meeting_toggle_rect = QRectF(meeting_toggle)
         self._layout_cache_key = key
         self._layout_cache = layout
         return layout
@@ -1198,6 +1248,7 @@ class Overlay(QWidget):
         self.update()
 
     def _conceal(self):
+        was_showing = self.showing
         self._anim.stop()
         self.state = "hidden"
         self._concealed = True
@@ -1209,6 +1260,7 @@ class Overlay(QWidget):
         self._meeting_warning = False
         self._meeting_mic_warning = False
         self._meeting_collapsed = False
+        self._hover_meeting_toggle = False
         if self._thinking_text:
             self._thinking_text = ""
             self._layout_cache = None
@@ -1220,11 +1272,14 @@ class Overlay(QWidget):
         if self.dismissable:
             self.resize(1, 1)
         # keep interactive_live size? Still shrink only if dismissable
+        if was_showing:
+            self.concealed.emit()
 
     def resizeEvent(self, event):
         self._layout_cache = None
         self._layout_cache_key = None
         super().resizeEvent(event)
+        self.overlayGeometryChanged.emit()
 
     def _resize_to_content(self):
         if self.state in LIVE or self.state == PAUSED_STATE:
@@ -1248,6 +1303,10 @@ class Overlay(QWidget):
         self.resize(int(width), int(height))
 
     def _reposition(self):
+        coordinator = self._overlay_coordinator
+        if coordinator is not None:
+            coordinator.recompute_geometry()
+            return
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         if screen is None:
             return
@@ -1270,7 +1329,8 @@ class Overlay(QWidget):
             if prog >= 1.0:
                 self._reveal_t0 = 0.0
 
-        if self.below is not None and self.below.showing != self._stacked:
+        if (self._overlay_coordinator is None and self.below is not None
+                and self.below.showing != self._stacked):
             self._reposition()
 
         if revealing:
@@ -1488,11 +1548,11 @@ class Overlay(QWidget):
         self._draw_indicator(painter, accent)
 
         if self.state in LIVE or self.state == PAUSED_STATE:
-            if self.state == "meeting" and self._meeting_collapsed:
-                self._draw_time(painter)
-            else:
-                self._draw_waveform(painter, accent)
-                self._draw_time(painter)
+            self._draw_waveform(painter, accent)
+            self._draw_time(painter)
+            if self.state == "meeting":
+                self._draw_meeting_toggle(painter, cols)
+            if not (self.state == "meeting" and self._meeting_collapsed):
                 self._draw_live_button(painter, cols)
                 if self.state == "meeting":
                     self._draw_meeting_footer(painter, cols)
@@ -1528,6 +1588,27 @@ class Overlay(QWidget):
             width = inner.width() if row < 2 else inner.width() * 0.55
             painter.drawLine(QPointF(inner.left(), y),
                              QPointF(inner.left() + width, y))
+
+    def _draw_meeting_toggle(self, painter, cols):
+        """Draw the stable compact/detail toggle for meeting activities."""
+        rect = self._layout().get("meeting_toggle", QRectF())
+        if not rect.isValid():
+            return
+        background = QColor(cols["SURFACE2"] if self._hover_meeting_toggle
+                            else cols["BG"])
+        background.setAlpha(220)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(background)
+        painter.drawRoundedRect(rect, 7, 7)
+        painter.setPen(QPen(QColor(cols["TEXT"]), 1.4))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        cx, cy = rect.center().x(), rect.center().y()
+        if self._meeting_collapsed:
+            painter.drawPolyline(QPointF(cx - 5, cy - 2), QPointF(cx, cy + 2),
+                                 QPointF(cx + 5, cy - 2))
+        else:
+            painter.drawPolyline(QPointF(cx - 5, cy + 2), QPointF(cx, cy - 2),
+                                 QPointF(cx + 5, cy + 2))
 
     def _draw_meeting_footer(self, painter, cols):
         """Status line over a legend of the two channels — or the warning.

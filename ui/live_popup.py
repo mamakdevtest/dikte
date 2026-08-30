@@ -5,7 +5,7 @@ the rolling preview collect here in a panel big enough to read at a glance,
 for dictation and for the microphone side of a meeting alike.
 """
 
-from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtCore import QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
     QPlainTextEdit, QToolButton, QVBoxLayout, QWidget,
@@ -38,10 +38,14 @@ def _palette():
 class LivePopup(QWidget):
     """A frameless card that collects the live preview text."""
 
+    overlayGeometryChanged = pyqtSignal()
+    concealed = pyqtSignal()
+
     def __init__(self, corner="bottom-left", below=None):
         super().__init__(None)
         self.corner = corner
         self.below = below
+        self._overlay_coordinator = None
         self._expanded = False
         flags = (
             Qt.WindowType.FramelessWindowHint
@@ -85,6 +89,16 @@ class LivePopup(QWidget):
         self.arrow.setToolTip(tip)
         self.arrow.setAccessibleName(tip)
 
+    def set_overlay_coordinator(self, coordinator):
+        """Bind this optional live-detail card to an activity stack."""
+        self._overlay_coordinator = coordinator
+        if coordinator is not None:
+            self.below = None
+
+    @property
+    def overlay_coordinator(self):
+        return self._overlay_coordinator
+
     def _place_arrow(self):
         self.arrow.resize(self.arrow.sizeHint())
         self.arrow.move(self.width() - self.arrow.width() - 8, 4)
@@ -92,6 +106,7 @@ class LivePopup(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._place_arrow()
+        self.overlayGeometryChanged.emit()
 
     def _toggle_expanded(self):
         self.set_expanded(not self._expanded)
@@ -158,6 +173,7 @@ class LivePopup(QWidget):
     def toggle(self):
         if self.isVisible():
             self.hide()
+            self.concealed.emit()
         else:
             self.show()
             self._reposition()
@@ -170,6 +186,10 @@ class LivePopup(QWidget):
         return screen.availableGeometry() if screen is not None else None
 
     def _reposition(self):
+        coordinator = self._overlay_coordinator
+        if coordinator is not None:
+            coordinator.recompute_geometry()
+            return
         area = self._screen_area()
         if area is None:
             return

@@ -142,6 +142,13 @@ class Dikte:
         self._accumulated_ms = 0
         self._segment_clock = QElapsedTimer()
 
+        # An activity is a real run with its own view, not a permanent screen
+        # slot.  The previous fixed dictation/agent/result widgets made a
+        # meeting overwrite a live dictation even when the recorders coexisted.
+        self._activity_serial = 0
+        self._activity_ids = {}
+        self._activity_widgets = {}
+
         # OverlayCoordinator: chronological stacking (oldest at top).
         try:
             from ui.overlay_coordinator import OverlayCoordinator, Activity
@@ -151,36 +158,14 @@ class Dikte:
             self._coordinator = None
             _has_coordinator = False
             Activity = None  # type: ignore
+        self._Activity = Activity
 
-        self.overlay = Overlay(self.conf["overlay_corner"], interactive_live=True)
-        # The agent's indicator sits on top of the dictation one when both are
-        # up, and drops into the corner when it is alone there.
-        self.ask_overlay = Overlay(self.conf["overlay_corner"], below=self.overlay,
-                                   dismissable=True, interactive_live=True)
-        # Result overlay after transcription
-        try:
-            from ui.result_overlay import ResultOverlay
-            self.result_overlay = ResultOverlay(self.conf["overlay_corner"], below=self.overlay)
-            self.result_overlay.copyRequested.connect(lambda txt: self._on_result_copy(txt))
-            self.result_overlay.closeRequested.connect(lambda: self.result_overlay.dismiss())
-        except Exception:
-            self.result_overlay = None
-        # Register overlays with coordinator (chronological: dictation oldest → agent → result newest at bottom)
-        if _has_coordinator and self._coordinator is not None:
-            try:
-                self._coordinator.register(Activity(id="dictation", kind="dictation", created_order=0, state="idle", widget=self.overlay))
-                self._coordinator.register(Activity(id="agent", kind="agent", created_order=1, state="idle", widget=self.ask_overlay))
-                if self.result_overlay is not None:
-                    self._coordinator.register(Activity(id="result", kind="processing", created_order=2, state="idle", widget=self.result_overlay))
-            except Exception:
-                pass
-        # Wire recording pause/resume/stop from overlay pill
-        self.overlay.pauseRequested.connect(lambda: self.pause_recording())
-        self.overlay.resumeRequested.connect(lambda: self.resume_recording())
-        self.overlay.stopRequested.connect(lambda: self.stop_recording())
-        self.ask_overlay.pauseRequested.connect(lambda: self.pause_recording())
-        self.ask_overlay.resumeRequested.connect(lambda: self.resume_recording())
-        self.ask_overlay.stopRequested.connect(lambda: self.stop_recording())
+        # These are the current views for their respective run types.  They
+        # are deliberately not registered until a run starts successfully.
+        self.overlay = self._new_recording_overlay(DICTATION)
+        self.ask_overlay = self._new_recording_overlay(ASK)
+        self.meeting_overlay = self._new_recording_overlay(MEETING)
+        self.result_overlay = None
         # Thinking popup for AI stages (pause/stop) — separate from audio pause
         try:
             from ui.thinking import ThinkingPopup
@@ -210,7 +195,6 @@ class Dikte:
         self._live_theirs_len = 0
         self._live_names = ("", "")
         self.live_popup = None
-        self.overlay.livePopupRequested.connect(self._toggle_live_popup)
         # Recordings are a second chance at the minutes, not an archive.
         try:
             meeting.prune_audio(self.conf["meeting_audio_retention_days"])
@@ -224,7 +208,7 @@ class Dikte:
         self.recorder.level.connect(self._on_level)
         self.recorder.stopped.connect(self._on_recorded)
         self.recorder.failed.connect(self._on_recorder_error)
-        self.pipeline.stage.connect(self.overlay.show_busy)
+        self.pipeline.stage.connect(lambda message: self._show_activity_busy(DICTATION, message))
         self.pipeline.finished.connect(self._on_finished)
         self.pipeline.failed.connect(self._on_error)
         # live partial transcript (only emitted for streaming-capable providers)
@@ -232,7 +216,7 @@ class Dikte:
             self.pipeline.partialTranscript.connect(self._on_live_transcript)
         except Exception:
             pass
-        self.ask_pipeline.stage.connect(self.ask_overlay.show_busy)
+        self.ask_pipeline.stage.connect(lambda message: self._show_activity_busy(ASK, message))
         self.ask_pipeline.stage.connect(self._on_ask_thinking)
         self.ask_pipeline.finished.connect(self._on_ask_finished)
         self.ask_pipeline.finished.connect(lambda *a: self.ask_overlay.clear_thinking())
@@ -701,35 +685,170 @@ class Dikte:
         self.last_toggle.restart()
         return False
 
-    def _coordinator_notify(self, activity_id, state):
-        """Best-effort coordinator update + reflow."""
+    # ---- per-run activity views ---------------------------------------
+
+    def _new_recording_overlay(self, kind):
+        """Create an unregistered view for one logical voice activity."""
+        widget = Overlay(self.conf["overlay_corner"], dismissable=(kind != DICTATION),
+                         interactive_live=True)
+        widget.pauseRequested.connect(self.pause_recording)
+        widget.resumeRequested.connect(self.resume_recording)
+        widget.stopRequested.connect(self.stop_recording)
+        widget.livePopupRequested.connect(lambda w=widget: self._toggle_live_popup(w))
+        try:
+            widget.concealed.connect(
+                lambda w=widget, k=kind: self._retire_activity(k, w))
+        except AttributeError:
+            pass
+        try:
+            widget.overlayGeometryChanged.connect(self._reflow_activities)
+        except AttributeError:
+            pass
+        return widget
+
+    def _new_result_overlay(self):
+        try:
+            from ui.result_overlay import ResultOverlay
+            widget = ResultOverlay(self.conf["overlay_corner"])
+            widget.copyRequested.connect(self._on_result_copy)
+            widget.closeRequested.connect(
+                lambda w=widget: self._retire_activity("result", w, dismiss=True))
+            try:
+                widget.concealed.connect(
+                    lambda w=widget: self._retire_activity("result", w))
+                widget.overlayGeometryChanged.connect(self._reflow_activities)
+            except AttributeError:
+                pass
+            return widget
+        except Exception:
+            return None
+
+    def _prepare_activity_view(self, kind):
+        """Replace a finished same-kind view without touching other activities."""
+        previous = self._activity_widgets.get(kind)
+        if previous is not None:
+            self._retire_activity(kind, previous, dismiss=True)
+        if kind == DICTATION:
+            self.overlay = self._new_recording_overlay(kind)
+            widget = self.overlay
+        elif kind == ASK:
+            self.ask_overlay = self._new_recording_overlay(kind)
+            widget = self.ask_overlay
+        elif kind == MEETING:
+            self.meeting_overlay = self._new_recording_overlay(kind)
+            widget = self.meeting_overlay
+        else:
+            self.result_overlay = self._new_result_overlay()
+            widget = self.result_overlay
+        if widget is not None:
+            self._activity_widgets[kind] = widget
+        return widget
+
+    def _coordinator_notify(self, kind, state, widget=None):
+        """Register/update an active view and let the coordinator reflow it.
+
+        The id is generated at activation time, so it never encodes position
+        or collides with a completed activity that is still showing its result.
+        """
         c = getattr(self, "_coordinator", None)
-        if c is None:
+        if c is None or self._Activity is None:
+            return
+        widget = widget or self._activity_widgets.get(kind)
+        if widget is None:
             return
         try:
-            act = c.get(activity_id)
+            activity_id = self._activity_ids.get(kind)
+            act = c.get(activity_id) if activity_id else None
             if act is None:
-                return
-            act.state = state
-            c.update(act)
-            c.recompute_geometry()
+                self._activity_serial += 1
+                activity_id = f"{kind}-{self._activity_serial}"
+                self._activity_ids[kind] = activity_id
+                act = self._Activity(id=activity_id, kind=kind,
+                                     state=state, widget=widget)
+                c.register(act)
+            else:
+                act.state = state
+                act.widget = widget
+                act.collapsed = bool(getattr(widget, "meeting_collapsed", False))
+                act.expanded = bool(getattr(widget, "live_expanded", False))
+                c.update(act)
+        except Exception as exc:
+            print(f"dikte: could not place activity: {exc}", file=sys.stderr)
+
+    def _retire_activity(self, kind, widget=None, dismiss=False):
+        """Remove only this activity and close the resulting stack gap."""
+        current = self._activity_widgets.get(kind)
+        if widget is not None and current is not widget:
+            return
+        if dismiss and current is not None:
+            try:
+                current.dismiss()
+            except Exception:
+                pass
+        activity_id = self._activity_ids.pop(kind, None)
+        c = getattr(self, "_coordinator", None)
+        if c is not None and activity_id:
+            try:
+                c.remove(activity_id)
+            except Exception as exc:
+                print(f"dikte: could not retire activity: {exc}", file=sys.stderr)
+        if current is not None:
+            self._activity_widgets.pop(kind, None)
+
+    def _reflow_activities(self):
+        coordinator = getattr(self, "_coordinator", None)
+        if coordinator is not None:
+            coordinator.recompute_geometry()
+
+    def _show_activity_busy(self, kind, message):
+        widget = self._activity_widgets.get(kind)
+        if widget is None:
+            widget = self.overlay if kind == DICTATION else self.ask_overlay
+        widget.show_busy(message)
+        self._coordinator_notify(kind, "processing", widget)
+
+    def _capture_is_available(self, requested):
+        """Refuse a newer capture before it can disturb an active meeting."""
+        if self.meeting_state != M_RECORDING:
+            return True
+        try:
+            shared = bool(audio.can_concurrent_capture())
         except Exception:
-            pass
+            shared = False
+        if shared:
+            return True
+        tray = getattr(self, "tray", None)
+        if tray is not None:
+            tray.showMessage(
+                "Dikte",
+                t("Cannot start {activity} while the meeting microphone is active on this device. "
+                  "Finish the meeting or choose a shareable input.", activity=requested),
+                QSystemTrayIcon.MessageIcon.Warning, 10000,
+            )
+        return False
 
     def start(self):
         if self.state != IDLE or self.recording:
             return
-        self.overlay.show_recording()
-        self._coordinator_notify("dictation", "recording")
-        self._begin_recording(DICTATION)
+        if not self._capture_is_available(t("dictation")):
+            return
+        overlay = self._prepare_activity_view(DICTATION)
+        if not self._begin_recording(DICTATION):
+            return
+        overlay.show_recording()
+        self._coordinator_notify(DICTATION, "recording", overlay)
         self._set_state(RECORDING)
 
     def start_ask(self):
         if self.ask_state != IDLE or self.recording:
             return
-        self.ask_overlay.show_recording(asking=True)
-        self._coordinator_notify("agent", "recording")
-        self._begin_recording(ASK)
+        if not self._capture_is_available(t("agent")):
+            return
+        overlay = self._prepare_activity_view(ASK)
+        if not self._begin_recording(ASK):
+            return
+        overlay.show_recording(asking=True)
+        self._coordinator_notify(ASK, "recording", overlay)
         self._set_ask_state(RECORDING)
 
     def _begin_recording(self, owner):
@@ -744,9 +863,14 @@ class Dikte:
             self.live.begin(language=self.conf["language"],
                             prompt=self.conf["transcribe_prompt"])
         self.recorder.start(self.conf["mic_target"], self.conf["max_seconds"])
+        if not self.recorder.session_active:
+            self.recorder_owner = None
+            self.ticker.stop()
+            return False
+        return True
 
     def _on_live_partial(self, text):
-        self.overlay.set_live_transcript(text)
+        self._recording_overlay().set_live_transcript(text)
         if self.live_popup is not None and self.live_popup.isVisible():
             self.live_popup.set_text(text)
 
@@ -774,19 +898,23 @@ class Dikte:
         label = self._live_names[0] if side == "mine" else self._live_names[1]
         self._live_lines.append((label, delta, side))
         self._live_lines = self._live_lines[-96:]
-        self.overlay.set_live_lines(self._live_lines)
+        self.meeting_overlay.set_live_lines(self._live_lines)
         if self.live_popup is not None and self.live_popup.isVisible():
-            self.live_popup.set_text(self.overlay.live_text)
+            self.live_popup.set_text(self.meeting_overlay.live_text)
 
-    def _toggle_live_popup(self):
+    def _toggle_live_popup(self, anchor=None):
+        """Legacy reader for an activity; normal live detail remains in-card."""
+        anchor = anchor or self._recording_overlay()
         if self.live_popup is None:
             try:
                 from ui.live_popup import LivePopup
                 self.live_popup = LivePopup(self.conf["overlay_corner"],
-                                            below=self.overlay)
+                                            below=anchor)
             except Exception:
                 self.live_popup = None
                 return
+        else:
+            self.live_popup.below = anchor
         self.live_popup.toggle()
 
     def pause_recording(self):
@@ -1003,8 +1131,22 @@ class Dikte:
     def start_meeting(self):
         if self.meeting_state != M_IDLE:
             return
-        # Probe meeting start BEFORE dropping dictation: if meeting fails,
-        # dictation must stay alive (no data loss). Ordering matters.
+        # A newer capture may be declined, but an active source must never be
+        # stopped merely to make room for a meeting on an exclusive device.
+        if self.recording:
+            try:
+                shared = bool(audio.can_concurrent_capture())
+            except Exception:
+                shared = False
+            if not shared:
+                self.tray.showMessage(
+                    "Dikte",
+                    t("Cannot start meeting while another voice capture is active on this device. "
+                      "Finish it or choose a shareable input."),
+                    QSystemTrayIcon.MessageIcon.Warning, 10000,
+                )
+                return
+        overlay = self._prepare_activity_view(MEETING)
         base = meeting.new_base()
         _, wav_path = cfg.meeting_paths(base)
         self.meeting_recorder.start(
@@ -1015,15 +1157,6 @@ class Dikte:
         )
         if not self.meeting_recorder.active:
             return  # start() has already said what went wrong; dictation untouched
-        # Meeting started successfully — if mic is exclusive, stop dictation now.
-        _can_share = False
-        try:
-            _can_share = audio.can_concurrent_capture()
-        except Exception:
-            _can_share = False
-        if not _can_share and self.recording:
-            self.stop_recording()
-        # On shared path, dictation stays alive (independent _gen/_proc).
         self.meeting_base = base
         self._meeting_last_sound = 0.0
         self.meeting_elapsed.restart()
@@ -1036,7 +1169,8 @@ class Dikte:
             self.live_meeting_mine.begin(language=self.conf.meeting_language_for("mine"))
             self.live_theirs.begin(
                 language=self.conf.meeting_language_for("theirs"))
-        self.overlay.show_meeting()
+        overlay.show_meeting()
+        self._coordinator_notify(MEETING, "recording", overlay)
         self._set_meeting_state(M_RECORDING)
 
     def stop_meeting(self):
@@ -1044,8 +1178,8 @@ class Dikte:
             return
         self.meeting_ticker.stop()
         self._set_meeting_state(M_WORKING)
-        self.overlay.show_busy(t("Ending the meeting…"))
-        self._coordinator_notify("dictation", "busy")
+        self.meeting_overlay.show_busy(t("Ending the meeting…"))
+        self._coordinator_notify(MEETING, "processing", self.meeting_overlay)
         self.meeting_recorder.stop()
 
     def cancel_meeting(self):
@@ -1055,24 +1189,24 @@ class Dikte:
         self.meeting_recorder.cancel()
         self.live_meeting_mine.end()
         self.live_theirs.end()
-        if self.overlay.state == "meeting":
-            self.overlay.dismiss()
+        if self.meeting_overlay.state == "meeting":
+            self.meeting_overlay.dismiss()
         self._set_meeting_state(M_IDLE)
         self._settle(MEETING, {"ok": False, "cancelled": True, "error": "cancelled"})
 
     def _on_meeting_levels(self, mine, theirs):
         # Display-only gains: loopback playback is mastered loud, a desk mic
         # and a far-away voice are not; the watchdog reads the raw levels.
-        self.overlay.push_levels(min(1.0, mine * MEETING_MINE_GAIN),
-                                 min(1.0, theirs * MEETING_THEIRS_GAIN))
+        self.meeting_overlay.push_levels(min(1.0, mine * MEETING_MINE_GAIN),
+                                         min(1.0, theirs * MEETING_THEIRS_GAIN))
         if theirs >= 0.04:
             self._meeting_last_sound = self.meeting_elapsed.elapsed() / 1000.0
 
     def _meeting_tick(self):
         seconds = self.meeting_elapsed.elapsed() / 1000.0
-        if self.overlay.state == "meeting":
-            self.overlay.set_seconds(seconds)
-            self.overlay.set_meeting_warning(
+        if self.meeting_overlay.state == "meeting":
+            self.meeting_overlay.set_seconds(seconds)
+            self.meeting_overlay.set_meeting_warning(
                 meeting_remote_silent(seconds, seconds - self._meeting_last_sound),
                 meeting_mic_silent(seconds, self.meeting_recorder.mic_received))
         if self.meeting_state == M_RECORDING:
@@ -1117,7 +1251,8 @@ class Dikte:
                 QSystemTrayIcon.MessageIcon.Information, 10000,
             )
             return
-        self.overlay.show_done(t("Meeting recorded, writing it up…"), 4000)
+        self.meeting_overlay.show_busy(t("Meeting recorded, writing it up…"))
+        self._coordinator_notify(MEETING, "processing", self.meeting_overlay)
 
     def _on_meeting_progress(self, _base, message):
         self.meeting_message = message
@@ -1132,13 +1267,14 @@ class Dikte:
             try:
                 # Prefer a dedicated meeting progress visual when meeting is
                 # the active busy job; fall back to tray-only for dictation busy.
-                if self.overlay.state in ("hidden", "done", "warning", "error"):
-                    self.overlay.show_busy(message)
-                elif self.overlay.state == "busy":
+                if self.meeting_overlay.state in ("hidden", "done", "warning", "error"):
+                    self.meeting_overlay.show_busy(message)
+                elif self.meeting_overlay.state == "busy":
                     # If already busy, just update the message so it reflects
                     # the latest pipeline stage instead of a stale one.
-                    self.overlay.message = message
-                    self.overlay.update()
+                    self.meeting_overlay.message = message
+                    self.meeting_overlay.update()
+                self._coordinator_notify(MEETING, "processing", self.meeting_overlay)
             except Exception:
                 pass
 
@@ -1147,7 +1283,7 @@ class Dikte:
         doc_path, _ = cfg.meeting_paths(base)
         self._settle(MEETING, {"ok": True, "base": base, "title": title,
                                "path": str(doc_path)})
-        self.overlay.show_done(t("Meeting written up: {title}", title=title), 5000)
+        self.meeting_overlay.show_done(t("Meeting written up: {title}", title=title), 5000)
         self.tray.showMessage(
             t("Dikte: the meeting is written up"), f"{title}\n{doc_path}",
             QSystemTrayIcon.MessageIcon.Information, 10000,
@@ -1159,8 +1295,9 @@ class Dikte:
         first_line = error.strip().splitlines()[0]
         # Keep processing state visible until user sees retry option: show as
         # retryable warning rather than transient error.
-        self.overlay.show_warning(
-            t("Meeting failed: {error}", error=first_line), msec=9000)
+        self.meeting_overlay.show_warning(
+            t("Meeting failed: {error}", error=first_line), msec=None)
+        self._coordinator_notify(MEETING, "failed_retryable", self.meeting_overlay)
         self.tray.showMessage(
             t("Dikte: the meeting could not be written up"),
             t("{error}\n\nThe recording has been kept. Settings → Minutes can "
@@ -1174,8 +1311,8 @@ class Dikte:
         self.meeting_ticker.stop()
         self.live_meeting_mine.end()
         self.live_theirs.end()
-        if self.overlay.state == "meeting":
-            self.overlay.dismiss()
+        if self.meeting_overlay.state == "meeting":
+            self.meeting_overlay.dismiss()
         self._set_meeting_state(M_IDLE)
         self._settle(MEETING, {"ok": False, "error": message})
         self._on_error(message)
@@ -1241,17 +1378,27 @@ class Dikte:
         return self.ask_pipeline.retry_from_job(job_id)
 
     def _on_finished(self, _raw, text, warning):
-        # Do not dismiss/hide meeting progress when dictation finishes.
-        # If meeting is still working, preserve its busy overlay instead of
-        # clearing the live transcript or showing dictation's done.
-        _meeting_working = (self.meeting_state == M_WORKING)
-        if not _meeting_working:
-            try:
-                self.overlay.clear_live_transcript()
-                self.ask_overlay.clear_live_transcript()
-            except Exception:
-                pass
-        # decide result overlay vs legacy done indicator
+        # A dictation result is its own activity: it must never replace a
+        # meeting that is still recording or preparing minutes.
+        try:
+            self.overlay.clear_live_transcript()
+        except AttributeError:
+            pass
+        if warning:
+            self.overlay.show_warning(
+                t("Pasted raw, cleanup failed: {error}",
+                  error=warning.splitlines()[0]), msec=None
+            )
+            self._coordinator_notify(DICTATION, "failed_retryable", self.overlay)
+            self.tray.showMessage(
+                t("Dikte: cleanup failed"), warning,
+                QSystemTrayIcon.MessageIcon.Warning, 10000,
+            )
+            self._set_state(IDLE)
+            self._settle(DICTATION, {"ok": False, "text": text, "raw": _raw,
+                                     "warning": warning, "retryable": True})
+            return
+
         show_result = False
         try:
             show_result = bool(self.conf.get("result_overlay_enabled", True))
@@ -1259,45 +1406,25 @@ class Dikte:
             show_result = True
         if show_result and text:
             try:
-                # When meeting is working, use result_overlay (separate widget)
-                # instead of overlay.show_done so meeting busy is not clobbered.
-                # If there's no result_overlay, suppress dictation done entirely
-                # while meeting is working.
-                if _meeting_working and self.result_overlay is None:
-                    pass
-                elif self.result_overlay is not None:
-                    if not _meeting_working:
-                        try:
-                            self.overlay.dismiss()
-                        except Exception:
-                            pass
-                    auto_paste = bool(self.conf.get("auto_paste", True))
-                    msec = 4000 if auto_paste else None
-                    self.result_overlay.show_result(text, msec=msec)
-                else:
-                    action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
-                    self.overlay.show_done(t("{action}: {preview}", action=action, preview=_preview(text)))
+                self._retire_activity(DICTATION, self.overlay, dismiss=True)
+                result = self._prepare_activity_view("result")
+                if result is None:
+                    raise RuntimeError("result overlay unavailable")
+                auto_paste = bool(self.conf.get("auto_paste", True))
+                msec = 4000 if auto_paste else None
+                result.show_result(text, msec=msec)
+                self._coordinator_notify("result", "completed", result)
             except Exception:
-                if not _meeting_working:
-                    action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
-                    self.overlay.show_done(t("{action}: {preview}", action=action, preview=_preview(text)))
-        else:
-            if _meeting_working:
-                # Preserve meeting busy; don't overwrite with dictation warning/done.
-                pass
-            elif warning:
-                self.overlay.show_warning(
-                    t("Pasted raw, cleanup failed: {error}", error=warning.splitlines()[0])
-                )
-                self.tray.showMessage(
-                    t("Dikte: cleanup failed"), warning,
-                    QSystemTrayIcon.MessageIcon.Warning, 10000,
-                )
-            else:
                 action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
-                self.overlay.show_done(
-                    t("{action}: {preview}", action=action, preview=_preview(text))
-                )
+                self.overlay.show_done(t("{action}: {preview}", action=action,
+                                         preview=_preview(text)))
+                self._coordinator_notify(DICTATION, "completed", self.overlay)
+        else:
+            action = t("Pasted") if self.conf["auto_paste"] else t("Copied")
+            self.overlay.show_done(
+                t("{action}: {preview}", action=action, preview=_preview(text))
+            )
+            self._coordinator_notify(DICTATION, "completed", self.overlay)
         self._set_state(IDLE)
         self._settle(DICTATION, {"ok": True, "text": text, "raw": _raw,
                                  "warning": warning})
@@ -1311,6 +1438,7 @@ class Dikte:
                 t("{name} answered, but: {error}",
                   name=agent, error=warning.splitlines()[0])
             )
+            self._coordinator_notify(ASK, "failed_retryable", self.ask_overlay)
             self.tray.showMessage(
                 t("Dikte: {name} could not do all of it", name=agent),
                 f"{warning}\n\n{text}", QSystemTrayIcon.MessageIcon.Warning, 10000,
@@ -1321,12 +1449,14 @@ class Dikte:
             self.ask_overlay.show_done(
                 t("{name}: {preview}", name=agent, preview=_preview(text)), 6000
             )
+            self._coordinator_notify(ASK, "completed", self.ask_overlay)
         self._set_ask_state(IDLE)
         self._settle(ASK, {"ok": True, "answer": text, "question": _raw,
                            "warning": warning, "agent": agent})
 
     def _on_ask_cancelled(self):
         self.ask_overlay.show_done(t("Stopped."), 2000)
+        self._coordinator_notify(ASK, "cancelled", self.ask_overlay)
         self._set_ask_state(IDLE)
         self._settle(ASK, {"ok": False, "cancelled": True, "error": "stopped"})
 
@@ -1342,11 +1472,13 @@ class Dikte:
         except Exception:
             pass
         self._report(message, self.overlay)
+        self._coordinator_notify(DICTATION, "failed", self.overlay)
         self._set_state(IDLE)
         self._settle(DICTATION, {"ok": False, "error": message})
 
     def _on_ask_error(self, message):
         self._report(message, self.ask_overlay)
+        self._coordinator_notify(ASK, "failed_retryable", self.ask_overlay)
         self._set_ask_state(IDLE)
         self._settle(ASK, {"ok": False, "error": message})
 

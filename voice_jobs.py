@@ -1,6 +1,7 @@
 """Durable voice jobs: captured audio/transcript is never lost because an AI step failed."""
 
 import json
+import os
 import pathlib
 import threading
 import time
@@ -36,6 +37,14 @@ KIND_AGENT = "agent"
 KINDS = {KIND_DICTATION, KIND_MEETING, KIND_AGENT}
 
 
+class PersistenceError(OSError):
+    """A voice-job checkpoint could not be made durable.
+
+    Callers must treat this as a hard boundary: derived work must not continue
+    after it because there is no recoverable record of its input/state.
+    """
+
+
 def _file():
     """Current file, respecting a patched config path in tests.
 
@@ -43,38 +52,23 @@ def _file():
     automatically isolates voice jobs too (VOICE_JOBS_FILE is not patched
     by support.py).
     """
+    # Use current DATA_DIR dynamically to stay in sync with patched tests.
+    data_dir = getattr(cfg, "DATA_DIR", None)
+    if data_dir is not None:
+        return pathlib.Path(data_dir) / "voice_jobs.jsonl"
+    return getattr(cfg, "VOICE_JOBS_FILE", VOICE_JOBS_FILE)
+
+
+def _read_rows(path):
+    """Read valid rows from *path* without acquiring the jobs lock."""
     try:
-        # Use current DATA_DIR dynamically to stay in sync with patched tests.
-        return cfg.DATA_DIR / "voice_jobs.jsonl"
-    except Exception:
-        try:
-            return cfg.VOICE_JOBS_FILE
-        except AttributeError:
-            return VOICE_JOBS_FILE
-
-
-def _write_voice_jobs(rows):
-    """Replace the file atomically (tmp → replace), same pattern as config.py."""
-    f = _file()
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_suffix(".jsonl.tmp")
-    with _VOICE_JOBS_LOCK:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            for row in rows:
-                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        tmp.replace(f)
-
-
-def read_voice_jobs():
-    """Newest last. Missing/empty file returns []. Bad lines are skipped."""
-    try:
-        with open(_file(), encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             lines = fh.readlines()
     except FileNotFoundError:
         return []
-    except OSError:
-        return []
-    out = []
+    except OSError as exc:
+        raise PersistenceError(str(exc)) from exc
+    rows = []
     for line in lines:
         line = line.strip()
         if not line:
@@ -84,8 +78,54 @@ def read_voice_jobs():
         except json.JSONDecodeError:
             continue
         if isinstance(row, dict) and row.get("id"):
-            out.append(row)
-    return out
+            rows.append(row)
+    return rows
+
+
+def _sync_parent(path):
+    """Flush the rename's directory entry where the platform permits it."""
+    if os.name == "nt":
+        return
+    try:
+        descriptor = os.open(path.parent, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_rows_locked(rows):
+    """Write rows atomically while the caller owns ``_VOICE_JOBS_LOCK``."""
+    path = _file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".jsonl.tmp")
+    try:
+        with open(temporary, "w", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, path)
+        _sync_parent(path)
+    except OSError as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise PersistenceError(str(exc)) from exc
+
+
+def _write_voice_jobs(rows):
+    """Replace the file atomically and durably."""
+    with _VOICE_JOBS_LOCK:
+        _write_rows_locked(rows)
+
+
+def read_voice_jobs():
+    """Newest last. Missing/empty file returns []. Bad lines are skipped."""
+    return _read_rows(_file())
 
 
 def get_voice_job(job_id):
@@ -109,59 +149,21 @@ def save_voice_job(entry):
     if row.get("kind") not in KINDS:
         row["kind"] = KIND_DICTATION
     with _VOICE_JOBS_LOCK:
-        # Use internal unsynchronized read to stay inside the lock window.
-        f = _file()
-        try:
-            with open(f, encoding="utf-8") as fh:
-                lines = fh.readlines()
-        except (FileNotFoundError, OSError):
-            lines = []
-        rows = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-                if isinstance(r, dict) and r.get("id"):
-                    rows.append(r)
-            except json.JSONDecodeError:
-                continue
+        rows = _read_rows(_file())
         for idx, existing in enumerate(rows):
             if existing.get("id") == row["id"]:
                 rows[idx] = row
                 break
         else:
             rows.append(row)
-        f.parent.mkdir(parents=True, exist_ok=True)
-        tmp = f.with_suffix(".jsonl.tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            for r in rows:
-                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
-        tmp.replace(f)
+        _write_rows_locked(rows)
     return row
 
 
 def update_voice_job(job_id, **changes):
     """Patch one row by id, return updated row or None."""
     with _VOICE_JOBS_LOCK:
-        f = _file()
-        try:
-            with open(f, encoding="utf-8") as fh:
-                lines = fh.readlines()
-        except (FileNotFoundError, OSError):
-            lines = []
-        rows = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-                if isinstance(r, dict) and r.get("id"):
-                    rows.append(r)
-            except json.JSONDecodeError:
-                continue
+        rows = _read_rows(_file())
         found = None
         for row in rows:
             if row.get("id") == job_id:
@@ -170,22 +172,18 @@ def update_voice_job(job_id, **changes):
                 break
         if found is None:
             return None
-        f.parent.mkdir(parents=True, exist_ok=True)
-        tmp = f.with_suffix(".jsonl.tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            for r in rows:
-                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
-        tmp.replace(f)
+        _write_rows_locked(rows)
         return found
 
 
 def delete_voice_job(job_id):
-    rows = read_voice_jobs()
-    kept = [r for r in rows if r.get("id") != job_id]
-    if len(kept) == len(rows):
-        return False
-    _write_voice_jobs(kept)
-    return True
+    with _VOICE_JOBS_LOCK:
+        rows = _read_rows(_file())
+        kept = [r for r in rows if r.get("id") != job_id]
+        if len(kept) == len(rows):
+            return False
+        _write_rows_locked(kept)
+        return True
 
 
 # ---- status helpers --------------------------------------------------------

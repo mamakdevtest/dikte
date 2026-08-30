@@ -6,6 +6,8 @@ Offscreen Qt; what is asserted is state and geometry, not pixels.
 import unittest
 from unittest import mock
 
+from PyQt6.QtCore import QEvent, QPointF, Qt
+from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 import dikte
@@ -157,6 +159,29 @@ class MeetingCard(DikteTest):
         self.app.processEvents()
         self.assertLess(self.overlay.height(), expanded)
         self.overlay.dismiss()
+
+    def test_compact_meeting_keeps_the_real_waveform_layout(self):
+        self.overlay.show_meeting()
+        self.overlay.push_levels(0.78, 0.22)
+        self.overlay.set_meeting_collapsed(True)
+
+        layout = self.overlay._layout()
+        self.assertTrue(layout["waveform"].isValid())
+        self.assertEqual(len(layout["bars"]), overlay.BARS)
+        self.assertEqual(self.overlay._wave.history[-1][1], 0.78)
+        self.assertEqual(self.overlay._wave2.history[-1][1], 0.22)
+
+    def test_meeting_collapse_ignores_an_arbitrary_waveform_click(self):
+        self.overlay.show_meeting()
+        waveform = self.overlay._layout()["waveform"]
+        point = waveform.center()
+        event = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(point),
+                            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                            Qt.KeyboardModifier.NoModifier)
+
+        self.overlay.mousePressEvent(event)
+
+        self.assertFalse(self.overlay.meeting_collapsed)
 
 
 if __name__ == "__main__":

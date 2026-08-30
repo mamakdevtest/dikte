@@ -706,8 +706,10 @@ class Windows(DikteTest):
         hk = hotkey.WindowsHotkey()
         hk.stop()
         self.assertFalse(hk.running)
-        with mock.patch.object(hotkey.ctypes.windll, "user32") as user32, \
-                mock.patch.object(hotkey.ctypes.windll, "kernel32") as kernel32:
+        with mock.patch.object(hotkey.ctypes, "windll",
+                               mock.MagicMock(), create=True) as windll, \
+                mock.patch.object(windll, "user32") as user32, \
+                mock.patch.object(windll, "kernel32") as kernel32:
             kernel32.GetCurrentThreadId.return_value = 9999
             user32.RegisterHotKey.return_value = 1
             user32.GetMessageW.return_value = 0
