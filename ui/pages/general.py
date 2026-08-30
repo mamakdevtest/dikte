@@ -1,6 +1,7 @@
 """General page: language, insertion, recording, silence and storage."""
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPointF, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QSpinBox, QWidget
 
 import paste
@@ -8,6 +9,109 @@ from i18n import t
 
 from ..widgets import CornerPicker, MiniScreen, SectionCard, SettingRow, gate, switch_row
 from . import page, scrolled
+
+def _theme_label(key):
+    return {
+        "blue": "Blue", "green": "Green", "violet": "Violet",
+        "orange": "Orange", "pink": "Pink", "teal": "Teal",
+        "dark": "Terracotta (dark)", "light": "Light",
+    }.get(key, key)
+
+class _ThemePicker(QWidget):
+    """A row of colour circles; picking one applies that theme at once.
+
+    The swatch shows each theme's accent — the colour the whole application
+    takes on — so the choice is made by eye, not by name.
+    """
+
+    changed = pyqtSignal(str)
+
+    # (key, swatch colour) — the six colour themes. Appearance is only
+    # chosen here in Settings → General; there is no sidebar theme toggle.
+    _CHOICES = [
+        ("blue", "#4468B8"), ("green", "#3E9E6E"), ("violet", "#6F55B8"),
+        ("orange", "#C2763B"), ("pink", "#B85A82"), ("teal", "#3B9E9E"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self._buttons = {}
+        for key, colour in self._CHOICES:
+            swatch = _ThemeSwatch(key, colour)
+            swatch.setToolTip(t(_theme_label(key)))
+            swatch.picked.connect(self._pick)
+            row.addWidget(swatch)
+            self._buttons[key] = swatch
+        row.addStretch(1)
+        self._current = "blue"
+
+    def _pick(self, key):
+        self.set_theme(key)
+        self.changed.emit(key)
+
+    def set_theme(self, key):
+        # A theme outside the six (dark/light/unknown) clears the selection:
+        # no swatch may claim to be the picked colour when it is not.
+        if key not in self._buttons:
+            self._current = key if key else "blue"
+            for swatch in self._buttons.values():
+                swatch.set_selected(False)
+            return
+        self._current = key
+        for name, swatch in self._buttons.items():
+            swatch.set_selected(name == key)
+
+
+class _ThemeSwatch(QWidget):
+    """One round colour swatch; a ring marks the theme in use."""
+
+    picked = pyqtSignal(str)
+
+    def __init__(self, key, colour, parent=None):
+        super().__init__(parent)
+        self._key = key
+        self._colour = colour
+        self._selected = False
+        self._hover = False
+        self.setFixedSize(26, 26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_selected(self, selected):
+        if selected != self._selected:
+            self._selected = selected
+            self.update()
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton \
+                and self.rect().contains(event.position().toPoint()):
+            self.picked.emit(self._key)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        centre = QPointF(self.width() / 2, self.height() / 2)
+        if self._selected:
+            ring = QPen(QColor(self._colour))
+            ring.setWidthF(2.0)
+            painter.setPen(ring)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(centre, 12.0, 12.0)
+        radius = 9.0 if (self._hover or self._selected) else 8.0
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(self._colour))
+        painter.drawEllipse(centre, radius, radius)
+        painter.end()
 
 
 def _combo(items, width=None):
@@ -52,6 +156,17 @@ def build(window):
                                  t("The right language means fewer mishearings on "
                                    "the first try."), window.language))
 
+    # --- appearance -------------------------------------------------------
+    appearance = SectionCard(t("Theme"))
+    outer.addWidget(appearance)
+    from .. import theme as _theme
+    theme_picker = _ThemePicker()
+    window.theme_picker = theme_picker
+    appearance.add(SettingRow(
+        t("Application colour"),
+        t("The whole application follows the colour you pick — buttons, "
+          "highlights and the recording indicator."),
+        theme_picker))
     # --- insertion --------------------------------------------------------
     insertion = SectionCard(t("Text insertion"))
     outer.addWidget(insertion)

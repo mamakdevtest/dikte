@@ -22510,7 +22510,59 @@ LIGHT = {
     "onInk": "#F2F7F4",
 }
 
+
+
+def _derive_theme(name, accent, accent_deep, accent_soft, accent_dark):
+    """A full theme from the proven dark neutrals plus one accent family.
+
+    Text, borders and surfaces keep the dark values that have been in daily
+    use — the contrast is known good. What the user picks is the accent
+    family: it owns the primary button, the selected tab, the recording dot
+    and every highlight, so each theme reads unmistakably as its colour
+    without gambling readability on untested neutrals.
+    """
+    return {
+        "canvas": "#11191B",
+        "sidebar": "#162225",
+        "surface": "#1B292B",
+        "surface2": "#233537",
+        "field": "#142123",
+        "border": "#314548",
+        "borderStrong": "#4A6261",
+        "fg": "#E7F0EC",
+        "fg2": "#A8BCB5",
+        "fg3": "#7C918A",
+        "terra": accent,          # the loud accent: dots, hover states
+        "terraDeep": accent_deep,  # the primary button fill
+        "sage": accent_soft,       # chips and soft fills
+        "sageDark": accent_dark,   # selected tab underline, emphasis text
+        "ok": "#75C59B",
+        "warn": "#D8B870",
+        "err": "#DF8582",
+        "info": "#82B9CE",
+        "inkBtn": "#0C1315",
+        "onInk": "#F2F7F4",
+    }
+
+
+# The six colour themes: the accents of the apps people look at all day —
+# Discord's blurple, Spotify's green, Figma's violet, Reddit's orange,
+# Lyft's pink, Twitch's cyan — each with a deep fill, a soft chip and a
+# dark emphasis variant of the same hue.
+BLUE = _derive_theme("blue", "#6A8FD8", "#4468B8", "#5E7FA8", "#8FB0E8")
+GREEN = _derive_theme("green", "#6BC59B", "#3E9E6E", "#7FAF9B", "#8ED0AF")
+VIOLET = _derive_theme("violet", "#9A7FD8", "#6F55B8", "#8375A8", "#B39AE8")
+ORANGE = _derive_theme("orange", "#E09A5E", "#C2763B", "#B08A78", "#E8AE7E")
+PINK = _derive_theme("pink", "#D87FA8", "#B85A82", "#A87A96", "#E89BBE")
+TEAL = _derive_theme("teal", "#5EC5C5", "#3B9E9E", "#7AA8A8", "#8ED8D8")
+
+THEMES = {
+    "blue": BLUE, "green": GREEN, "violet": VIOLET,
+    "orange": ORANGE, "pink": PINK, "teal": TEAL,
+}
+
 TOKENS = {"dark": DARK, "light": LIGHT}
+TOKENS.update(THEMES)
 
 # Radii and the fixed geometry the prototype pins in px. Kept as integers so a
 # future spacing helper can read them without parsing QSS.
@@ -22919,7 +22971,13 @@ def apply(theme=None):
 
 
 def toggle():
-    return apply("light" if _current == "dark" else "dark")
+    """Cycle through every theme, so the sidebar button reaches them all."""
+    names = list(TOKENS)
+    try:
+        index = names.index(_current)
+    except ValueError:
+        index = -1
+    return apply(names[(index + 1) % len(names)])
 </file>
 
 <file path="ui/thinking.py">
@@ -27277,6 +27335,799 @@ for _var in ("LC_ALL", "LC_MESSAGES", "LANG"):
     os.environ.pop(_var, None)
 </file>
 
+<file path="tests/test_ggml.py">
+"""Fetching a program and a model, and keeping a server alive on them.
+
+No network and no whisper.cpp: the downloads are answered from memory, and the
+servers are stand-in scripts that take the same arguments and open their port
+when they are told to, which is the only thing the code waits on.
+"""
+
+import contextlib
+import hashlib
+import io
+import os
+import signal
+import sys
+import tarfile
+import textwrap
+import threading
+import time
+import zipfile
+from unittest import mock
+
+import ggml
+import hub
+from tests.support import (DikteTest, fake_urlopen, http_error, json_body,
+                           linux_only, url_error)
+
+
+def body(data, length=None):
+    """What urlopen hands back for a download: a reader with a length header."""
+    class Body:
+        def __init__(self):
+            self._buf = io.BytesIO(data)
+            self.headers = {"Content-Length":
+                            str(len(data) if length is None else length)}
+
+        def read(self, count=-1):
+            return self._buf.read(count)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+    return Body()
+
+
+def item(name, data, url="https://example.invalid/f", sha=True):
+    return hub.Item(name, url, len(data),
+                    hashlib.sha256(data).hexdigest() if sha else "")
+
+
+@contextlib.contextmanager
+def serving(release, archive):
+    """Answer by what is being asked for rather than by what came before.
+
+    An install asks GitHub what the release is and then asks for one file out of
+    it, and the first of those two comes from the cache the second time around.
+    Answering in order would then hand the archive request the release listing.
+    """
+    def opener(request, timeout=None):
+        url = request.full_url
+        if "api.github.com" in url:
+            return json_body(release)
+        return body(archive)
+
+    with mock.patch("urllib.request.urlopen", side_effect=opener) as calls:
+        yield calls
+
+
+def wheel(entries):
+    """A .zip laid out the way the Windows releases are: one directory."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w") as zip_:
+        for name, content in entries.items():
+            zip_.writestr(name, content)
+    return buf.getvalue()
+
+
+def tarball(entries):
+    """A .tar.gz laid out the way the releases are: one directory of files."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, content in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            info.mode = 0o755
+            tar.addfile(info, io.BytesIO(content))
+    return buf.getvalue()
+
+
+class Local(DikteTest):
+    """A test with its own bin, models and cache directories."""
+
+    def setUp(self):
+        super().setUp()
+        self.patch_attr(ggml, "DATA_DIR", self.path("data"))
+        self.patch_attr(ggml, "BIN_DIR", self.path("data", "bin"))
+        self.patch_attr(ggml, "MODELS_DIR", self.path("data", "models"))
+        self.patch_attr(hub, "CACHE_DIR", self.path("cache"))
+
+
+# --- downloading ----------------------------------------------------------
+
+
+class Download(Local):
+    def test_it_lands_and_the_part_file_is_gone(self):
+        data = b"a model, more or less" * 100
+        target = self.path("data", "models", "m.bin")
+        with fake_urlopen(body(data)):
+            self.assertTrue(ggml.download(item("m.bin", data), target))
+        self.assertEqual(target.read_bytes(), data)
+        self.assertFalse(target.with_name("m.bin.part").exists())
+
+    def test_a_wrong_checksum_installs_nothing(self):
+        data = b"the bytes that arrived"
+        wrong = hub.Item("m.bin", "https://example.invalid/f", len(data), "f" * 64)
+        target = self.path("data", "models", "m.bin")
+        with fake_urlopen(body(data)):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.download(wrong, target)
+        self.assertIn("checksum", str(caught.exception))
+        self.assertFalse(target.exists())
+        self.assertFalse(target.with_name("m.bin.part").exists())
+
+    def test_a_body_shorter_than_its_header_installs_nothing(self):
+        data = b"half of it"
+        target = self.path("data", "models", "m.bin")
+        with fake_urlopen(body(data, length=len(data) * 2)):
+            with self.assertRaises(ggml.LocalError):
+                ggml.download(item("m.bin", data), target)
+        self.assertFalse(target.exists())
+
+    def test_a_file_with_no_published_checksum_is_refused(self):
+        # Everything fetched here is run or parsed by something written in C++,
+        # and GitHub did not always publish a digest.
+        data = b"a program, say"
+        target = self.path("data", "models", "m.bin")
+        with fake_urlopen(body(data)):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.download(item("m.bin", data, sha=False), target)
+        self.assertIn("checksum", str(caught.exception))
+        self.assertFalse(target.exists())
+
+    def test_nothing_is_asked_for_before_it_is_refused(self):
+        # The refusal is not worth a gigabyte of somebody's bandwidth first.
+        with fake_urlopen(body(b"never read")) as calls:
+            with self.assertRaises(ggml.LocalError):
+                ggml.download(item("m.bin", b"x", sha=False), self.path("m.bin"))
+        self.assertEqual(calls, [])
+
+    def test_stopping_leaves_nothing_behind(self):
+        data = b"x" * (ggml.DOWNLOAD_CHUNK * 3)
+        target = self.path("data", "models", "m.bin")
+        with fake_urlopen(body(data)):
+            landed = ggml.download(item("m.bin", data), target,
+                                   should_stop=lambda: True)
+        self.assertFalse(landed)
+        self.assertFalse(target.exists())
+        self.assertFalse(target.with_name("m.bin.part").exists())
+
+    def test_progress_is_reported_against_the_total(self):
+        data = b"y" * (ggml.DOWNLOAD_CHUNK + 5)
+        seen = []
+        with fake_urlopen(body(data)):
+            ggml.download(item("m.bin", data), self.path("data", "m.bin"),
+                          on_progress=lambda done, total: seen.append((done, total)))
+        self.assertEqual(seen[-1], (len(data), len(data)))
+        self.assertGreater(len(seen), 1)
+
+    def test_a_refused_connection_says_which_file(self):
+        with fake_urlopen(url_error("no route to host")):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.download(item("m.bin", b"x"), self.path("data", "m.bin"))
+        self.assertIn("m.bin", str(caught.exception))
+
+    def test_an_http_error_is_not_written_to_disk(self):
+        target = self.path("data", "m.bin")
+        with fake_urlopen(http_error(404)):
+            with self.assertRaises(ggml.LocalError):
+                ggml.download(item("m.bin", b"x"), target)
+        self.assertFalse(target.exists())
+
+
+# --- installing a program -------------------------------------------------
+
+
+class InstallProgram(Local):
+    def setUp(self):
+        super().setUp()
+        # These fixtures are Ubuntu release archives.  Keep checking that path
+        # on every host, including the Mac that checks the macOS backend.
+        self.patch_attr(sys, "platform", "linux")
+        # Built once, because the release listing has to publish its checksum
+        # and a tarball is not the same bytes twice.
+        self.archive = tarball({
+            "whisper-bin-ubuntu-x64/whisper-server": b"#!/bin/sh\nexit 0\n",
+            "whisper-bin-ubuntu-x64/libwhisper.so": b"not really a library",
+        })
+
+    def release(self, *names, archive=None):
+        digest = hashlib.sha256(self.archive if archive is None else archive)
+        return {"tag_name": "v1.9.1", "assets": [
+            {"name": name, "browser_download_url": f"https://example.invalid/{name}",
+             "size": 10, "digest": "sha256:" + digest.hexdigest()}
+            for name in names]}
+
+    def install(self, *names, archive=None):
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        blob = self.archive if archive is None else archive
+        with serving(self.release(*names, archive=blob), blob) as calls:
+            path = ggml.install_program(ggml.WHISPER)
+        return path, [call.args[0].full_url for call in calls.call_args_list]
+
+    def test_the_binary_and_its_libraries_land_together(self):
+        path, _ = self.install("whisper-bin-ubuntu-x64.tar.gz")
+        self.assertTrue(os.path.isfile(path))
+        self.assertTrue(os.access(path, os.X_OK))
+        self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(path),
+                                                    "libwhisper.so")))
+
+    def test_a_zip_release_unpacks_and_the_binary_is_found(self):
+        zipped = wheel({
+            "whisper-bin-win-x64/whisper-server.exe": b"windows server",
+            "whisper-bin-win-x64/libwhisper.dll": b"not really a library",
+        })
+        archive = self.path("data", "bin", "whisper", "whisper-bin-win-x64.zip")
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(zipped)
+        into = archive.parent / "v1.9.1"
+        ggml._extract(archive, into)
+        self.assertTrue((into / "whisper-bin-win-x64" / "whisper-server.exe").is_file())
+        self.assertTrue((into / "whisper-bin-win-x64" / "libwhisper.dll").is_file())
+
+    def test_a_zip_cannot_write_outside_the_directory_it_is_opened_in(self):
+        zipped = wheel({"../../../escaped": b"should not land"})
+        archive = self.path("data", "bin", "whisper", "escape.zip")
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(zipped)
+        into = archive.parent / "v1.9.1"
+        with self.assertRaises(ggml.LocalError):
+            ggml._extract(archive, into)
+        self.assertFalse(self.path("escaped").exists())
+        self.assertFalse((into.parent.parent.parent / "escaped").exists())
+
+    def test_a_zip_extracts_cleanly_even_when_it_has_no_binary(self):
+        zipped = wheel({"whisper-bin-win-x64/README": b"nothing here"})
+        archive = self.path("data", "bin", "whisper", "empty.zip")
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(zipped)
+        into = archive.parent / "v1.9.1"
+        ggml._extract(archive, into)
+        self.assertTrue((into / "whisper-bin-win-x64" / "README").is_file())
+
+    def test_the_build_for_this_machine_is_the_one_fetched(self):
+        _, urls = self.install("whisper-bin-x64.zip", "whisper-bin-ubuntu-arm64.tar.gz",
+                               "whisper-bin-ubuntu-x64.tar.gz")
+        self.assertTrue(urls[1].endswith("whisper-bin-ubuntu-x64.tar.gz"))
+
+    def test_a_release_with_nothing_for_this_machine_says_so(self):
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        with fake_urlopen(self.release("whisper-bin-Win32.zip")):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.install_program(ggml.WHISPER)
+        self.assertIn("this machine", str(caught.exception))
+
+    def test_a_mac_does_not_install_an_ubuntu_archive_for_the_same_architecture(self):
+        self.patch_attr(sys, "platform", "darwin")
+        self.patch_attr(ggml, "_arch", lambda: "arm64")
+        listing = self.release("whisper-bin-ubuntu-arm64.tar.gz")
+        with fake_urlopen(listing):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.install_program(ggml.WHISPER)
+        self.assertIn("brew install whisper-cpp", str(caught.exception))
+
+    def test_a_mac_uses_the_native_llama_archive_instead_of_ubuntu(self):
+        self.patch_attr(sys, "platform", "darwin")
+        self.patch_attr(ggml, "_arch", lambda: "arm64")
+        self.assertEqual(
+            ggml._wanted_assets(ggml.LLAMA),
+            ("bin-macos-arm64.tar.gz",),
+        )
+
+    def test_what_was_installed_is_remembered(self):
+        path, _ = self.install("whisper-bin-ubuntu-x64.tar.gz")
+        self.assertEqual(ggml.installed_program(ggml.WHISPER), path)
+        self.assertEqual(ggml.installed_version(ggml.WHISPER), "v1.9.1")
+
+    def test_a_record_pointing_at_a_deleted_binary_counts_for_nothing(self):
+        path, _ = self.install("whisper-bin-ubuntu-x64.tar.gz")
+        os.unlink(path)
+        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
+
+    def test_the_archive_is_not_kept(self):
+        self.install("whisper-bin-ubuntu-x64.tar.gz")
+        left = list((self.path("data", "bin", "whisper")).glob("*.tar.gz"))
+        self.assertEqual(left, [])
+
+    def test_the_previous_version_is_swept_up(self):
+        self.install("whisper-bin-ubuntu-x64.tar.gz")
+        old = self.path("data", "bin", "whisper", "v1.9.0")
+        old.mkdir(parents=True)
+        (old / "whisper-server").write_bytes(b"older")
+        self.install("whisper-bin-ubuntu-x64.tar.gz")
+        self.assertFalse(old.exists())
+
+    def test_an_archive_without_the_binary_is_refused(self):
+        empty = tarball({"whisper-bin-ubuntu-x64/README": b"nothing here"})
+        with self.assertRaises(ggml.LocalError) as caught:
+            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=empty)
+        self.assertIn("whisper-server", str(caught.exception))
+
+
+    def test_a_release_without_a_published_checksum_is_refused(self):
+        # GitHub did not always publish one, and whisper.cpp v1.8.0 and older
+        # still have none.
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        listing = {"tag_name": "v1.8.0", "assets": [
+            {"name": "whisper-bin-ubuntu-x64.tar.gz",
+             "browser_download_url": "https://example.invalid/w.tar.gz",
+             "size": 10}]}
+        with serving(listing, self.archive):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.install_program(ggml.WHISPER)
+        self.assertIn("checksum", str(caught.exception))
+        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
+
+    def test_an_archive_that_is_not_what_was_promised_installs_nothing(self):
+        listing = self.release("whisper-bin-ubuntu-x64.tar.gz")
+        other = tarball({"whisper-bin-ubuntu-x64/whisper-server": b"#!/bin/sh\nrm -rf\n"})
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        with serving(listing, other):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.install_program(ggml.WHISPER)
+        self.assertIn("checksum", str(caught.exception))
+        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
+
+    def test_an_archive_cannot_write_outside_the_directory_it_is_opened_in(self):
+        # An archive is not a trusted thing to unpack: a member named ../../ is
+        # how one writes over a file it was never given.
+        escape = tarball({"../../../escaped": b"should not land"})
+        path = self.path("data", "bin", "whisper", "v1.9.1")
+        with self.assertRaises(ggml.LocalError):
+            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=escape)
+        self.assertFalse(self.path("escaped").exists())
+        self.assertFalse((path.parent.parent / "escaped").exists())
+
+    def test_a_symlink_out_of_the_directory_does_not_survive_either(self):
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            info = tarfile.TarInfo("whisper-bin-ubuntu-x64/whisper-server")
+            info.type, info.linkname = tarfile.SYMTYPE, "/etc/passwd"
+            tar.addfile(info)
+        with self.assertRaises(ggml.LocalError):
+            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=buf.getvalue())
+
+    def test_everything_is_asked_for_over_tls(self):
+        for url in (hub.GITHUB_API, hub.HF_API, hub.HF_FILES):
+            with self.subTest(url=url):
+                self.assertTrue(url.startswith("https://"))
+
+    def test_llama_takes_the_vulkan_build_when_there_is_a_loader(self):
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        self.patch_attr(ggml, "_has_vulkan", lambda: True)
+        self.assertEqual(ggml._wanted_assets(ggml.LLAMA)[0],
+                         "bin-ubuntu-vulkan-x64.tar.gz")
+
+    def test_llama_falls_back_to_the_plain_build_without_one(self):
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        self.patch_attr(ggml, "_has_vulkan", lambda: False)
+        self.assertEqual(ggml._wanted_assets(ggml.LLAMA), ("bin-ubuntu-x64.tar.gz",))
+
+
+class WhichCopyRuns(Local):
+    def test_a_system_build_wins_over_a_downloaded_one(self):
+        self.patch_attr(ggml, "installed_program", lambda program: "/data/whisper-server")
+        with mock.patch("shutil.which", return_value="/usr/bin/whisper-server"):
+            self.assertEqual(ggml.program_path(ggml.WHISPER), "/usr/bin/whisper-server")
+
+    def test_the_downloaded_one_is_used_when_there_is_no_system_build(self):
+        self.patch_attr(ggml, "installed_program", lambda program: "/data/whisper-server")
+        with mock.patch("shutil.which", return_value=None):
+            self.assertEqual(ggml.program_path(ggml.WHISPER), "/data/whisper-server")
+
+    def test_a_setting_pointing_at_nothing_is_no_program(self):
+        self.assertEqual(ggml.program_path(ggml.WHISPER, "/nowhere/whisper-server"), "")
+
+    def test_a_setting_pointing_at_a_program_wins(self):
+        mine = self.path("mine")
+        mine.write_text("#!/bin/sh\n")
+        mine.chmod(0o755)
+        with mock.patch("shutil.which", return_value="/usr/bin/whisper-server"):
+            self.assertEqual(ggml.program_path(ggml.WHISPER, str(mine)), str(mine))
+
+
+# --- the lists ------------------------------------------------------------
+
+
+WHISPER_TREE = [
+    {"type": "file", "path": "ggml-base.bin", "size": 147951465,
+     "lfs": {"oid": "a" * 64}},
+    {"type": "file", "path": "ggml-large-v3-turbo-q5_0.bin", "size": 574041195,
+     "lfs": {"oid": "b" * 64}},
+    {"type": "file", "path": "ggml-base-encoder.mlmodelc.zip", "size": 37922638,
+     "lfs": {"oid": "c" * 64}},
+    {"type": "file", "path": "README.md", "size": 3196},
+]
+
+GGUF_TREE = [
+    {"type": "file", "path": "gemma-3-4b-it-Q4_K_M.gguf", "size": 2489000000,
+     "lfs": {"oid": "a" * 64}},
+    {"type": "file", "path": "gemma-3-4b-it-Q8_0.gguf", "size": 4130000000,
+     "lfs": {"oid": "b" * 64}},
+    {"type": "file", "path": "mmproj-model-f16.gguf", "size": 851000000,
+     "lfs": {"oid": "c" * 64}},
+    {"type": "file", "path": "mtp-gemma-4-E4B-it-Q4_0.gguf", "size": 59000000,
+     "lfs": {"oid": "d" * 64}},
+    {"type": "file", "path": "huge-00001-of-00009.gguf", "size": 40000000000,
+     "lfs": {"oid": "e" * 64}},
+    {"type": "file", "path": "README.md", "size": 100},
+]
+
+
+class Catalogue(Local):
+    def test_only_models_are_offered_and_the_small_ones_first(self):
+        with fake_urlopen(WHISPER_TREE):
+            models = ggml.whisper_models()
+        self.assertEqual([m.name for m in models],
+                         ["ggml-base.bin", "ggml-large-v3-turbo-q5_0.bin"])
+
+    def test_the_core_ml_encoders_are_not_models(self):
+        with fake_urlopen(WHISPER_TREE):
+            names = [m.name for m in ggml.whisper_models()]
+        self.assertNotIn("ggml-base-encoder.mlmodelc.zip", names)
+
+    def test_the_projector_and_the_draft_head_are_not_models(self):
+        with fake_urlopen(GGUF_TREE):
+            names = [q.name for q in ggml.llm_quants("ggml-org/gemma-3-4b-it-GGUF")]
+        self.assertEqual(names,
+                         ["gemma-3-4b-it-Q4_K_M.gguf", "gemma-3-4b-it-Q8_0.gguf"])
+
+    def test_a_model_split_across_files_is_left_out(self):
+        with fake_urlopen(GGUF_TREE):
+            names = [q.name for q in ggml.llm_quants("ggml-org/gemma-3-4b-it-GGUF")]
+        self.assertNotIn("huge-00001-of-00009.gguf", names)
+
+    def test_the_suggestions_come_first_and_the_rest_follow(self):
+        listing = [{"id": "ggml-org/something-new-GGUF"},
+                   {"id": ggml.SUGGESTED_LLM[0]}]
+        with fake_urlopen(listing):
+            found = ggml.llm_repos()
+        self.assertEqual(found[0], ggml.SUGGESTED_LLM[0])
+        self.assertIn("ggml-org/something-new-GGUF", found)
+
+    def test_an_unreachable_list_still_offers_the_suggestions(self):
+        with fake_urlopen(url_error()):
+            self.assertEqual(ggml.llm_repos(), list(ggml.SUGGESTED_LLM))
+
+    def test_an_unreachable_whisper_list_is_an_error_worth_showing(self):
+        with fake_urlopen(url_error()):
+            with self.assertRaises(ggml.LocalError):
+                ggml.whisper_models()
+
+    def test_what_is_on_disk_is_read_from_disk(self):
+        self.assertEqual(ggml.installed_whisper_models(), [])
+        path = ggml.whisper_model_path("ggml-base.bin")
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"model")
+        self.assertEqual(ggml.installed_whisper_models(), ["ggml-base.bin"])
+        self.assertTrue(ggml.have_model(path))
+
+    def test_an_empty_file_is_not_a_model(self):
+        path = ggml.llm_model_path("ggml-org/x-GGUF/model.gguf")
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"")
+        self.assertFalse(ggml.have_model(path))
+
+    def test_a_model_is_named_by_its_file_not_its_repository(self):
+        self.assertEqual(ggml.llm_model_path("ggml-org/x-GGUF/model.gguf").name,
+                         "model.gguf")
+
+
+# --- keeping a server alive -----------------------------------------------
+
+
+STAND_IN = textwrap.dedent("""
+    import http.server, sys, threading, time
+
+    args = sys.argv[1:]
+
+    def opt(name, default=""):
+        return args[args.index(name) + 1] if name in args else default
+
+    if "--die" in args:
+        print("could not load model: no such file")
+        sys.exit(2)
+
+    time.sleep(float(opt("--wait", "0")))
+
+    started = time.monotonic()
+    healthy_after = float(opt("--healthy-after", "0"))
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            ok = time.monotonic() - started >= healthy_after
+            self.send_response(200 if ok else 503)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer((opt("--host"), int(opt("--port"))), Handler)
+    print("listening on " + opt("--port"), flush=True)
+    server.serve_forever()
+""")
+
+
+class Servers(Local):
+    def setUp(self):
+        super().setUp()
+        self.path("data").mkdir(parents=True, exist_ok=True)
+        # Named for the program and kept inside the data directory, because that
+        # is what the sweep looks for on a command line.
+        self.script = self.path("data", "whisper-server.py")
+        self.script.write_text(STAND_IN)
+        self.addCleanup(ggml.stop_all)
+        self.servers = []
+
+    def server(self, program=ggml.WHISPER, **settings):
+        defaults = {"extra": []}
+        defaults.update(settings)
+        made = ggml.Server(
+            program,
+            lambda values: [sys.executable, str(self.script)] + list(values["extra"]),
+            defaults,
+        )
+        self.servers.append(made)
+        self.addCleanup(made.stop)
+        return made
+
+    def test_a_started_server_hands_back_its_address(self):
+        server = self.server()
+        url = server.serve()
+        self.assertRegex(url, r"^http://127\.0\.0\.1:\d+/v1$")
+        self.assertTrue(server.running)
+
+    def test_the_second_call_does_not_start_a_second_one(self):
+        server = self.server()
+        first = server.serve()
+        self.assertEqual(server.serve(), first)
+
+    def test_a_settings_change_stops_what_was_running(self):
+        server = self.server()
+        server.serve()
+        server.configure(extra=["--wait", "0"])
+        self.assertFalse(server.running)
+
+    def test_the_new_settings_are_what_the_next_start_uses(self):
+        server = self.server()
+        server.serve()
+        server.configure(extra=["--healthy-after", "0"])
+        second = server.serve()
+        self.assertTrue(server.running)
+        self.assertTrue(second)
+
+    def test_a_program_that_dies_reports_what_it_printed(self):
+        server = self.server(extra=["--die"])
+        with self.assertRaises(ggml.LocalError) as caught:
+            server.serve()
+        self.assertIn("no such file", str(caught.exception))
+        self.assertFalse(server.running)
+
+    def test_a_model_that_is_still_loading_is_not_ready_yet(self):
+        # llama binds its port first and answers /health with 503 until the
+        # model is in memory, so the open port on its own is not the signal.
+        server = self.server(program=ggml.LLAMA, extra=["--healthy-after", "0.4"])
+        started = time.monotonic()
+        server.serve()
+        self.assertGreaterEqual(time.monotonic() - started, 0.4)
+
+    def test_a_start_that_never_becomes_ready_gives_up(self):
+        self.patch_attr(ggml, "STARTUP_TIMEOUT", 0.5)
+        server = self.server(program=ggml.LLAMA, extra=["--healthy-after", "30"])
+        with self.assertRaises(ggml.LocalError):
+            server.serve()
+
+    def test_stopping_leaves_nothing_running(self):
+        server = self.server()
+        server.serve()
+        server.stop()
+        self.assertFalse(server.running)
+        self.assertEqual(server.base_url(), "")
+
+    def test_the_last_thing_it_printed_is_available(self):
+        server = self.server()
+        server.serve()
+        self.assertIn("listening", server.error())
+
+    def test_asking_what_is_running_does_not_wait_for_a_start(self):
+        """A model being loaded must not freeze the settings window.
+
+        The interface asks a running server what it is doing while a start is in
+        flight, and a lock held across the whole start would stop it dead.
+        """
+        server = self.server(extra=["--wait", "0.6"])
+        answers = []
+
+        def start():
+            server.serve()
+
+        thread = __import__("threading").Thread(target=start)
+        thread.start()
+        try:
+            time.sleep(0.15)
+            began = time.monotonic()
+            answers.append(server.settings())
+            answers.append(server.running)
+            self.assertLess(time.monotonic() - began, 0.2)
+        finally:
+            thread.join(timeout=10)
+
+    @linux_only
+    def test_a_server_a_killed_dikte_left_behind_is_swept_up(self):
+        server = self.server()
+        server.serve()
+        # What a SIGKILL of Dikte leaves: the child still running, the pid file
+        # still on disk, and nothing left that knows about either.
+        proc, server._proc = server._proc, None
+        self.assertTrue(server.sweep())
+        self.assertEqual(proc.wait(timeout=5), -signal.SIGTERM)
+
+    @linux_only
+    def test_a_pid_that_belongs_to_something_else_is_left_alone(self):
+        server = self.server()
+        server._remember(os.getpid())     # this test runner, not a server
+        self.assertFalse(server.sweep())
+
+    def test_no_pid_file_is_nothing_to_sweep(self):
+        self.assertFalse(self.server().sweep())
+
+    def test_windows_considers_a_pid_ours_only_when_its_image_is_in_our_bin(self):
+        # The Windows sweep has no /proc to read; it asks the process for its
+        # image path and keeps the pid only when the path lives underneath our
+        # own bin directory. The Win32 layer is replaced with a stand-in so the
+        # decision runs on any host: the path boundary itself is what is under
+        # test, and it is the same choice a hostile pid would have to beat.
+        server = self.server()
+        self.patch_attr(sys, "platform", "win32")
+        answers = {
+            1001: str(self.path("data", "bin", "whisper", "v1.9.1",
+                                "whisper-server.exe")),
+            2002: r"C:\Program Files\Other\whisper-server.exe",
+            3003: None,
+        }
+        probes = []
+
+        class FakeBuffer:
+            def __init__(self, _):
+                self.value = ""
+
+        class FakeKernel:
+            def __init__(self):
+                self.probes = []
+
+            def OpenProcess(self, *_):
+                return 1
+
+            def QueryFullProcessImageNameW(self, _h, _f, buf, _size):
+                self.probes.append(self._pid)
+                path = answers.get(self._pid)
+                if path is None:
+                    return False
+                buf.value = path
+                return True
+
+            def CloseHandle(self, *_):
+                pass
+
+        class DWORD:
+            def __init__(self, value):
+                self.value = value
+
+        kernel = FakeKernel()
+        fake_ctypes = mock.MagicMock()
+        fake_ctypes.WinDLL = mock.Mock(return_value=kernel)
+        fake_ctypes.create_unicode_buffer = FakeBuffer
+        fake_ctypes.byref = lambda x: x
+        fake_ctypes.wintypes.DWORD = DWORD
+
+        with mock.patch.object(ggml, "BIN_DIR", self.path("data", "bin")), \
+                mock.patch.dict(sys.modules, {"ctypes": fake_ctypes}):
+            # OpenProcess stores the pid the queries are answered from.
+            real_open = kernel.OpenProcess
+
+            def open_with_pid(perms, inherit, pid):
+                kernel._pid = pid
+                return real_open()
+            kernel.OpenProcess = open_with_pid
+
+            self.assertTrue(server._is_ours_windows(1001))
+            self.assertFalse(server._is_ours_windows(2002))
+            self.assertFalse(server._is_ours_windows(3003))
+        self.assertEqual(kernel.probes, [1001, 2002, 3003])
+
+    def test_a_start_that_goes_wrong_takes_its_process_with_it(self):
+        started = []
+
+        def explode(inner, proc, port):
+            started.append(proc)
+            raise RuntimeError("something in the wait went wrong")
+
+        self.patch_attr(ggml.Server, "_wait_ready", explode)
+        server = self.server()
+        with self.assertRaises(RuntimeError):
+            server.serve()
+        # Nothing else holds a reference to it, so leaving it running would leak
+        # a loaded model with nobody left to ask it anything.
+        self.assertIsNotNone(started[0].poll())
+        self.assertFalse(server.sweep())      # and the pid file went with it
+
+
+class Arguments(Local):
+    """What the two command lines say, since neither program is here to say it."""
+
+    def setUp(self):
+        super().setUp()
+        self.binary = self.path("whisper-server")
+        self.binary.write_text("#!/bin/sh\n")
+        self.binary.chmod(0o755)
+
+    def whisper_model(self, name="ggml-base.bin"):
+        path = ggml.whisper_model_path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"model")
+        return name
+
+    def test_the_inference_path_is_the_one_api_py_builds(self):
+        args = ggml._whisper_args({"binary": str(self.binary), "gpu": True,
+                                   "threads": 0, "model": self.whisper_model()})
+        self.assertIn("--inference-path", args)
+        self.assertEqual(args[args.index("--inference-path") + 1],
+                         "/v1/audio/transcriptions")
+
+    def test_detection_rather_than_english_when_nothing_is_asked_for(self):
+        args = ggml._whisper_args({"binary": str(self.binary), "gpu": True,
+                                   "threads": 0, "model": self.whisper_model()})
+        self.assertEqual(args[args.index("-l") + 1], "auto")
+
+    def test_the_graphics_card_is_turned_off_rather_than_asked_for(self):
+        settings = {"binary": str(self.binary), "gpu": False, "threads": 2,
+                    "model": self.whisper_model()}
+        args = ggml._whisper_args(settings)
+        self.assertIn("-ng", args)
+        self.assertEqual(args[args.index("-t") + 1], "2")
+
+    def test_a_missing_model_is_a_message_about_settings(self):
+        with self.assertRaises(ggml.LocalError) as caught:
+            ggml._whisper_args({"binary": str(self.binary), "gpu": True,
+                                "threads": 0, "model": "ggml-nothing.bin"})
+        self.assertIn("Settings", str(caught.exception))
+
+    def test_a_missing_program_says_so_before_a_missing_model(self):
+        with mock.patch("shutil.which", return_value=None):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml._whisper_args({"binary": "", "gpu": True, "threads": 0,
+                                    "model": self.whisper_model()})
+        self.assertIn("whisper.cpp", str(caught.exception))
+
+    def test_the_layers_go_to_the_card_when_there_is_one(self):
+        model = ggml.llm_model_path("m.gguf")
+        model.parent.mkdir(parents=True, exist_ok=True)
+        model.write_bytes(b"gguf")
+        args = ggml._llm_args({"binary": str(self.binary), "gpu": True,
+                               "threads": 0, "model": "m.gguf", "context": 4096})
+        self.assertEqual(args[args.index("-ngl") + 1], "99")
+        self.assertEqual(args[args.index("-c") + 1], "4096")
+
+    def test_no_card_means_no_layers_offloaded(self):
+        model = ggml.llm_model_path("m.gguf")
+        model.parent.mkdir(parents=True, exist_ok=True)
+        model.write_bytes(b"gguf")
+        args = ggml._llm_args({"binary": str(self.binary), "gpu": False,
+                               "threads": 0, "model": "m.gguf", "context": 4096})
+        self.assertEqual(args[args.index("-ngl") + 1], "0")
+
+
+class Sizes(DikteTest):
+    def test_bytes_are_written_the_way_a_download_is_talked_about(self):
+        self.assertEqual(ggml.human_size(512), "512 B")
+        self.assertEqual(ggml.human_size(574041195), "547.4 MB")
+        self.assertEqual(ggml.human_size(3_095_033_483), "2.9 GB")
+</file>
+
 <file path="tests/test_overlay_meeting.py">
 """The meeting recording card: status, legend, silence warning, collapse.
 
@@ -27471,7 +28322,8 @@ if __name__ == "__main__":
 <file path="ui/pages/general.py">
 """General page: language, insertion, recording, silence and storage."""
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPointF, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QSpinBox, QWidget
 
 import paste
@@ -27479,6 +28331,96 @@ from i18n import t
 
 from ..widgets import CornerPicker, MiniScreen, SectionCard, SettingRow, gate, switch_row
 from . import page, scrolled
+
+class _ThemePicker(QWidget):
+    """A row of colour circles; picking one applies that theme at once.
+
+    The swatch shows each theme's accent — the colour the whole application
+    takes on — so the choice is made by eye, not by name.
+    """
+
+    changed = pyqtSignal(str)
+
+    # (key, swatch colour) — the six colour themes plus the two originals.
+    _CHOICES = [
+        ("blue", "#4468B8"), ("green", "#3E9E6E"), ("violet", "#6F55B8"),
+        ("orange", "#C2763B"), ("pink", "#B85A82"), ("teal", "#3B9E9E"),
+        ("dark", "#C66F5D"), ("light", "#E5EEE9"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self._buttons = {}
+        for key, colour in self._CHOICES:
+            swatch = _ThemeSwatch(key, colour)
+            swatch.setToolTip(t(_theme_label(key)))
+            swatch.picked.connect(self._pick)
+            row.addWidget(swatch)
+            self._buttons[key] = swatch
+        row.addStretch(1)
+        self._current = "dark"
+
+    def _pick(self, key):
+        self.set_theme(key)
+        self.changed.emit(key)
+
+    def set_theme(self, key):
+        if key not in self._buttons:
+            return
+        self._current = key
+        for name, swatch in self._buttons.items():
+            swatch.set_selected(name == key)
+
+
+class _ThemeSwatch(QWidget):
+    """One round colour swatch; a ring marks the theme in use."""
+
+    picked = pyqtSignal(str)
+
+    def __init__(self, key, colour, parent=None):
+        super().__init__(parent)
+        self._key = key
+        self._colour = colour
+        self._selected = False
+        self._hover = False
+        self.setFixedSize(26, 26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_selected(self, selected):
+        if selected != self._selected:
+            self._selected = selected
+            self.update()
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton \
+                and self.rect().contains(event.position().toPoint()):
+            self.picked.emit(self._key)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        centre = QPointF(self.width() / 2, self.height() / 2)
+        if self._selected:
+            ring = QPen(QColor(self._colour))
+            ring.setWidthF(2.0)
+            painter.setPen(ring)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(centre, 12.0, 12.0)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(self._colour))
+        painter.drawEllipse(centre, radius, radius)
+        painter.end()
 
 
 def _combo(items, width=None):
@@ -27523,6 +28465,17 @@ def build(window):
                                  t("The right language means fewer mishearings on "
                                    "the first try."), window.language))
 
+    # --- appearance -------------------------------------------------------
+    appearance = SectionCard(t("Theme"))
+    outer.addWidget(appearance)
+    from .. import theme as _theme
+    theme_picker = _ThemePicker()
+    window.theme_picker = theme_picker
+    appearance.add(SettingRow(
+        t("Application colour"),
+        t("The whole application follows the colour you pick — buttons, "
+          "highlights and the recording indicator."),
+        theme_picker))
     # --- insertion --------------------------------------------------------
     insertion = SectionCard(t("Text insertion"))
     outer.addWidget(insertion)
@@ -29293,799 +30246,6 @@ class RecorderIsolation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-</file>
-
-<file path="tests/test_ggml.py">
-"""Fetching a program and a model, and keeping a server alive on them.
-
-No network and no whisper.cpp: the downloads are answered from memory, and the
-servers are stand-in scripts that take the same arguments and open their port
-when they are told to, which is the only thing the code waits on.
-"""
-
-import contextlib
-import hashlib
-import io
-import os
-import signal
-import sys
-import tarfile
-import textwrap
-import threading
-import time
-import zipfile
-from unittest import mock
-
-import ggml
-import hub
-from tests.support import (DikteTest, fake_urlopen, http_error, json_body,
-                           linux_only, url_error)
-
-
-def body(data, length=None):
-    """What urlopen hands back for a download: a reader with a length header."""
-    class Body:
-        def __init__(self):
-            self._buf = io.BytesIO(data)
-            self.headers = {"Content-Length":
-                            str(len(data) if length is None else length)}
-
-        def read(self, count=-1):
-            return self._buf.read(count)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-    return Body()
-
-
-def item(name, data, url="https://example.invalid/f", sha=True):
-    return hub.Item(name, url, len(data),
-                    hashlib.sha256(data).hexdigest() if sha else "")
-
-
-@contextlib.contextmanager
-def serving(release, archive):
-    """Answer by what is being asked for rather than by what came before.
-
-    An install asks GitHub what the release is and then asks for one file out of
-    it, and the first of those two comes from the cache the second time around.
-    Answering in order would then hand the archive request the release listing.
-    """
-    def opener(request, timeout=None):
-        url = request.full_url
-        if "api.github.com" in url:
-            return json_body(release)
-        return body(archive)
-
-    with mock.patch("urllib.request.urlopen", side_effect=opener) as calls:
-        yield calls
-
-
-def wheel(entries):
-    """A .zip laid out the way the Windows releases are: one directory."""
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w") as zip_:
-        for name, content in entries.items():
-            zip_.writestr(name, content)
-    return buf.getvalue()
-
-
-def tarball(entries):
-    """A .tar.gz laid out the way the releases are: one directory of files."""
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for name, content in entries.items():
-            info = tarfile.TarInfo(name)
-            info.size = len(content)
-            info.mode = 0o755
-            tar.addfile(info, io.BytesIO(content))
-    return buf.getvalue()
-
-
-class Local(DikteTest):
-    """A test with its own bin, models and cache directories."""
-
-    def setUp(self):
-        super().setUp()
-        self.patch_attr(ggml, "DATA_DIR", self.path("data"))
-        self.patch_attr(ggml, "BIN_DIR", self.path("data", "bin"))
-        self.patch_attr(ggml, "MODELS_DIR", self.path("data", "models"))
-        self.patch_attr(hub, "CACHE_DIR", self.path("cache"))
-
-
-# --- downloading ----------------------------------------------------------
-
-
-class Download(Local):
-    def test_it_lands_and_the_part_file_is_gone(self):
-        data = b"a model, more or less" * 100
-        target = self.path("data", "models", "m.bin")
-        with fake_urlopen(body(data)):
-            self.assertTrue(ggml.download(item("m.bin", data), target))
-        self.assertEqual(target.read_bytes(), data)
-        self.assertFalse(target.with_name("m.bin.part").exists())
-
-    def test_a_wrong_checksum_installs_nothing(self):
-        data = b"the bytes that arrived"
-        wrong = hub.Item("m.bin", "https://example.invalid/f", len(data), "f" * 64)
-        target = self.path("data", "models", "m.bin")
-        with fake_urlopen(body(data)):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml.download(wrong, target)
-        self.assertIn("checksum", str(caught.exception))
-        self.assertFalse(target.exists())
-        self.assertFalse(target.with_name("m.bin.part").exists())
-
-    def test_a_body_shorter_than_its_header_installs_nothing(self):
-        data = b"half of it"
-        target = self.path("data", "models", "m.bin")
-        with fake_urlopen(body(data, length=len(data) * 2)):
-            with self.assertRaises(ggml.LocalError):
-                ggml.download(item("m.bin", data), target)
-        self.assertFalse(target.exists())
-
-    def test_a_file_with_no_published_checksum_is_refused(self):
-        # Everything fetched here is run or parsed by something written in C++,
-        # and GitHub did not always publish a digest.
-        data = b"a program, say"
-        target = self.path("data", "models", "m.bin")
-        with fake_urlopen(body(data)):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml.download(item("m.bin", data, sha=False), target)
-        self.assertIn("checksum", str(caught.exception))
-        self.assertFalse(target.exists())
-
-    def test_nothing_is_asked_for_before_it_is_refused(self):
-        # The refusal is not worth a gigabyte of somebody's bandwidth first.
-        with fake_urlopen(body(b"never read")) as calls:
-            with self.assertRaises(ggml.LocalError):
-                ggml.download(item("m.bin", b"x", sha=False), self.path("m.bin"))
-        self.assertEqual(calls, [])
-
-    def test_stopping_leaves_nothing_behind(self):
-        data = b"x" * (ggml.DOWNLOAD_CHUNK * 3)
-        target = self.path("data", "models", "m.bin")
-        with fake_urlopen(body(data)):
-            landed = ggml.download(item("m.bin", data), target,
-                                   should_stop=lambda: True)
-        self.assertFalse(landed)
-        self.assertFalse(target.exists())
-        self.assertFalse(target.with_name("m.bin.part").exists())
-
-    def test_progress_is_reported_against_the_total(self):
-        data = b"y" * (ggml.DOWNLOAD_CHUNK + 5)
-        seen = []
-        with fake_urlopen(body(data)):
-            ggml.download(item("m.bin", data), self.path("data", "m.bin"),
-                          on_progress=lambda done, total: seen.append((done, total)))
-        self.assertEqual(seen[-1], (len(data), len(data)))
-        self.assertGreater(len(seen), 1)
-
-    def test_a_refused_connection_says_which_file(self):
-        with fake_urlopen(url_error("no route to host")):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml.download(item("m.bin", b"x"), self.path("data", "m.bin"))
-        self.assertIn("m.bin", str(caught.exception))
-
-    def test_an_http_error_is_not_written_to_disk(self):
-        target = self.path("data", "m.bin")
-        with fake_urlopen(http_error(404)):
-            with self.assertRaises(ggml.LocalError):
-                ggml.download(item("m.bin", b"x"), target)
-        self.assertFalse(target.exists())
-
-
-# --- installing a program -------------------------------------------------
-
-
-class InstallProgram(Local):
-    def setUp(self):
-        super().setUp()
-        # These fixtures are Ubuntu release archives.  Keep checking that path
-        # on every host, including the Mac that checks the macOS backend.
-        self.patch_attr(sys, "platform", "linux")
-        # Built once, because the release listing has to publish its checksum
-        # and a tarball is not the same bytes twice.
-        self.archive = tarball({
-            "whisper-bin-ubuntu-x64/whisper-server": b"#!/bin/sh\nexit 0\n",
-            "whisper-bin-ubuntu-x64/libwhisper.so": b"not really a library",
-        })
-
-    def release(self, *names, archive=None):
-        digest = hashlib.sha256(self.archive if archive is None else archive)
-        return {"tag_name": "v1.9.1", "assets": [
-            {"name": name, "browser_download_url": f"https://example.invalid/{name}",
-             "size": 10, "digest": "sha256:" + digest.hexdigest()}
-            for name in names]}
-
-    def install(self, *names, archive=None):
-        self.patch_attr(ggml, "_arch", lambda: "x64")
-        blob = self.archive if archive is None else archive
-        with serving(self.release(*names, archive=blob), blob) as calls:
-            path = ggml.install_program(ggml.WHISPER)
-        return path, [call.args[0].full_url for call in calls.call_args_list]
-
-    def test_the_binary_and_its_libraries_land_together(self):
-        path, _ = self.install("whisper-bin-ubuntu-x64.tar.gz")
-        self.assertTrue(os.path.isfile(path))
-        self.assertTrue(os.access(path, os.X_OK))
-        self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(path),
-                                                    "libwhisper.so")))
-
-    def test_a_zip_release_unpacks_and_the_binary_is_found(self):
-        zipped = wheel({
-            "whisper-bin-win-x64/whisper-server.exe": b"windows server",
-            "whisper-bin-win-x64/libwhisper.dll": b"not really a library",
-        })
-        archive = self.path("data", "bin", "whisper", "whisper-bin-win-x64.zip")
-        archive.parent.mkdir(parents=True)
-        archive.write_bytes(zipped)
-        into = archive.parent / "v1.9.1"
-        ggml._extract(archive, into)
-        self.assertTrue((into / "whisper-bin-win-x64" / "whisper-server.exe").is_file())
-        self.assertTrue((into / "whisper-bin-win-x64" / "libwhisper.dll").is_file())
-
-    def test_a_zip_cannot_write_outside_the_directory_it_is_opened_in(self):
-        zipped = wheel({"../../../escaped": b"should not land"})
-        archive = self.path("data", "bin", "whisper", "escape.zip")
-        archive.parent.mkdir(parents=True)
-        archive.write_bytes(zipped)
-        into = archive.parent / "v1.9.1"
-        with self.assertRaises(ggml.LocalError):
-            ggml._extract(archive, into)
-        self.assertFalse(self.path("escaped").exists())
-        self.assertFalse((into.parent.parent.parent / "escaped").exists())
-
-    def test_a_zip_extracts_cleanly_even_when_it_has_no_binary(self):
-        zipped = wheel({"whisper-bin-win-x64/README": b"nothing here"})
-        archive = self.path("data", "bin", "whisper", "empty.zip")
-        archive.parent.mkdir(parents=True)
-        archive.write_bytes(zipped)
-        into = archive.parent / "v1.9.1"
-        ggml._extract(archive, into)
-        self.assertTrue((into / "whisper-bin-win-x64" / "README").is_file())
-
-    def test_the_build_for_this_machine_is_the_one_fetched(self):
-        _, urls = self.install("whisper-bin-x64.zip", "whisper-bin-ubuntu-arm64.tar.gz",
-                               "whisper-bin-ubuntu-x64.tar.gz")
-        self.assertTrue(urls[1].endswith("whisper-bin-ubuntu-x64.tar.gz"))
-
-    def test_a_release_with_nothing_for_this_machine_says_so(self):
-        self.patch_attr(ggml, "_arch", lambda: "x64")
-        with fake_urlopen(self.release("whisper-bin-Win32.zip")):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml.install_program(ggml.WHISPER)
-        self.assertIn("this machine", str(caught.exception))
-
-    def test_a_mac_does_not_install_an_ubuntu_archive_for_the_same_architecture(self):
-        self.patch_attr(sys, "platform", "darwin")
-        self.patch_attr(ggml, "_arch", lambda: "arm64")
-        listing = self.release("whisper-bin-ubuntu-arm64.tar.gz")
-        with fake_urlopen(listing):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml.install_program(ggml.WHISPER)
-        self.assertIn("brew install whisper-cpp", str(caught.exception))
-
-    def test_a_mac_uses_the_native_llama_archive_instead_of_ubuntu(self):
-        self.patch_attr(sys, "platform", "darwin")
-        self.patch_attr(ggml, "_arch", lambda: "arm64")
-        self.assertEqual(
-            ggml._wanted_assets(ggml.LLAMA),
-            ("bin-macos-arm64.tar.gz",),
-        )
-
-    def test_what_was_installed_is_remembered(self):
-        path, _ = self.install("whisper-bin-ubuntu-x64.tar.gz")
-        self.assertEqual(ggml.installed_program(ggml.WHISPER), path)
-        self.assertEqual(ggml.installed_version(ggml.WHISPER), "v1.9.1")
-
-    def test_a_record_pointing_at_a_deleted_binary_counts_for_nothing(self):
-        path, _ = self.install("whisper-bin-ubuntu-x64.tar.gz")
-        os.unlink(path)
-        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
-
-    def test_the_archive_is_not_kept(self):
-        self.install("whisper-bin-ubuntu-x64.tar.gz")
-        left = list((self.path("data", "bin", "whisper")).glob("*.tar.gz"))
-        self.assertEqual(left, [])
-
-    def test_the_previous_version_is_swept_up(self):
-        self.install("whisper-bin-ubuntu-x64.tar.gz")
-        old = self.path("data", "bin", "whisper", "v1.9.0")
-        old.mkdir(parents=True)
-        (old / "whisper-server").write_bytes(b"older")
-        self.install("whisper-bin-ubuntu-x64.tar.gz")
-        self.assertFalse(old.exists())
-
-    def test_an_archive_without_the_binary_is_refused(self):
-        empty = tarball({"whisper-bin-ubuntu-x64/README": b"nothing here"})
-        with self.assertRaises(ggml.LocalError) as caught:
-            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=empty)
-        self.assertIn("whisper-server", str(caught.exception))
-
-
-    def test_a_release_without_a_published_checksum_is_refused(self):
-        # GitHub did not always publish one, and whisper.cpp v1.8.0 and older
-        # still have none.
-        self.patch_attr(ggml, "_arch", lambda: "x64")
-        listing = {"tag_name": "v1.8.0", "assets": [
-            {"name": "whisper-bin-ubuntu-x64.tar.gz",
-             "browser_download_url": "https://example.invalid/w.tar.gz",
-             "size": 10}]}
-        with serving(listing, self.archive):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml.install_program(ggml.WHISPER)
-        self.assertIn("checksum", str(caught.exception))
-        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
-
-    def test_an_archive_that_is_not_what_was_promised_installs_nothing(self):
-        listing = self.release("whisper-bin-ubuntu-x64.tar.gz")
-        other = tarball({"whisper-bin-ubuntu-x64/whisper-server": b"#!/bin/sh\nrm -rf\n"})
-        self.patch_attr(ggml, "_arch", lambda: "x64")
-        with serving(listing, other):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml.install_program(ggml.WHISPER)
-        self.assertIn("checksum", str(caught.exception))
-        self.assertEqual(ggml.installed_program(ggml.WHISPER), "")
-
-    def test_an_archive_cannot_write_outside_the_directory_it_is_opened_in(self):
-        # An archive is not a trusted thing to unpack: a member named ../../ is
-        # how one writes over a file it was never given.
-        escape = tarball({"../../../escaped": b"should not land"})
-        path = self.path("data", "bin", "whisper", "v1.9.1")
-        with self.assertRaises(ggml.LocalError):
-            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=escape)
-        self.assertFalse(self.path("escaped").exists())
-        self.assertFalse((path.parent.parent / "escaped").exists())
-
-    def test_a_symlink_out_of_the_directory_does_not_survive_either(self):
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            info = tarfile.TarInfo("whisper-bin-ubuntu-x64/whisper-server")
-            info.type, info.linkname = tarfile.SYMTYPE, "/etc/passwd"
-            tar.addfile(info)
-        with self.assertRaises(ggml.LocalError):
-            self.install("whisper-bin-ubuntu-x64.tar.gz", archive=buf.getvalue())
-
-    def test_everything_is_asked_for_over_tls(self):
-        for url in (hub.GITHUB_API, hub.HF_API, hub.HF_FILES):
-            with self.subTest(url=url):
-                self.assertTrue(url.startswith("https://"))
-
-    def test_llama_takes_the_vulkan_build_when_there_is_a_loader(self):
-        self.patch_attr(ggml, "_arch", lambda: "x64")
-        self.patch_attr(ggml, "_has_vulkan", lambda: True)
-        self.assertEqual(ggml._wanted_assets(ggml.LLAMA)[0],
-                         "bin-ubuntu-vulkan-x64.tar.gz")
-
-    def test_llama_falls_back_to_the_plain_build_without_one(self):
-        self.patch_attr(ggml, "_arch", lambda: "x64")
-        self.patch_attr(ggml, "_has_vulkan", lambda: False)
-        self.assertEqual(ggml._wanted_assets(ggml.LLAMA), ("bin-ubuntu-x64.tar.gz",))
-
-
-class WhichCopyRuns(Local):
-    def test_a_system_build_wins_over_a_downloaded_one(self):
-        self.patch_attr(ggml, "installed_program", lambda program: "/data/whisper-server")
-        with mock.patch("shutil.which", return_value="/usr/bin/whisper-server"):
-            self.assertEqual(ggml.program_path(ggml.WHISPER), "/usr/bin/whisper-server")
-
-    def test_the_downloaded_one_is_used_when_there_is_no_system_build(self):
-        self.patch_attr(ggml, "installed_program", lambda program: "/data/whisper-server")
-        with mock.patch("shutil.which", return_value=None):
-            self.assertEqual(ggml.program_path(ggml.WHISPER), "/data/whisper-server")
-
-    def test_a_setting_pointing_at_nothing_is_no_program(self):
-        self.assertEqual(ggml.program_path(ggml.WHISPER, "/nowhere/whisper-server"), "")
-
-    def test_a_setting_pointing_at_a_program_wins(self):
-        mine = self.path("mine")
-        mine.write_text("#!/bin/sh\n")
-        mine.chmod(0o755)
-        with mock.patch("shutil.which", return_value="/usr/bin/whisper-server"):
-            self.assertEqual(ggml.program_path(ggml.WHISPER, str(mine)), str(mine))
-
-
-# --- the lists ------------------------------------------------------------
-
-
-WHISPER_TREE = [
-    {"type": "file", "path": "ggml-base.bin", "size": 147951465,
-     "lfs": {"oid": "a" * 64}},
-    {"type": "file", "path": "ggml-large-v3-turbo-q5_0.bin", "size": 574041195,
-     "lfs": {"oid": "b" * 64}},
-    {"type": "file", "path": "ggml-base-encoder.mlmodelc.zip", "size": 37922638,
-     "lfs": {"oid": "c" * 64}},
-    {"type": "file", "path": "README.md", "size": 3196},
-]
-
-GGUF_TREE = [
-    {"type": "file", "path": "gemma-3-4b-it-Q4_K_M.gguf", "size": 2489000000,
-     "lfs": {"oid": "a" * 64}},
-    {"type": "file", "path": "gemma-3-4b-it-Q8_0.gguf", "size": 4130000000,
-     "lfs": {"oid": "b" * 64}},
-    {"type": "file", "path": "mmproj-model-f16.gguf", "size": 851000000,
-     "lfs": {"oid": "c" * 64}},
-    {"type": "file", "path": "mtp-gemma-4-E4B-it-Q4_0.gguf", "size": 59000000,
-     "lfs": {"oid": "d" * 64}},
-    {"type": "file", "path": "huge-00001-of-00009.gguf", "size": 40000000000,
-     "lfs": {"oid": "e" * 64}},
-    {"type": "file", "path": "README.md", "size": 100},
-]
-
-
-class Catalogue(Local):
-    def test_only_models_are_offered_and_the_small_ones_first(self):
-        with fake_urlopen(WHISPER_TREE):
-            models = ggml.whisper_models()
-        self.assertEqual([m.name for m in models],
-                         ["ggml-base.bin", "ggml-large-v3-turbo-q5_0.bin"])
-
-    def test_the_core_ml_encoders_are_not_models(self):
-        with fake_urlopen(WHISPER_TREE):
-            names = [m.name for m in ggml.whisper_models()]
-        self.assertNotIn("ggml-base-encoder.mlmodelc.zip", names)
-
-    def test_the_projector_and_the_draft_head_are_not_models(self):
-        with fake_urlopen(GGUF_TREE):
-            names = [q.name for q in ggml.llm_quants("ggml-org/gemma-3-4b-it-GGUF")]
-        self.assertEqual(names,
-                         ["gemma-3-4b-it-Q4_K_M.gguf", "gemma-3-4b-it-Q8_0.gguf"])
-
-    def test_a_model_split_across_files_is_left_out(self):
-        with fake_urlopen(GGUF_TREE):
-            names = [q.name for q in ggml.llm_quants("ggml-org/gemma-3-4b-it-GGUF")]
-        self.assertNotIn("huge-00001-of-00009.gguf", names)
-
-    def test_the_suggestions_come_first_and_the_rest_follow(self):
-        listing = [{"id": "ggml-org/something-new-GGUF"},
-                   {"id": ggml.SUGGESTED_LLM[0]}]
-        with fake_urlopen(listing):
-            found = ggml.llm_repos()
-        self.assertEqual(found[0], ggml.SUGGESTED_LLM[0])
-        self.assertIn("ggml-org/something-new-GGUF", found)
-
-    def test_an_unreachable_list_still_offers_the_suggestions(self):
-        with fake_urlopen(url_error()):
-            self.assertEqual(ggml.llm_repos(), list(ggml.SUGGESTED_LLM))
-
-    def test_an_unreachable_whisper_list_is_an_error_worth_showing(self):
-        with fake_urlopen(url_error()):
-            with self.assertRaises(ggml.LocalError):
-                ggml.whisper_models()
-
-    def test_what_is_on_disk_is_read_from_disk(self):
-        self.assertEqual(ggml.installed_whisper_models(), [])
-        path = ggml.whisper_model_path("ggml-base.bin")
-        path.parent.mkdir(parents=True)
-        path.write_bytes(b"model")
-        self.assertEqual(ggml.installed_whisper_models(), ["ggml-base.bin"])
-        self.assertTrue(ggml.have_model(path))
-
-    def test_an_empty_file_is_not_a_model(self):
-        path = ggml.llm_model_path("ggml-org/x-GGUF/model.gguf")
-        path.parent.mkdir(parents=True)
-        path.write_bytes(b"")
-        self.assertFalse(ggml.have_model(path))
-
-    def test_a_model_is_named_by_its_file_not_its_repository(self):
-        self.assertEqual(ggml.llm_model_path("ggml-org/x-GGUF/model.gguf").name,
-                         "model.gguf")
-
-
-# --- keeping a server alive -----------------------------------------------
-
-
-STAND_IN = textwrap.dedent("""
-    import http.server, sys, threading, time
-
-    args = sys.argv[1:]
-
-    def opt(name, default=""):
-        return args[args.index(name) + 1] if name in args else default
-
-    if "--die" in args:
-        print("could not load model: no such file")
-        sys.exit(2)
-
-    time.sleep(float(opt("--wait", "0")))
-
-    started = time.monotonic()
-    healthy_after = float(opt("--healthy-after", "0"))
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            ok = time.monotonic() - started >= healthy_after
-            self.send_response(200 if ok else 503)
-            self.end_headers()
-            self.wfile.write(b"{}")
-
-        def log_message(self, *a):
-            pass
-
-    server = http.server.HTTPServer((opt("--host"), int(opt("--port"))), Handler)
-    print("listening on " + opt("--port"), flush=True)
-    server.serve_forever()
-""")
-
-
-class Servers(Local):
-    def setUp(self):
-        super().setUp()
-        self.path("data").mkdir(parents=True, exist_ok=True)
-        # Named for the program and kept inside the data directory, because that
-        # is what the sweep looks for on a command line.
-        self.script = self.path("data", "whisper-server.py")
-        self.script.write_text(STAND_IN)
-        self.addCleanup(ggml.stop_all)
-        self.servers = []
-
-    def server(self, program=ggml.WHISPER, **settings):
-        defaults = {"extra": []}
-        defaults.update(settings)
-        made = ggml.Server(
-            program,
-            lambda values: [sys.executable, str(self.script)] + list(values["extra"]),
-            defaults,
-        )
-        self.servers.append(made)
-        self.addCleanup(made.stop)
-        return made
-
-    def test_a_started_server_hands_back_its_address(self):
-        server = self.server()
-        url = server.serve()
-        self.assertRegex(url, r"^http://127\.0\.0\.1:\d+/v1$")
-        self.assertTrue(server.running)
-
-    def test_the_second_call_does_not_start_a_second_one(self):
-        server = self.server()
-        first = server.serve()
-        self.assertEqual(server.serve(), first)
-
-    def test_a_settings_change_stops_what_was_running(self):
-        server = self.server()
-        server.serve()
-        server.configure(extra=["--wait", "0"])
-        self.assertFalse(server.running)
-
-    def test_the_new_settings_are_what_the_next_start_uses(self):
-        server = self.server()
-        server.serve()
-        server.configure(extra=["--healthy-after", "0"])
-        second = server.serve()
-        self.assertTrue(server.running)
-        self.assertTrue(second)
-
-    def test_a_program_that_dies_reports_what_it_printed(self):
-        server = self.server(extra=["--die"])
-        with self.assertRaises(ggml.LocalError) as caught:
-            server.serve()
-        self.assertIn("no such file", str(caught.exception))
-        self.assertFalse(server.running)
-
-    def test_a_model_that_is_still_loading_is_not_ready_yet(self):
-        # llama binds its port first and answers /health with 503 until the
-        # model is in memory, so the open port on its own is not the signal.
-        server = self.server(program=ggml.LLAMA, extra=["--healthy-after", "0.4"])
-        started = time.monotonic()
-        server.serve()
-        self.assertGreaterEqual(time.monotonic() - started, 0.4)
-
-    def test_a_start_that_never_becomes_ready_gives_up(self):
-        self.patch_attr(ggml, "STARTUP_TIMEOUT", 0.5)
-        server = self.server(program=ggml.LLAMA, extra=["--healthy-after", "30"])
-        with self.assertRaises(ggml.LocalError):
-            server.serve()
-
-    def test_stopping_leaves_nothing_running(self):
-        server = self.server()
-        server.serve()
-        server.stop()
-        self.assertFalse(server.running)
-        self.assertEqual(server.base_url(), "")
-
-    def test_the_last_thing_it_printed_is_available(self):
-        server = self.server()
-        server.serve()
-        self.assertIn("listening", server.error())
-
-    def test_asking_what_is_running_does_not_wait_for_a_start(self):
-        """A model being loaded must not freeze the settings window.
-
-        The interface asks a running server what it is doing while a start is in
-        flight, and a lock held across the whole start would stop it dead.
-        """
-        server = self.server(extra=["--wait", "0.6"])
-        answers = []
-
-        def start():
-            server.serve()
-
-        thread = __import__("threading").Thread(target=start)
-        thread.start()
-        try:
-            time.sleep(0.15)
-            began = time.monotonic()
-            answers.append(server.settings())
-            answers.append(server.running)
-            self.assertLess(time.monotonic() - began, 0.2)
-        finally:
-            thread.join(timeout=10)
-
-    @linux_only
-    def test_a_server_a_killed_dikte_left_behind_is_swept_up(self):
-        server = self.server()
-        server.serve()
-        # What a SIGKILL of Dikte leaves: the child still running, the pid file
-        # still on disk, and nothing left that knows about either.
-        proc, server._proc = server._proc, None
-        self.assertTrue(server.sweep())
-        self.assertEqual(proc.wait(timeout=5), -signal.SIGTERM)
-
-    @linux_only
-    def test_a_pid_that_belongs_to_something_else_is_left_alone(self):
-        server = self.server()
-        server._remember(os.getpid())     # this test runner, not a server
-        self.assertFalse(server.sweep())
-
-    def test_no_pid_file_is_nothing_to_sweep(self):
-        self.assertFalse(self.server().sweep())
-
-    def test_windows_considers_a_pid_ours_only_when_its_image_is_in_our_bin(self):
-        # The Windows sweep has no /proc to read; it asks the process for its
-        # image path and keeps the pid only when the path lives underneath our
-        # own bin directory. The Win32 layer is replaced with a stand-in so the
-        # decision runs on any host: the path boundary itself is what is under
-        # test, and it is the same choice a hostile pid would have to beat.
-        server = self.server()
-        self.patch_attr(sys, "platform", "win32")
-        answers = {
-            1001: str(self.path("data", "bin", "whisper", "v1.9.1",
-                                "whisper-server.exe")),
-            2002: r"C:\Program Files\Other\whisper-server.exe",
-            3003: None,
-        }
-        probes = []
-
-        class FakeBuffer:
-            def __init__(self, _):
-                self.value = ""
-
-        class FakeKernel:
-            def __init__(self):
-                self.probes = []
-
-            def OpenProcess(self, *_):
-                return 1
-
-            def QueryFullProcessImageNameW(self, _h, _f, buf, _size):
-                self.probes.append(self._pid)
-                path = answers.get(self._pid)
-                if path is None:
-                    return False
-                buf.value = path
-                return True
-
-            def CloseHandle(self, *_):
-                pass
-
-        class DWORD:
-            def __init__(self, value):
-                self.value = value
-
-        kernel = FakeKernel()
-        fake_ctypes = mock.MagicMock()
-        fake_ctypes.WinDLL = mock.Mock(return_value=kernel)
-        fake_ctypes.create_unicode_buffer = FakeBuffer
-        fake_ctypes.byref = lambda x: x
-        fake_ctypes.wintypes.DWORD = DWORD
-
-        with mock.patch.object(ggml, "BIN_DIR", self.path("data", "bin")), \
-                mock.patch.dict(sys.modules, {"ctypes": fake_ctypes}):
-            # OpenProcess stores the pid the queries are answered from.
-            real_open = kernel.OpenProcess
-
-            def open_with_pid(perms, inherit, pid):
-                kernel._pid = pid
-                return real_open()
-            kernel.OpenProcess = open_with_pid
-
-            self.assertTrue(server._is_ours_windows(1001))
-            self.assertFalse(server._is_ours_windows(2002))
-            self.assertFalse(server._is_ours_windows(3003))
-        self.assertEqual(kernel.probes, [1001, 2002, 3003])
-
-    def test_a_start_that_goes_wrong_takes_its_process_with_it(self):
-        started = []
-
-        def explode(inner, proc, port):
-            started.append(proc)
-            raise RuntimeError("something in the wait went wrong")
-
-        self.patch_attr(ggml.Server, "_wait_ready", explode)
-        server = self.server()
-        with self.assertRaises(RuntimeError):
-            server.serve()
-        # Nothing else holds a reference to it, so leaving it running would leak
-        # a loaded model with nobody left to ask it anything.
-        self.assertIsNotNone(started[0].poll())
-        self.assertFalse(server.sweep())      # and the pid file went with it
-
-
-class Arguments(Local):
-    """What the two command lines say, since neither program is here to say it."""
-
-    def setUp(self):
-        super().setUp()
-        self.binary = self.path("whisper-server")
-        self.binary.write_text("#!/bin/sh\n")
-        self.binary.chmod(0o755)
-
-    def whisper_model(self, name="ggml-base.bin"):
-        path = ggml.whisper_model_path(name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"model")
-        return name
-
-    def test_the_inference_path_is_the_one_api_py_builds(self):
-        args = ggml._whisper_args({"binary": str(self.binary), "gpu": True,
-                                   "threads": 0, "model": self.whisper_model()})
-        self.assertIn("--inference-path", args)
-        self.assertEqual(args[args.index("--inference-path") + 1],
-                         "/v1/audio/transcriptions")
-
-    def test_detection_rather_than_english_when_nothing_is_asked_for(self):
-        args = ggml._whisper_args({"binary": str(self.binary), "gpu": True,
-                                   "threads": 0, "model": self.whisper_model()})
-        self.assertEqual(args[args.index("-l") + 1], "auto")
-
-    def test_the_graphics_card_is_turned_off_rather_than_asked_for(self):
-        settings = {"binary": str(self.binary), "gpu": False, "threads": 2,
-                    "model": self.whisper_model()}
-        args = ggml._whisper_args(settings)
-        self.assertIn("-ng", args)
-        self.assertEqual(args[args.index("-t") + 1], "2")
-
-    def test_a_missing_model_is_a_message_about_settings(self):
-        with self.assertRaises(ggml.LocalError) as caught:
-            ggml._whisper_args({"binary": str(self.binary), "gpu": True,
-                                "threads": 0, "model": "ggml-nothing.bin"})
-        self.assertIn("Settings", str(caught.exception))
-
-    def test_a_missing_program_says_so_before_a_missing_model(self):
-        with mock.patch("shutil.which", return_value=None):
-            with self.assertRaises(ggml.LocalError) as caught:
-                ggml._whisper_args({"binary": "", "gpu": True, "threads": 0,
-                                    "model": self.whisper_model()})
-        self.assertIn("whisper.cpp", str(caught.exception))
-
-    def test_the_layers_go_to_the_card_when_there_is_one(self):
-        model = ggml.llm_model_path("m.gguf")
-        model.parent.mkdir(parents=True, exist_ok=True)
-        model.write_bytes(b"gguf")
-        args = ggml._llm_args({"binary": str(self.binary), "gpu": True,
-                               "threads": 0, "model": "m.gguf", "context": 4096})
-        self.assertEqual(args[args.index("-ngl") + 1], "99")
-        self.assertEqual(args[args.index("-c") + 1], "4096")
-
-    def test_no_card_means_no_layers_offloaded(self):
-        model = ggml.llm_model_path("m.gguf")
-        model.parent.mkdir(parents=True, exist_ok=True)
-        model.write_bytes(b"gguf")
-        args = ggml._llm_args({"binary": str(self.binary), "gpu": False,
-                               "threads": 0, "model": "m.gguf", "context": 4096})
-        self.assertEqual(args[args.index("-ngl") + 1], "0")
-
-
-class Sizes(DikteTest):
-    def test_bytes_are_written_the_way_a_download_is_talked_about(self):
-        self.assertEqual(ggml.human_size(512), "512 B")
-        self.assertEqual(ggml.human_size(574041195), "547.4 MB")
-        self.assertEqual(ggml.human_size(3_095_033_483), "2.9 GB")
 </file>
 
 <file path="tests/test_wasapi.py">
@@ -35465,6 +35625,919 @@ if __name__ == "__main__":
     unittest.main()
 </file>
 
+<file path="ggml.py">
+"""Speech to text and cleanup on this machine: whisper.cpp and llama.cpp.
+
+Two programs, one treatment. Fetch a release from GitHub, unpack it under the
+data directory, fetch a model from Hugging Face, then keep one server alive on a
+port of its own. Both of them speak the shape api.py already sends to the hosted
+providers, so what the rest of Dikte sees is a base URL and nothing else:
+whisper-server is started on `--inference-path /v1/audio/transcriptions`, the
+exact path api.py builds, and llama-server answers /v1/chat/completions the way
+OpenRouter does.
+
+A server rather than a one-shot run, because the model is the slow part. Loading
+a large whisper model takes a second or two while transcribing a few seconds of
+speech takes a fraction of one, and an LLM is worse: a server pays that once and
+a run per dictation pays it every time.
+
+Nothing downloaded is trusted for having arrived. Every file is checked against
+the sha256 its index published, and the bytes go to a `.part` that is only
+renamed once the whole thing is there, so an interrupted download can never be
+mistaken for a working one.
+
+This module imports hub and the string table, and nothing else of Dikte's: it
+knows how to fetch a file and how to run a process, and nothing about dictation.
+Its errors leave as LocalError and api.py turns them into the ApiError the
+interface already knows how to show.
+"""
+
+import atexit
+import collections
+import ctypes.util
+import hashlib
+import http.client
+import json
+import os
+import pathlib
+import platform
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tarfile
+import threading
+import zipfile
+import time
+import urllib.error
+import urllib.request
+
+import hub
+from i18n import t
+
+HOST = "127.0.0.1"
+# The path api.py asks for, so its URL and the server's line up.
+INFERENCE_PATH = "/v1/audio/transcriptions"
+
+DATA_DIR = (
+    pathlib.Path(os.environ.get("LOCALAPPDATA")) / "Dikte"
+    if sys.platform == "win32" else
+    pathlib.Path(os.environ.get("XDG_DATA_HOME")
+                 or os.path.expanduser("~/.local/share")) / "dikte"
+)
+BIN_DIR = DATA_DIR / "bin"
+MODELS_DIR = DATA_DIR / "models"
+
+# Loading a large model onto a GPU is the slow part of a start, and on a cold
+# page cache a large LLM read from a spinning disk is slower still.
+STARTUP_TIMEOUT = 180.0
+DOWNLOAD_CHUNK = 1 << 20
+
+# `health` is the path that answers only once the model is in memory. whisper
+# does not have one and does not need one: it binds its port after the model is
+# loaded, so the port opening is the signal.
+Program = collections.namedtuple("Program", "name repo binary health")
+
+def _binary(name):
+    return name + ".exe" if sys.platform == "win32" else name
+
+
+WHISPER = Program("whisper", "ggml-org/whisper.cpp", _binary("whisper-server"), "")
+LLAMA = Program("llama", "ggml-org/llama.cpp", _binary("llama-server"), "/health")
+
+# Where the models are listed. Neither list is written into Dikte: a catalogue
+# in the source means a release of Dikte for every model somebody else
+# publishes.
+WHISPER_MODELS_REPO = "ggerganov/whisper.cpp"
+LLM_AUTHOR = "ggml-org"
+
+# What the whisper repository holds besides models: Core ML encoders for Apple
+# hardware and the odd loose file.
+WHISPER_PREFIX = "ggml-"
+WHISPER_SUFFIX = ".bin"
+
+# What a GGUF repository holds besides the model: mmproj is the vision half of a
+# multimodal model, mtp a draft head for speculative decoding. Neither is a model
+# a server can be started on, and offering them is offering a failure.
+GGUF_SKIP = ("mmproj", "mtp-")
+# Big enough for a 12B at Q4 and far past anything cleanup wants; the point is
+# to keep a 400 GB frontier model out of a list somebody might click.
+GGUF_MAX_BYTES = 16 << 30
+
+# Suggestions, not a catalogue: the list itself is fetched, and these are only
+# the rows that float to the top of it. Small instruction-following models,
+# because cleanup is punctuation and filler words rather than anything that
+# wants thinking about.
+SUGGESTED_LLM = (
+    "ggml-org/gemma-3-4b-it-GGUF",
+    "ggml-org/gemma-4-E2B-it-GGUF",
+    "ggml-org/gemma-4-E4B-it-GGUF",
+    "ggml-org/SmolLM3-3B-GGUF",
+)
+# Turbo at q5_0 is smaller than `small` and better than it, which makes the
+# usual "start small" advice point at the same file as "start good".
+SUGGESTED_WHISPER = "ggml-large-v3-turbo-q5_0.bin"
+
+
+class LocalError(Exception):
+    pass
+
+
+def human_size(count):
+    for unit in ("B", "KB", "MB", "GB"):
+        if count < 1024 or unit == "GB":
+            return f"{count:.0f} {unit}" if unit == "B" else f"{count:.1f} {unit}"
+        count /= 1024.0
+    return f"{count:.1f} GB"
+
+
+# --- fetching -------------------------------------------------------------
+
+
+def download(item, target, on_progress=None, should_stop=None, require_hash=True):
+    """Fetch one hub.Item to `target`. True when it landed, False when stopped.
+
+    The bytes go to a `.part` that is renamed only after both the length and the
+    hash agree with what the index said. A truncated file would otherwise sit
+    there looking installed and fail much later, inside a server, as a corrupt
+    model; a file that is the right length but the wrong content is worse, and
+    this is a program as often as it is a model.
+
+    A file whose index published no hash is refused rather than taken on trust.
+    Everything fetched here is either run or parsed by something written in C++,
+    and GitHub did not always publish a digest: a release old enough to predate
+    that would otherwise install unchecked, which is the one case where this
+    would matter most and say least.
+    """
+    target = pathlib.Path(target)
+    if require_hash and not item.sha256:
+        raise LocalError(t("{name} is published without a checksum, so there is "
+                           "no way to tell what arrived. Nothing was installed.",
+                           name=item.name))
+    part = target.with_name(target.name + ".part")
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise LocalError(t("Could not create {path}: {error}",
+                           path=target.parent, error=exc)) from exc
+
+    request = urllib.request.Request(item.url, headers={"User-Agent": hub.USER_AGENT})
+    digest = hashlib.sha256()
+    done = 0
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            total = int(response.headers.get("Content-Length") or item.size or 0)
+            with open(part, "wb") as out:
+                while True:
+                    if should_stop is not None and should_stop():
+                        try:
+                            out.close()
+                        except OSError:
+                            pass
+                        with __import__("contextlib").suppress(OSError):
+                            part.unlink(missing_ok=True)
+                        return False
+                    block = response.read(DOWNLOAD_CHUNK)
+                    if not block:
+                        break
+                    out.write(block)
+                    digest.update(block)
+                    done += len(block)
+                    # More than was announced: a body that does not end is the
+                    # one way this loop could run until the disk is full.
+                    if total and done > total:
+                        part.unlink(missing_ok=True)
+                        raise LocalError(t("{name} is longer than it said it "
+                                           "would be.", name=item.name))
+                    if on_progress is not None:
+                        on_progress(done, total)
+        # A proxy notice or an error page that came back as 200 would otherwise
+        # be renamed into place and only fail when something tries to read it.
+        if total and done != total:
+            part.unlink(missing_ok=True)
+            raise LocalError(t("The download stopped early ({done} of {total}).",
+                               done=human_size(done), total=human_size(total)))
+        if item.sha256 and digest.hexdigest() != item.sha256:
+            part.unlink(missing_ok=True)
+            raise LocalError(t("{name} does not match its published checksum. "
+                               "Nothing was installed.", name=item.name))
+        part.replace(target)
+        return True
+    except urllib.error.HTTPError as exc:
+        part.unlink(missing_ok=True)
+        exc.close()   # it holds the response body open until it is collected
+        raise LocalError(t("Could not download {name}: HTTP {code}",
+                           name=item.name, code=exc.code)) from exc
+    except urllib.error.URLError as exc:
+        part.unlink(missing_ok=True)
+        raise LocalError(t("Could not download {name}: {error}",
+                           name=item.name, error=exc.reason)) from exc
+    except OSError as exc:
+        # A connection cut mid-body arrives here too, and gigabytes in is
+        # exactly where that happens.
+        part.unlink(missing_ok=True)
+        raise LocalError(t("Could not write {name}: {error}",
+                           name=item.name, error=exc)) from exc
+
+
+# --- the programs ---------------------------------------------------------
+
+
+def _arch():
+    machine = platform.machine().lower()
+    if machine in ("aarch64", "arm64"):
+        return "arm64"
+    return "x64"
+
+
+def _has_vulkan():
+    """Whether a Vulkan loader is installed, which decides which build to fetch.
+
+    llama.cpp publishes no CUDA build for Linux, so Vulkan is what a graphics
+    card gets here. The build without it is smaller and runs on the CPU, and
+    fetching the Vulkan one for a machine that cannot load it would only make
+    the download bigger.
+    """
+    return bool(ctypes.util.find_library("vulkan"))
+
+
+def _wanted_assets(program):
+    """Asset name endings to accept, best first.
+
+    llama.cpp publishes native Metal-enabled macOS archives. whisper.cpp does
+    not publish a runnable macOS server archive, so an arm64 Mac must not
+    mistake Ubuntu's arm64 archive for a native build.
+    """
+    arch = _arch()
+    if sys.platform == "darwin":
+        return () if program is WHISPER else (f"bin-macos-{arch}.tar.gz",)
+    if sys.platform == "win32":
+        # Windows builds use the Vulkan or plain Windows archives; the Ubuntu
+        # archives are ELF and cannot run. Whisper has no native Windows server
+        # archive either, so treat it like macOS: no suitable asset.
+        if program is WHISPER:
+            return ()
+        if _has_vulkan():
+            return (f"bin-win-vulkan-{arch}.zip", f"bin-win-{arch}.zip",
+                    f"bin-ubuntu-vulkan-{arch}.tar.gz", f"bin-ubuntu-{arch}.tar.gz")
+        return (f"bin-win-{arch}.zip", f"bin-ubuntu-{arch}.tar.gz")
+    if program is LLAMA and _has_vulkan():
+        return (f"bin-ubuntu-vulkan-{arch}.tar.gz", f"bin-ubuntu-{arch}.tar.gz")
+    return (f"bin-ubuntu-{arch}.tar.gz",)
+
+
+def _install_record(program):
+    return BIN_DIR / program.name / "installed.json"
+
+
+def installed_program(program):
+    """The binary Dikte downloaded, or "" when there is none that still runs."""
+    try:
+        record = json.loads(_install_record(program).read_text(encoding="utf-8"))
+        path = record.get("binary") or ""
+    except (OSError, ValueError):
+        return ""
+    return path if os.path.isfile(path) and os.access(path, os.X_OK) else ""
+
+
+def installed_version(program):
+    try:
+        record = json.loads(_install_record(program).read_text(encoding="utf-8"))
+        return record.get("tag") or ""
+    except (OSError, ValueError):
+        return ""
+
+
+def program_path(program, custom=""):
+    """Which copy of the program to run, or "" when there is none.
+
+    A system one wins over a downloaded one. The distribution package is built
+    against whatever the machine has, which on this platform means it may reach
+    the graphics card, while the release binaries carry CPU backends only.
+    """
+    custom = (custom or "").strip()
+    if custom:
+        return custom if os.path.isfile(custom) and os.access(custom, os.X_OK) else ""
+    return shutil.which(program.binary) or installed_program(program)
+
+
+def system_program(program):
+    """Whether the program came from the system rather than from Dikte."""
+    return bool(shutil.which(program.binary))
+
+
+def _find_binary(root, name):
+    for path in sorted(pathlib.Path(root).rglob(name)):
+        if path.is_file():
+            return path
+    # On Windows the binary is named *.exe but archives published before the
+    # Windows port contain the bare name; be tolerant in either direction.
+    alt = name[:-4] if name.endswith(".exe") else (name + ".exe")
+    for path in sorted(pathlib.Path(root).rglob(alt)):
+        if path.is_file():
+            return path
+    return None
+
+
+def _extract(archive, into):
+    """Unpack a release archive, refusing anything that reaches outside `into`.
+
+    The archives lay their libraries next to their binaries and are linked with
+    an $ORIGIN runpath, so a whole directory is what has to survive the trip and
+    the binary cannot be lifted out of it. Windows builds arrive as .zip, Linux
+    and macOS as .tar.gz.
+
+    A zip member named ../ is the same escape a hostile tar member is, and the
+    read is answered from memory (never streaming) precisely so each name can be
+    checked before any byte is written.
+    """
+    if zipfile.is_zipfile(archive):
+        into.mkdir(parents=True, exist_ok=True)
+        into_resolved = str(into.resolve())
+        try:
+            with zipfile.ZipFile(archive) as zip_:
+                for member in zip_.infolist():
+                    target = (into / member.filename).resolve()
+                    # The archive is as untrusted as a tar member: a name with
+                    # ../ is how one writes over a file it was never given. The
+                    # trailing separator is what keeps a same-prefix sibling
+                    # (v1.9.1-evil) from counting as inside (v1.9.1/).
+                    target_str = str(target)
+                    inside = target_str == into_resolved or \
+                        target_str.startswith(into_resolved + os.sep)
+                    if not inside:
+                        raise LocalError(t(
+                            "The download tried to write outside the "
+                            "directory it was unpacking into."))
+                    if member.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with zip_.open(member) as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise LocalError(t("Could not unpack {name}: {error}",
+                               name=os.path.basename(str(archive)),
+                               error=exc)) from exc
+        return
+    try:
+        with tarfile.open(archive, "r:gz") as tar:
+            try:
+                tar.extractall(into, filter="data")
+            except TypeError:      # Python without the extraction filters
+                tar.extractall(into)
+    except (tarfile.TarError, OSError) as exc:
+        raise LocalError(t("Could not unpack {name}: {error}",
+                           name=os.path.basename(str(archive)), error=exc)) from exc
+
+
+def install_program(program, tag="", on_progress=None, should_stop=None,
+                    refresh=False):
+    """Fetch and unpack a release. The path to the binary, or "" when stopped.
+
+    `tag` is empty for whatever the project released last, which is the point:
+    a version pinned in Dikte's source would mean a release of Dikte every time
+    whisper.cpp has one.
+    """
+    try:
+        tag, assets = hub.release(program.repo, tag or "latest", refresh=refresh)
+    except hub.HubError as exc:
+        raise LocalError(str(exc)) from exc
+
+    item = None
+    for ending in _wanted_assets(program):
+        item = next((a for a in assets if a.name.endswith(ending)), None)
+        if item:
+            break
+    if item is None:
+        if sys.platform in ("darwin", "win32") and program is WHISPER:
+            raise LocalError(t(
+                "whisper.cpp publishes no macOS build. Install it with: "
+                "brew install whisper-cpp"
+            ))
+        raise LocalError(t("{repo} {tag} has no build for this machine.",
+                           repo=program.repo, tag=tag))
+
+    into = BIN_DIR / program.name / tag
+    shutil.rmtree(into, ignore_errors=True)
+    archive = BIN_DIR / program.name / item.name
+    try:
+        if not download(item, archive, on_progress, should_stop):
+            return ""
+        _extract(archive, into)
+        binary = _find_binary(into, program.binary)
+        if binary is None:
+            raise LocalError(t("{name} was not in the download.",
+                               name=program.binary))
+        binary.chmod(binary.stat().st_mode | 0o111)
+        _install_record(program).write_text(
+            json.dumps({"tag": tag, "binary": str(binary)}), encoding="utf-8")
+    except OSError as exc:
+        raise LocalError(t("Could not install {name}: {error}",
+                           name=program.name, error=exc)) from exc
+    finally:
+        try:
+            archive.unlink(missing_ok=True)
+        except OSError:
+            pass
+    _drop_old_versions(program, keep=tag)
+    return str(binary)
+
+
+def _drop_old_versions(program, keep):
+    """Leave one unpacked release behind, not one per update."""
+    root = BIN_DIR / program.name
+    try:
+        for path in root.iterdir():
+            if path.is_dir() and path.name != keep:
+                shutil.rmtree(path, ignore_errors=True)
+    except OSError:
+        pass
+
+
+# --- the models -----------------------------------------------------------
+
+
+def whisper_models(refresh=False):
+    """[hub.Item] for every whisper model on offer, smallest first."""
+    try:
+        files = hub.files(WHISPER_MODELS_REPO, refresh=refresh)
+    except hub.HubError as exc:
+        raise LocalError(str(exc)) from exc
+    models = [f for f in files
+              if f.name.startswith(WHISPER_PREFIX) and f.name.endswith(WHISPER_SUFFIX)
+              and f.size > 0]
+    return sorted(models, key=lambda f: f.size)
+
+
+def llm_repos(refresh=False):
+    """Repository ids for the GGUF models on offer, suggestions first."""
+    try:
+        found = [r.id for r in hub.repos(author=LLM_AUTHOR, refresh=refresh)]
+    except hub.HubError:
+        # A menu rather than a catalogue: with nothing to show, the suggestions
+        # are still worth showing, and whatever is wrong with the network will
+        # say so where it matters, when a download is asked for.
+        found = []
+    if not found:
+        return list(SUGGESTED_LLM)
+    first = [r for r in SUGGESTED_LLM if r in found]
+    return first + [r for r in found if r not in first]
+
+
+def llm_quants(repo, refresh=False):
+    """[hub.Item] for the model files in one GGUF repository, smallest first."""
+    try:
+        files = hub.files(repo, refresh=refresh)
+    except hub.HubError as exc:
+        raise LocalError(str(exc)) from exc
+    out = []
+    for item in files:
+        name = item.name.rsplit("/", 1)[-1]
+        if not name.endswith(".gguf") or name.startswith(GGUF_SKIP):
+            continue
+        # A model split across files needs all of them and a different command
+        # line; anything cleanup wants fits in one.
+        if "-of-000" in name or not 0 < item.size <= GGUF_MAX_BYTES:
+            continue
+        out.append(item)
+    return sorted(out, key=lambda f: f.size)
+
+
+def whisper_model_path(name):
+    return MODELS_DIR / "whisper" / name
+
+
+def llm_model_path(name):
+    return MODELS_DIR / "llm" / name.rsplit("/", 1)[-1]
+
+
+def have_model(path):
+    path = pathlib.Path(path)
+    return path.is_file() and path.stat().st_size > 0
+
+
+def installed_whisper_models():
+    return sorted(p.name for p in (MODELS_DIR / "whisper").glob("*.bin"))
+
+
+def installed_llm_models():
+    return sorted(p.name for p in (MODELS_DIR / "llm").glob("*.gguf"))
+
+
+def delete_model(path):
+    try:
+        pathlib.Path(path).unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise LocalError(t("Could not delete the model: {error}", error=exc)) from exc
+
+
+# --- one server -----------------------------------------------------------
+
+
+def _free_port():
+    """A port nothing is listening on, handed straight to the server.
+
+    Between closing this socket and the server binding it, something else could
+    take it; that is why a start retries rather than trusting the number.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((HOST, 0))
+        return sock.getsockname()[1]
+
+
+def _listening(port):
+    try:
+        with socket.create_connection((HOST, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _healthy(port, path):
+    """Whether the model is in memory, for a server that says so.
+
+    Spoken over http.client rather than urllib because this never leaves the
+    machine: it is the same question as _listening, one layer up.
+    """
+    connection = http.client.HTTPConnection(HOST, port, timeout=2)
+    try:
+        connection.request("GET", path)
+        # 503 for as long as the model is still being read in.
+        return connection.getresponse().status == 200
+    except (http.client.HTTPException, OSError):
+        return False
+    finally:
+        connection.close()
+
+
+def _tail(path, lines=3):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            found = [line.strip() for line in fh if line.strip()]
+    except OSError:
+        return ""
+    return " | ".join(found[-lines:])
+
+
+class Server:
+    """One process, started when something needs it and stopped when nothing does.
+
+    `build` turns the settings into a command line; everything else about
+    running a server is the same for both programs.
+    """
+
+    def __init__(self, program, build, defaults):
+        self.program = program
+        self._build = build
+        self._settings = dict(defaults)
+        # Two locks on purpose. `_lock` is held for the length of a dictionary
+        # lookup, so the interface can ask what is running while a model is
+        # being loaded; `_starting` is held across the start itself, which can
+        # take a minute and which two threads must not both do.
+        self._lock = threading.Lock()
+        self._starting = threading.Lock()
+        self._proc = None
+        self._port = 0
+        self._log = ""
+        self._key = None
+
+    # ---- settings --------------------------------------------------------
+
+    def configure(self, **changes):
+        """Apply settings. A server started on the old ones is stopped."""
+        with self._lock:
+            for key, value in changes.items():
+                if value is not None and key in self._settings:
+                    self._settings[key] = value
+            stale = self._proc is not None and self._key != self._settings_key()
+        if stale:
+            self.stop()
+
+    def settings(self):
+        with self._lock:
+            return dict(self._settings)
+
+    def _settings_key(self):
+        """What a running server would have to be restarted for."""
+        return json.dumps(self._settings, sort_keys=True, default=str)
+
+    # ---- process ---------------------------------------------------------
+
+    @property
+    def running(self):
+        with self._lock:
+            return self._proc is not None and self._proc.poll() is None
+
+    def base_url(self):
+        with self._lock:
+            return f"http://{HOST}:{self._port}/v1" if self._port else ""
+
+    def error(self):
+        """The last thing the server printed, for a failure after it started."""
+        with self._lock:
+            log = self._log
+        return _tail(log) if log else ""
+
+    def serve(self):
+        """The base URL of a server that is up and running the current settings."""
+        ready = self._current_url()
+        if ready:
+            return ready
+        with self._starting:
+            # Somebody may have started it while this thread waited its turn.
+            ready = self._current_url()
+            if ready:
+                return ready
+            self.stop()
+            with self._lock:
+                settings, key = dict(self._settings), self._settings_key()
+            proc, port, log = self._launch(settings)
+            with self._lock:
+                self._proc, self._port, self._log, self._key = proc, port, log, key
+            return self.base_url()
+
+    def _current_url(self):
+        with self._lock:
+            up = self._proc is not None and self._proc.poll() is None
+            return (f"http://{HOST}:{self._port}/v1"
+                    if up and self._key == self._settings_key() else "")
+
+    def _launch(self, settings):
+        args = self._build(settings)        # raises LocalError when unusable
+        last = ""
+        for _ in range(3):
+            port = _free_port()
+            log = DATA_DIR / f"{self.program.name}-server.log"
+            try:
+                log.parent.mkdir(parents=True, exist_ok=True)
+                sink = open(log, "wb")
+            except OSError as exc:
+                raise LocalError(t("Could not start {name}: {error}",
+                                   name=self.program.name, error=exc)) from exc
+            try:
+                with sink:
+                    proc = subprocess.Popen(
+                        args + ["--host", HOST, "--port", str(port)],
+                        stdout=sink, stderr=subprocess.STDOUT,
+                        stdin=subprocess.DEVNULL,
+                        # A console build flashes a black window on every
+                        # start; creationflags=0 is accepted everywhere.
+                        creationflags=(subprocess.CREATE_NO_WINDOW
+                                       if sys.platform == "win32" else 0),
+                    )
+            except OSError as exc:
+                raise LocalError(t("Could not start {name}: {error}",
+                                   name=self.program.name, error=exc)) from exc
+
+            # Written before it is ready rather than after, so that a kill
+            # during the model load leaves something for the sweep to find.
+            self._remember(proc.pid)
+            try:
+                ready = self._wait_ready(proc, port)
+            except BaseException:
+                # Whatever went wrong while waiting, the process is ours and
+                # nothing else is left holding a reference to it. Leaving it
+                # running would leak a loaded model with nobody to ask it
+                # anything, which is the whole failure this class is careful
+                # about elsewhere.
+                self._kill(proc)
+                self._forget()
+                raise
+            if ready:
+                return proc, port, str(log)
+            last = _tail(log)
+            self._forget()
+            # A port taken between the probe and the bind is the one failure
+            # worth another go; anything else will fail the same way again.
+            if "address" not in last.lower() and "bind" not in last.lower():
+                break
+        raise LocalError(t("{name} did not start: {error}",
+                           name=self.program.binary, error=last or t("no output")))
+
+    def _wait_ready(self, proc, port):
+        deadline = time.monotonic() + STARTUP_TIMEOUT
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                return False
+            if _listening(port):
+                # whisper binds after the model is loaded, so the open port is
+                # the answer. llama binds first and answers /health with 503
+                # until it is ready.
+                if not self.program.health or _healthy(port, self.program.health):
+                    return True
+            time.sleep(0.1)
+        self._kill(proc)
+        return False
+
+    @staticmethod
+    def _kill(proc, gently=False):
+        """Stop a process of ours, and wait for it rather than assume."""
+        if proc is None or proc.poll() is not None:
+            return
+        if gently:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+                return
+            except subprocess.TimeoutExpired:
+                pass
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+
+    def stop(self):
+        with self._lock:
+            proc, self._proc = self._proc, None
+            self._port, self._log, self._key = 0, "", None
+        self._kill(proc, gently=True)
+        if proc is not None:
+            self._forget()
+
+    # ---- servers a killed Dikte left behind -------------------------------
+
+    def _pid_file(self):
+        return DATA_DIR / f"{self.program.name}-server.pid"
+
+    def _remember(self, pid):
+        try:
+            path = self._pid_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(str(pid))
+        except OSError:
+            pass      # the sweep is a safety net, not something to fail a run over
+
+    def _forget(self):
+        try:
+            self._pid_file().unlink()
+        except OSError:
+            pass
+
+    def _is_ours(self, pid):
+        """Whether that pid is still the server this Dikte started.
+
+        Asked because pids are handed out again: by the time anyone looks, the
+        number could belong to something else entirely, and killing it would be
+        a good deal worse than the leak being cleaned up. The program name alone
+        could be somebody else's copy; the name together with Dikte's own data
+        directory on the command line could not.
+        """
+        if sys.platform == "win32":
+            return self._is_ours_windows(pid)
+        try:
+            blob = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
+        except OSError:
+            return False
+        return (self.program.binary.encode() in blob
+                and str(DATA_DIR).encode() in blob)
+
+    def _is_ours_windows(self, pid):
+        """Windows has no /proc; ask the process for its own image path.
+
+        The server Dikte started lives under its own bin directory, so a pid
+        that still points at a binary there is ours, and a pid that has been
+        handed out to something else is not. The image path is read through the
+        Win32 API rather than a tasklist subprocess, so the sweep never flashes
+        a console of its own.
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+        except (ImportError, OSError):
+            return False
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                      False, pid)
+        if not handle:
+            return False
+        try:
+            size = wintypes.DWORD(32768)
+            buf = ctypes.create_unicode_buffer(size.value)
+            if not kernel32.QueryFullProcessImageNameW(handle, 0, buf,
+                                                       ctypes.byref(size)):
+                return False
+            image = pathlib.Path(buf.value).resolve()
+        finally:
+            kernel32.CloseHandle(handle)
+        try:
+            root = pathlib.Path(BIN_DIR).resolve()
+        except OSError:
+            return False
+        return str(image).lower().startswith(str(root).lower())
+
+    def sweep(self):
+        """Kill a server a previous Dikte left behind. True when one was found.
+
+        stop() and atexit cover every exit that gets to run code. A SIGKILL does
+        not, and neither does a session torn down from under it, and the server
+        would then sit there holding the model with nothing left alive to ask it
+        anything.
+        """
+        try:
+            pid = int(self._pid_file().read_text().strip())
+        except (OSError, ValueError):
+            return False
+        self._forget()
+        if not self._is_ours(pid):
+            return False
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return False
+        return True
+
+
+# --- the two of them ------------------------------------------------------
+
+
+def _whisper_args(settings):
+    binary = program_path(WHISPER, settings["binary"])
+    if not binary:
+        raise LocalError(t("whisper.cpp is not installed. Settings → API and "
+                           "models → Download."))
+    model = whisper_model_path(settings["model"])
+    if not settings["model"] or not have_model(model):
+        raise LocalError(t("No whisper model has been downloaded yet. "
+                           "Settings → API and models → Download."))
+    args = [
+        binary, "-m", str(model),
+        "--inference-path", INFERENCE_PATH,
+        # Whatever language the request does not name. api.py leaves the field
+        # out when the language is "auto", and the server's own default is
+        # English rather than detection.
+        "-l", "auto",
+        # Stock phrases invented for near-silence come from non-speech tokens,
+        # and verbose_json otherwise pays for a language probability sweep
+        # nothing here reads.
+        "-sns", "-nlp",
+    ]
+    if int(settings["threads"]) > 0:
+        args += ["-t", str(int(settings["threads"]))]
+    if not settings["gpu"]:
+        args.append("-ng")
+    return args
+
+
+def _llm_args(settings):
+    binary = program_path(LLAMA, settings["binary"])
+    if not binary:
+        raise LocalError(t("llama.cpp is not installed. Settings → API and "
+                           "models → Download."))
+    model = llm_model_path(settings["model"])
+    if not settings["model"] or not have_model(model):
+        raise LocalError(t("No local cleanup model has been downloaded yet. "
+                           "Settings → API and models → Download."))
+    args = [binary, "-m", str(model), "-c", str(int(settings["context"]))]
+    # All of them, or as many as fit: llama.cpp stops offloading when the card
+    # is full rather than failing, and a build with no GPU backend ignores it.
+    args += ["-ngl", "99" if settings["gpu"] else "0"]
+    if int(settings["threads"]) > 0:
+        args += ["-t", str(int(settings["threads"]))]
+    return args
+
+
+whisper = Server(WHISPER, _whisper_args, {
+    "model": "",
+    "threads": 0,
+    "gpu": True,
+    "binary": "",
+})
+
+llm = Server(LLAMA, _llm_args, {
+    "model": "",
+    "threads": 0,
+    "gpu": True,
+    "binary": "",
+    # A dictation and its prompt are short. This is sized for the longest
+    # cleanup block rather than for a conversation, and it is what the model
+    # costs in memory beyond its own weights.
+    "context": 8192,
+})
+
+SERVERS = (whisper, llm)
+
+
+def sweep():
+    """Clean up after a Dikte that was killed outright. True when one was found."""
+    return any([server.sweep() for server in SERVERS])
+
+
+def stop_all():
+    for server in SERVERS:
+        server.stop()
+
+
+# Dikte stops the servers itself on quit and on restart; this catches the paths
+# that skip that, such as an unhandled exception on the way out.
+atexit.register(stop_all)
+</file>
+
 <file path="worker.py">
 """The dictation chain: transcribe → clean up → clipboard → paste.
 
@@ -37055,919 +38128,6 @@ graphify-out/
 .claude/settings.json
 .claude/settings.local.json
 .claude/mamak-context/
-</file>
-
-<file path="ggml.py">
-"""Speech to text and cleanup on this machine: whisper.cpp and llama.cpp.
-
-Two programs, one treatment. Fetch a release from GitHub, unpack it under the
-data directory, fetch a model from Hugging Face, then keep one server alive on a
-port of its own. Both of them speak the shape api.py already sends to the hosted
-providers, so what the rest of Dikte sees is a base URL and nothing else:
-whisper-server is started on `--inference-path /v1/audio/transcriptions`, the
-exact path api.py builds, and llama-server answers /v1/chat/completions the way
-OpenRouter does.
-
-A server rather than a one-shot run, because the model is the slow part. Loading
-a large whisper model takes a second or two while transcribing a few seconds of
-speech takes a fraction of one, and an LLM is worse: a server pays that once and
-a run per dictation pays it every time.
-
-Nothing downloaded is trusted for having arrived. Every file is checked against
-the sha256 its index published, and the bytes go to a `.part` that is only
-renamed once the whole thing is there, so an interrupted download can never be
-mistaken for a working one.
-
-This module imports hub and the string table, and nothing else of Dikte's: it
-knows how to fetch a file and how to run a process, and nothing about dictation.
-Its errors leave as LocalError and api.py turns them into the ApiError the
-interface already knows how to show.
-"""
-
-import atexit
-import collections
-import ctypes.util
-import hashlib
-import http.client
-import json
-import os
-import pathlib
-import platform
-import shutil
-import signal
-import socket
-import subprocess
-import sys
-import tarfile
-import threading
-import zipfile
-import time
-import urllib.error
-import urllib.request
-
-import hub
-from i18n import t
-
-HOST = "127.0.0.1"
-# The path api.py asks for, so its URL and the server's line up.
-INFERENCE_PATH = "/v1/audio/transcriptions"
-
-DATA_DIR = (
-    pathlib.Path(os.environ.get("LOCALAPPDATA")) / "Dikte"
-    if sys.platform == "win32" else
-    pathlib.Path(os.environ.get("XDG_DATA_HOME")
-                 or os.path.expanduser("~/.local/share")) / "dikte"
-)
-BIN_DIR = DATA_DIR / "bin"
-MODELS_DIR = DATA_DIR / "models"
-
-# Loading a large model onto a GPU is the slow part of a start, and on a cold
-# page cache a large LLM read from a spinning disk is slower still.
-STARTUP_TIMEOUT = 180.0
-DOWNLOAD_CHUNK = 1 << 20
-
-# `health` is the path that answers only once the model is in memory. whisper
-# does not have one and does not need one: it binds its port after the model is
-# loaded, so the port opening is the signal.
-Program = collections.namedtuple("Program", "name repo binary health")
-
-def _binary(name):
-    return name + ".exe" if sys.platform == "win32" else name
-
-
-WHISPER = Program("whisper", "ggml-org/whisper.cpp", _binary("whisper-server"), "")
-LLAMA = Program("llama", "ggml-org/llama.cpp", _binary("llama-server"), "/health")
-
-# Where the models are listed. Neither list is written into Dikte: a catalogue
-# in the source means a release of Dikte for every model somebody else
-# publishes.
-WHISPER_MODELS_REPO = "ggerganov/whisper.cpp"
-LLM_AUTHOR = "ggml-org"
-
-# What the whisper repository holds besides models: Core ML encoders for Apple
-# hardware and the odd loose file.
-WHISPER_PREFIX = "ggml-"
-WHISPER_SUFFIX = ".bin"
-
-# What a GGUF repository holds besides the model: mmproj is the vision half of a
-# multimodal model, mtp a draft head for speculative decoding. Neither is a model
-# a server can be started on, and offering them is offering a failure.
-GGUF_SKIP = ("mmproj", "mtp-")
-# Big enough for a 12B at Q4 and far past anything cleanup wants; the point is
-# to keep a 400 GB frontier model out of a list somebody might click.
-GGUF_MAX_BYTES = 16 << 30
-
-# Suggestions, not a catalogue: the list itself is fetched, and these are only
-# the rows that float to the top of it. Small instruction-following models,
-# because cleanup is punctuation and filler words rather than anything that
-# wants thinking about.
-SUGGESTED_LLM = (
-    "ggml-org/gemma-3-4b-it-GGUF",
-    "ggml-org/gemma-4-E2B-it-GGUF",
-    "ggml-org/gemma-4-E4B-it-GGUF",
-    "ggml-org/SmolLM3-3B-GGUF",
-)
-# Turbo at q5_0 is smaller than `small` and better than it, which makes the
-# usual "start small" advice point at the same file as "start good".
-SUGGESTED_WHISPER = "ggml-large-v3-turbo-q5_0.bin"
-
-
-class LocalError(Exception):
-    pass
-
-
-def human_size(count):
-    for unit in ("B", "KB", "MB", "GB"):
-        if count < 1024 or unit == "GB":
-            return f"{count:.0f} {unit}" if unit == "B" else f"{count:.1f} {unit}"
-        count /= 1024.0
-    return f"{count:.1f} GB"
-
-
-# --- fetching -------------------------------------------------------------
-
-
-def download(item, target, on_progress=None, should_stop=None, require_hash=True):
-    """Fetch one hub.Item to `target`. True when it landed, False when stopped.
-
-    The bytes go to a `.part` that is renamed only after both the length and the
-    hash agree with what the index said. A truncated file would otherwise sit
-    there looking installed and fail much later, inside a server, as a corrupt
-    model; a file that is the right length but the wrong content is worse, and
-    this is a program as often as it is a model.
-
-    A file whose index published no hash is refused rather than taken on trust.
-    Everything fetched here is either run or parsed by something written in C++,
-    and GitHub did not always publish a digest: a release old enough to predate
-    that would otherwise install unchecked, which is the one case where this
-    would matter most and say least.
-    """
-    target = pathlib.Path(target)
-    if require_hash and not item.sha256:
-        raise LocalError(t("{name} is published without a checksum, so there is "
-                           "no way to tell what arrived. Nothing was installed.",
-                           name=item.name))
-    part = target.with_name(target.name + ".part")
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise LocalError(t("Could not create {path}: {error}",
-                           path=target.parent, error=exc)) from exc
-
-    request = urllib.request.Request(item.url, headers={"User-Agent": hub.USER_AGENT})
-    digest = hashlib.sha256()
-    done = 0
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            total = int(response.headers.get("Content-Length") or item.size or 0)
-            with open(part, "wb") as out:
-                while True:
-                    if should_stop is not None and should_stop():
-                        try:
-                            out.close()
-                        except OSError:
-                            pass
-                        with __import__("contextlib").suppress(OSError):
-                            part.unlink(missing_ok=True)
-                        return False
-                    block = response.read(DOWNLOAD_CHUNK)
-                    if not block:
-                        break
-                    out.write(block)
-                    digest.update(block)
-                    done += len(block)
-                    # More than was announced: a body that does not end is the
-                    # one way this loop could run until the disk is full.
-                    if total and done > total:
-                        part.unlink(missing_ok=True)
-                        raise LocalError(t("{name} is longer than it said it "
-                                           "would be.", name=item.name))
-                    if on_progress is not None:
-                        on_progress(done, total)
-        # A proxy notice or an error page that came back as 200 would otherwise
-        # be renamed into place and only fail when something tries to read it.
-        if total and done != total:
-            part.unlink(missing_ok=True)
-            raise LocalError(t("The download stopped early ({done} of {total}).",
-                               done=human_size(done), total=human_size(total)))
-        if item.sha256 and digest.hexdigest() != item.sha256:
-            part.unlink(missing_ok=True)
-            raise LocalError(t("{name} does not match its published checksum. "
-                               "Nothing was installed.", name=item.name))
-        part.replace(target)
-        return True
-    except urllib.error.HTTPError as exc:
-        part.unlink(missing_ok=True)
-        exc.close()   # it holds the response body open until it is collected
-        raise LocalError(t("Could not download {name}: HTTP {code}",
-                           name=item.name, code=exc.code)) from exc
-    except urllib.error.URLError as exc:
-        part.unlink(missing_ok=True)
-        raise LocalError(t("Could not download {name}: {error}",
-                           name=item.name, error=exc.reason)) from exc
-    except OSError as exc:
-        # A connection cut mid-body arrives here too, and gigabytes in is
-        # exactly where that happens.
-        part.unlink(missing_ok=True)
-        raise LocalError(t("Could not write {name}: {error}",
-                           name=item.name, error=exc)) from exc
-
-
-# --- the programs ---------------------------------------------------------
-
-
-def _arch():
-    machine = platform.machine().lower()
-    if machine in ("aarch64", "arm64"):
-        return "arm64"
-    return "x64"
-
-
-def _has_vulkan():
-    """Whether a Vulkan loader is installed, which decides which build to fetch.
-
-    llama.cpp publishes no CUDA build for Linux, so Vulkan is what a graphics
-    card gets here. The build without it is smaller and runs on the CPU, and
-    fetching the Vulkan one for a machine that cannot load it would only make
-    the download bigger.
-    """
-    return bool(ctypes.util.find_library("vulkan"))
-
-
-def _wanted_assets(program):
-    """Asset name endings to accept, best first.
-
-    llama.cpp publishes native Metal-enabled macOS archives. whisper.cpp does
-    not publish a runnable macOS server archive, so an arm64 Mac must not
-    mistake Ubuntu's arm64 archive for a native build.
-    """
-    arch = _arch()
-    if sys.platform == "darwin":
-        return () if program is WHISPER else (f"bin-macos-{arch}.tar.gz",)
-    if sys.platform == "win32":
-        # Windows builds use the Vulkan or plain Windows archives; the Ubuntu
-        # archives are ELF and cannot run. Whisper has no native Windows server
-        # archive either, so treat it like macOS: no suitable asset.
-        if program is WHISPER:
-            return ()
-        if _has_vulkan():
-            return (f"bin-win-vulkan-{arch}.zip", f"bin-win-{arch}.zip",
-                    f"bin-ubuntu-vulkan-{arch}.tar.gz", f"bin-ubuntu-{arch}.tar.gz")
-        return (f"bin-win-{arch}.zip", f"bin-ubuntu-{arch}.tar.gz")
-    if program is LLAMA and _has_vulkan():
-        return (f"bin-ubuntu-vulkan-{arch}.tar.gz", f"bin-ubuntu-{arch}.tar.gz")
-    return (f"bin-ubuntu-{arch}.tar.gz",)
-
-
-def _install_record(program):
-    return BIN_DIR / program.name / "installed.json"
-
-
-def installed_program(program):
-    """The binary Dikte downloaded, or "" when there is none that still runs."""
-    try:
-        record = json.loads(_install_record(program).read_text(encoding="utf-8"))
-        path = record.get("binary") or ""
-    except (OSError, ValueError):
-        return ""
-    return path if os.path.isfile(path) and os.access(path, os.X_OK) else ""
-
-
-def installed_version(program):
-    try:
-        record = json.loads(_install_record(program).read_text(encoding="utf-8"))
-        return record.get("tag") or ""
-    except (OSError, ValueError):
-        return ""
-
-
-def program_path(program, custom=""):
-    """Which copy of the program to run, or "" when there is none.
-
-    A system one wins over a downloaded one. The distribution package is built
-    against whatever the machine has, which on this platform means it may reach
-    the graphics card, while the release binaries carry CPU backends only.
-    """
-    custom = (custom or "").strip()
-    if custom:
-        return custom if os.path.isfile(custom) and os.access(custom, os.X_OK) else ""
-    return shutil.which(program.binary) or installed_program(program)
-
-
-def system_program(program):
-    """Whether the program came from the system rather than from Dikte."""
-    return bool(shutil.which(program.binary))
-
-
-def _find_binary(root, name):
-    for path in sorted(pathlib.Path(root).rglob(name)):
-        if path.is_file():
-            return path
-    # On Windows the binary is named *.exe but archives published before the
-    # Windows port contain the bare name; be tolerant in either direction.
-    alt = name[:-4] if name.endswith(".exe") else (name + ".exe")
-    for path in sorted(pathlib.Path(root).rglob(alt)):
-        if path.is_file():
-            return path
-    return None
-
-
-def _extract(archive, into):
-    """Unpack a release archive, refusing anything that reaches outside `into`.
-
-    The archives lay their libraries next to their binaries and are linked with
-    an $ORIGIN runpath, so a whole directory is what has to survive the trip and
-    the binary cannot be lifted out of it. Windows builds arrive as .zip, Linux
-    and macOS as .tar.gz.
-
-    A zip member named ../ is the same escape a hostile tar member is, and the
-    read is answered from memory (never streaming) precisely so each name can be
-    checked before any byte is written.
-    """
-    if zipfile.is_zipfile(archive):
-        into.mkdir(parents=True, exist_ok=True)
-        into_resolved = str(into.resolve())
-        try:
-            with zipfile.ZipFile(archive) as zip_:
-                for member in zip_.infolist():
-                    target = (into / member.filename).resolve()
-                    # The archive is as untrusted as a tar member: a name with
-                    # ../ is how one writes over a file it was never given. The
-                    # trailing separator is what keeps a same-prefix sibling
-                    # (v1.9.1-evil) from counting as inside (v1.9.1/).
-                    target_str = str(target)
-                    inside = target_str == into_resolved or \
-                        target_str.startswith(into_resolved + os.sep)
-                    if not inside:
-                        raise LocalError(t(
-                            "The download tried to write outside the "
-                            "directory it was unpacking into."))
-                    if member.is_dir():
-                        target.mkdir(parents=True, exist_ok=True)
-                        continue
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with zip_.open(member) as src, open(target, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
-        except (zipfile.BadZipFile, OSError) as exc:
-            raise LocalError(t("Could not unpack {name}: {error}",
-                               name=os.path.basename(str(archive)),
-                               error=exc)) from exc
-        return
-    try:
-        with tarfile.open(archive, "r:gz") as tar:
-            try:
-                tar.extractall(into, filter="data")
-            except TypeError:      # Python without the extraction filters
-                tar.extractall(into)
-    except (tarfile.TarError, OSError) as exc:
-        raise LocalError(t("Could not unpack {name}: {error}",
-                           name=os.path.basename(str(archive)), error=exc)) from exc
-
-
-def install_program(program, tag="", on_progress=None, should_stop=None,
-                    refresh=False):
-    """Fetch and unpack a release. The path to the binary, or "" when stopped.
-
-    `tag` is empty for whatever the project released last, which is the point:
-    a version pinned in Dikte's source would mean a release of Dikte every time
-    whisper.cpp has one.
-    """
-    try:
-        tag, assets = hub.release(program.repo, tag or "latest", refresh=refresh)
-    except hub.HubError as exc:
-        raise LocalError(str(exc)) from exc
-
-    item = None
-    for ending in _wanted_assets(program):
-        item = next((a for a in assets if a.name.endswith(ending)), None)
-        if item:
-            break
-    if item is None:
-        if sys.platform in ("darwin", "win32") and program is WHISPER:
-            raise LocalError(t(
-                "whisper.cpp publishes no macOS build. Install it with: "
-                "brew install whisper-cpp"
-            ))
-        raise LocalError(t("{repo} {tag} has no build for this machine.",
-                           repo=program.repo, tag=tag))
-
-    into = BIN_DIR / program.name / tag
-    shutil.rmtree(into, ignore_errors=True)
-    archive = BIN_DIR / program.name / item.name
-    try:
-        if not download(item, archive, on_progress, should_stop):
-            return ""
-        _extract(archive, into)
-        binary = _find_binary(into, program.binary)
-        if binary is None:
-            raise LocalError(t("{name} was not in the download.",
-                               name=program.binary))
-        binary.chmod(binary.stat().st_mode | 0o111)
-        _install_record(program).write_text(
-            json.dumps({"tag": tag, "binary": str(binary)}), encoding="utf-8")
-    except OSError as exc:
-        raise LocalError(t("Could not install {name}: {error}",
-                           name=program.name, error=exc)) from exc
-    finally:
-        try:
-            archive.unlink(missing_ok=True)
-        except OSError:
-            pass
-    _drop_old_versions(program, keep=tag)
-    return str(binary)
-
-
-def _drop_old_versions(program, keep):
-    """Leave one unpacked release behind, not one per update."""
-    root = BIN_DIR / program.name
-    try:
-        for path in root.iterdir():
-            if path.is_dir() and path.name != keep:
-                shutil.rmtree(path, ignore_errors=True)
-    except OSError:
-        pass
-
-
-# --- the models -----------------------------------------------------------
-
-
-def whisper_models(refresh=False):
-    """[hub.Item] for every whisper model on offer, smallest first."""
-    try:
-        files = hub.files(WHISPER_MODELS_REPO, refresh=refresh)
-    except hub.HubError as exc:
-        raise LocalError(str(exc)) from exc
-    models = [f for f in files
-              if f.name.startswith(WHISPER_PREFIX) and f.name.endswith(WHISPER_SUFFIX)
-              and f.size > 0]
-    return sorted(models, key=lambda f: f.size)
-
-
-def llm_repos(refresh=False):
-    """Repository ids for the GGUF models on offer, suggestions first."""
-    try:
-        found = [r.id for r in hub.repos(author=LLM_AUTHOR, refresh=refresh)]
-    except hub.HubError:
-        # A menu rather than a catalogue: with nothing to show, the suggestions
-        # are still worth showing, and whatever is wrong with the network will
-        # say so where it matters, when a download is asked for.
-        found = []
-    if not found:
-        return list(SUGGESTED_LLM)
-    first = [r for r in SUGGESTED_LLM if r in found]
-    return first + [r for r in found if r not in first]
-
-
-def llm_quants(repo, refresh=False):
-    """[hub.Item] for the model files in one GGUF repository, smallest first."""
-    try:
-        files = hub.files(repo, refresh=refresh)
-    except hub.HubError as exc:
-        raise LocalError(str(exc)) from exc
-    out = []
-    for item in files:
-        name = item.name.rsplit("/", 1)[-1]
-        if not name.endswith(".gguf") or name.startswith(GGUF_SKIP):
-            continue
-        # A model split across files needs all of them and a different command
-        # line; anything cleanup wants fits in one.
-        if "-of-000" in name or not 0 < item.size <= GGUF_MAX_BYTES:
-            continue
-        out.append(item)
-    return sorted(out, key=lambda f: f.size)
-
-
-def whisper_model_path(name):
-    return MODELS_DIR / "whisper" / name
-
-
-def llm_model_path(name):
-    return MODELS_DIR / "llm" / name.rsplit("/", 1)[-1]
-
-
-def have_model(path):
-    path = pathlib.Path(path)
-    return path.is_file() and path.stat().st_size > 0
-
-
-def installed_whisper_models():
-    return sorted(p.name for p in (MODELS_DIR / "whisper").glob("*.bin"))
-
-
-def installed_llm_models():
-    return sorted(p.name for p in (MODELS_DIR / "llm").glob("*.gguf"))
-
-
-def delete_model(path):
-    try:
-        pathlib.Path(path).unlink()
-    except FileNotFoundError:
-        pass
-    except OSError as exc:
-        raise LocalError(t("Could not delete the model: {error}", error=exc)) from exc
-
-
-# --- one server -----------------------------------------------------------
-
-
-def _free_port():
-    """A port nothing is listening on, handed straight to the server.
-
-    Between closing this socket and the server binding it, something else could
-    take it; that is why a start retries rather than trusting the number.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind((HOST, 0))
-        return sock.getsockname()[1]
-
-
-def _listening(port):
-    try:
-        with socket.create_connection((HOST, port), timeout=0.5):
-            return True
-    except OSError:
-        return False
-
-
-def _healthy(port, path):
-    """Whether the model is in memory, for a server that says so.
-
-    Spoken over http.client rather than urllib because this never leaves the
-    machine: it is the same question as _listening, one layer up.
-    """
-    connection = http.client.HTTPConnection(HOST, port, timeout=2)
-    try:
-        connection.request("GET", path)
-        # 503 for as long as the model is still being read in.
-        return connection.getresponse().status == 200
-    except (http.client.HTTPException, OSError):
-        return False
-    finally:
-        connection.close()
-
-
-def _tail(path, lines=3):
-    try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            found = [line.strip() for line in fh if line.strip()]
-    except OSError:
-        return ""
-    return " | ".join(found[-lines:])
-
-
-class Server:
-    """One process, started when something needs it and stopped when nothing does.
-
-    `build` turns the settings into a command line; everything else about
-    running a server is the same for both programs.
-    """
-
-    def __init__(self, program, build, defaults):
-        self.program = program
-        self._build = build
-        self._settings = dict(defaults)
-        # Two locks on purpose. `_lock` is held for the length of a dictionary
-        # lookup, so the interface can ask what is running while a model is
-        # being loaded; `_starting` is held across the start itself, which can
-        # take a minute and which two threads must not both do.
-        self._lock = threading.Lock()
-        self._starting = threading.Lock()
-        self._proc = None
-        self._port = 0
-        self._log = ""
-        self._key = None
-
-    # ---- settings --------------------------------------------------------
-
-    def configure(self, **changes):
-        """Apply settings. A server started on the old ones is stopped."""
-        with self._lock:
-            for key, value in changes.items():
-                if value is not None and key in self._settings:
-                    self._settings[key] = value
-            stale = self._proc is not None and self._key != self._settings_key()
-        if stale:
-            self.stop()
-
-    def settings(self):
-        with self._lock:
-            return dict(self._settings)
-
-    def _settings_key(self):
-        """What a running server would have to be restarted for."""
-        return json.dumps(self._settings, sort_keys=True, default=str)
-
-    # ---- process ---------------------------------------------------------
-
-    @property
-    def running(self):
-        with self._lock:
-            return self._proc is not None and self._proc.poll() is None
-
-    def base_url(self):
-        with self._lock:
-            return f"http://{HOST}:{self._port}/v1" if self._port else ""
-
-    def error(self):
-        """The last thing the server printed, for a failure after it started."""
-        with self._lock:
-            log = self._log
-        return _tail(log) if log else ""
-
-    def serve(self):
-        """The base URL of a server that is up and running the current settings."""
-        ready = self._current_url()
-        if ready:
-            return ready
-        with self._starting:
-            # Somebody may have started it while this thread waited its turn.
-            ready = self._current_url()
-            if ready:
-                return ready
-            self.stop()
-            with self._lock:
-                settings, key = dict(self._settings), self._settings_key()
-            proc, port, log = self._launch(settings)
-            with self._lock:
-                self._proc, self._port, self._log, self._key = proc, port, log, key
-            return self.base_url()
-
-    def _current_url(self):
-        with self._lock:
-            up = self._proc is not None and self._proc.poll() is None
-            return (f"http://{HOST}:{self._port}/v1"
-                    if up and self._key == self._settings_key() else "")
-
-    def _launch(self, settings):
-        args = self._build(settings)        # raises LocalError when unusable
-        last = ""
-        for _ in range(3):
-            port = _free_port()
-            log = DATA_DIR / f"{self.program.name}-server.log"
-            try:
-                log.parent.mkdir(parents=True, exist_ok=True)
-                sink = open(log, "wb")
-            except OSError as exc:
-                raise LocalError(t("Could not start {name}: {error}",
-                                   name=self.program.name, error=exc)) from exc
-            try:
-                with sink:
-                    proc = subprocess.Popen(
-                        args + ["--host", HOST, "--port", str(port)],
-                        stdout=sink, stderr=subprocess.STDOUT,
-                        stdin=subprocess.DEVNULL,
-                        # A console build flashes a black window on every
-                        # start; creationflags=0 is accepted everywhere.
-                        creationflags=(subprocess.CREATE_NO_WINDOW
-                                       if sys.platform == "win32" else 0),
-                    )
-            except OSError as exc:
-                raise LocalError(t("Could not start {name}: {error}",
-                                   name=self.program.name, error=exc)) from exc
-
-            # Written before it is ready rather than after, so that a kill
-            # during the model load leaves something for the sweep to find.
-            self._remember(proc.pid)
-            try:
-                ready = self._wait_ready(proc, port)
-            except BaseException:
-                # Whatever went wrong while waiting, the process is ours and
-                # nothing else is left holding a reference to it. Leaving it
-                # running would leak a loaded model with nobody to ask it
-                # anything, which is the whole failure this class is careful
-                # about elsewhere.
-                self._kill(proc)
-                self._forget()
-                raise
-            if ready:
-                return proc, port, str(log)
-            last = _tail(log)
-            self._forget()
-            # A port taken between the probe and the bind is the one failure
-            # worth another go; anything else will fail the same way again.
-            if "address" not in last.lower() and "bind" not in last.lower():
-                break
-        raise LocalError(t("{name} did not start: {error}",
-                           name=self.program.binary, error=last or t("no output")))
-
-    def _wait_ready(self, proc, port):
-        deadline = time.monotonic() + STARTUP_TIMEOUT
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                return False
-            if _listening(port):
-                # whisper binds after the model is loaded, so the open port is
-                # the answer. llama binds first and answers /health with 503
-                # until it is ready.
-                if not self.program.health or _healthy(port, self.program.health):
-                    return True
-            time.sleep(0.1)
-        self._kill(proc)
-        return False
-
-    @staticmethod
-    def _kill(proc, gently=False):
-        """Stop a process of ours, and wait for it rather than assume."""
-        if proc is None or proc.poll() is not None:
-            return
-        if gently:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-                return
-            except subprocess.TimeoutExpired:
-                pass
-        proc.kill()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
-
-    def stop(self):
-        with self._lock:
-            proc, self._proc = self._proc, None
-            self._port, self._log, self._key = 0, "", None
-        self._kill(proc, gently=True)
-        if proc is not None:
-            self._forget()
-
-    # ---- servers a killed Dikte left behind -------------------------------
-
-    def _pid_file(self):
-        return DATA_DIR / f"{self.program.name}-server.pid"
-
-    def _remember(self, pid):
-        try:
-            path = self._pid_file()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(str(pid))
-        except OSError:
-            pass      # the sweep is a safety net, not something to fail a run over
-
-    def _forget(self):
-        try:
-            self._pid_file().unlink()
-        except OSError:
-            pass
-
-    def _is_ours(self, pid):
-        """Whether that pid is still the server this Dikte started.
-
-        Asked because pids are handed out again: by the time anyone looks, the
-        number could belong to something else entirely, and killing it would be
-        a good deal worse than the leak being cleaned up. The program name alone
-        could be somebody else's copy; the name together with Dikte's own data
-        directory on the command line could not.
-        """
-        if sys.platform == "win32":
-            return self._is_ours_windows(pid)
-        try:
-            blob = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
-        except OSError:
-            return False
-        return (self.program.binary.encode() in blob
-                and str(DATA_DIR).encode() in blob)
-
-    def _is_ours_windows(self, pid):
-        """Windows has no /proc; ask the process for its own image path.
-
-        The server Dikte started lives under its own bin directory, so a pid
-        that still points at a binary there is ours, and a pid that has been
-        handed out to something else is not. The image path is read through the
-        Win32 API rather than a tasklist subprocess, so the sweep never flashes
-        a console of its own.
-        """
-        try:
-            import ctypes
-            from ctypes import wintypes
-        except (ImportError, OSError):
-            return False
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
-                                      False, pid)
-        if not handle:
-            return False
-        try:
-            size = wintypes.DWORD(32768)
-            buf = ctypes.create_unicode_buffer(size.value)
-            if not kernel32.QueryFullProcessImageNameW(handle, 0, buf,
-                                                       ctypes.byref(size)):
-                return False
-            image = pathlib.Path(buf.value).resolve()
-        finally:
-            kernel32.CloseHandle(handle)
-        try:
-            root = pathlib.Path(BIN_DIR).resolve()
-        except OSError:
-            return False
-        return str(image).lower().startswith(str(root).lower())
-
-    def sweep(self):
-        """Kill a server a previous Dikte left behind. True when one was found.
-
-        stop() and atexit cover every exit that gets to run code. A SIGKILL does
-        not, and neither does a session torn down from under it, and the server
-        would then sit there holding the model with nothing left alive to ask it
-        anything.
-        """
-        try:
-            pid = int(self._pid_file().read_text().strip())
-        except (OSError, ValueError):
-            return False
-        self._forget()
-        if not self._is_ours(pid):
-            return False
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            return False
-        return True
-
-
-# --- the two of them ------------------------------------------------------
-
-
-def _whisper_args(settings):
-    binary = program_path(WHISPER, settings["binary"])
-    if not binary:
-        raise LocalError(t("whisper.cpp is not installed. Settings → API and "
-                           "models → Download."))
-    model = whisper_model_path(settings["model"])
-    if not settings["model"] or not have_model(model):
-        raise LocalError(t("No whisper model has been downloaded yet. "
-                           "Settings → API and models → Download."))
-    args = [
-        binary, "-m", str(model),
-        "--inference-path", INFERENCE_PATH,
-        # Whatever language the request does not name. api.py leaves the field
-        # out when the language is "auto", and the server's own default is
-        # English rather than detection.
-        "-l", "auto",
-        # Stock phrases invented for near-silence come from non-speech tokens,
-        # and verbose_json otherwise pays for a language probability sweep
-        # nothing here reads.
-        "-sns", "-nlp",
-    ]
-    if int(settings["threads"]) > 0:
-        args += ["-t", str(int(settings["threads"]))]
-    if not settings["gpu"]:
-        args.append("-ng")
-    return args
-
-
-def _llm_args(settings):
-    binary = program_path(LLAMA, settings["binary"])
-    if not binary:
-        raise LocalError(t("llama.cpp is not installed. Settings → API and "
-                           "models → Download."))
-    model = llm_model_path(settings["model"])
-    if not settings["model"] or not have_model(model):
-        raise LocalError(t("No local cleanup model has been downloaded yet. "
-                           "Settings → API and models → Download."))
-    args = [binary, "-m", str(model), "-c", str(int(settings["context"]))]
-    # All of them, or as many as fit: llama.cpp stops offloading when the card
-    # is full rather than failing, and a build with no GPU backend ignores it.
-    args += ["-ngl", "99" if settings["gpu"] else "0"]
-    if int(settings["threads"]) > 0:
-        args += ["-t", str(int(settings["threads"]))]
-    return args
-
-
-whisper = Server(WHISPER, _whisper_args, {
-    "model": "",
-    "threads": 0,
-    "gpu": True,
-    "binary": "",
-})
-
-llm = Server(LLAMA, _llm_args, {
-    "model": "",
-    "threads": 0,
-    "gpu": True,
-    "binary": "",
-    # A dictation and its prompt are short. This is sized for the longest
-    # cleanup block rather than for a conversation, and it is what the model
-    # costs in memory beyond its own weights.
-    "context": 8192,
-})
-
-SERVERS = (whisper, llm)
-
-
-def sweep():
-    """Clean up after a Dikte that was killed outright. True when one was found."""
-    return any([server.sweep() for server in SERVERS])
-
-
-def stop_all():
-    for server in SERVERS:
-        server.stop()
-
-
-# Dikte stops the servers itself on quit and on restart; this catches the paths
-# that skip that, such as an unhandled exception on the way out.
-atexit.register(stop_all)
 </file>
 
 <file path="tests/test_providers.py">

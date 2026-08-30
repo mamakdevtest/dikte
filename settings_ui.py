@@ -465,7 +465,7 @@ class SettingsWindow(QDialog):
         super().__init__(parent)
         self.conf = conf
         self.meetings = meetings
-        self._theme = conf.get("ui_theme", "dark") or "dark"
+        self._theme = _theme.normalize(conf.get("ui_theme", "blue") or "blue")
         self._shortcut_rows = {}
         self._models = dict.fromkeys(cfg.TRANSCRIBERS, "")
         self._key_fields = {}
@@ -504,7 +504,6 @@ class SettingsWindow(QDialog):
             self.shell.add_page(t("Overlay/Indicator"), overlay_page.build(self), "pip")
         except Exception:
             pass
-        self.shell.theme_toggled.connect(self._toggle_theme)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText(t("Save"))
@@ -544,7 +543,11 @@ class SettingsWindow(QDialog):
             self.meetings.failed.connect(self._on_minutes_failed)
 
         _theme.apply(self._theme)
-        self.shell.set_theme(self._theme)
+        if hasattr(self, "theme_picker"):
+            # The picker previews instantly; the choice is persisted by Save.
+            self.theme_picker.changed.connect(self._apply_picked_theme)
+        if hasattr(self.shell, "set_theme"):
+            self.shell.set_theme(self._theme)
         self._load()
         self._baseline = self._snapshot_settings()
         self._navigating = False
@@ -2069,6 +2072,7 @@ class SettingsWindow(QDialog):
         out = {}
         try:
             out["ui_language"] = (self.ui_language.currentData() or "auto") if hasattr(self, "ui_language") else "auto"
+            out["ui_theme"] = getattr(self, "_theme", "blue")
             out["mic_target"] = (self.mic.currentData() or "") if hasattr(self, "mic") else ""
             out["language"] = (self.language.currentData() or "auto") if hasattr(self, "language") else "auto"
             out["auto_paste"] = bool(self.auto_paste.isChecked()) if hasattr(self, "auto_paste") else False
@@ -2171,6 +2175,9 @@ class SettingsWindow(QDialog):
                 self._navigating = False
             self._prev_index = new_index
         elif choice == "discard":
+            # A previewed theme is not a kept one: back to the saved colour
+            # before the widgets reload from the config file.
+            self._revert_theme_preview()
             self._baseline = self._snapshot_settings()
             # keep current dirty values? User said discard → reload from conf
             try:
@@ -2188,7 +2195,24 @@ class SettingsWindow(QDialog):
                 self._navigating = False
             self._prev_index = new_index
         else:  # cancel
+            # Staying on the page also means walking away from the preview.
+            self._revert_theme_preview()
             self._navigating = False
+
+    def _revert_theme_preview(self):
+        """Undo a previewed theme: back to whatever the config file holds.
+
+        A picked colour is applied the moment it is clicked, but it only
+        becomes real on Save. Discard and Cancel both mean the user is
+        walking away from it, so the application goes back to the persisted
+        colour instead of keeping a preview nobody confirmed.
+        """
+        saved = _theme.normalize(self.conf["ui_theme"])
+        self._theme = _theme.apply(saved)
+        if hasattr(self.shell, "set_theme"):
+            self.shell.set_theme(saved)
+        if hasattr(self, "theme_picker"):
+            self.theme_picker.set_theme(saved)
 
     def closeEvent(self, event):
         if self._is_dirty():
@@ -2201,6 +2225,7 @@ class SettingsWindow(QDialog):
                     pass
                 event.accept()
             elif choice == "discard":
+                self._revert_theme_preview()
                 event.accept()
             else:
                 event.ignore()
@@ -2235,10 +2260,16 @@ class SettingsWindow(QDialog):
 
     # ---- theme -----------------------------------------------------------
 
-    def _toggle_theme(self):
-        self._theme = "light" if self._theme == "dark" else "dark"
+
+    def _apply_picked_theme(self, key):
+        """A colour was picked in Settings: preview it everywhere, now."""
+        self._theme = _theme.apply(key)
+        self._after_theme_change()
+
+    def _after_theme_change(self):
         _theme.apply(self._theme)
-        self.shell.set_theme(self._theme)
+        if hasattr(self.shell, "set_theme"):
+            self.shell.set_theme(self._theme)
         # Refresh overlay windows (top-level, not children) so tint updates live
         try:
             from PyQt6.QtWidgets import QApplication
@@ -2428,6 +2459,8 @@ class SettingsWindow(QDialog):
     def _load(self):
         conf = self.conf
         self._select_data(self.ui_language, conf["ui_language"])
+        if hasattr(self, "theme_picker"):
+            self.theme_picker.set_theme(_theme.normalize(conf["ui_theme"]))
         self._select_data(self.mic, conf["mic_target"])
         self._select_data(self.language, conf["language"])
         self.auto_paste.setChecked(conf["auto_paste"])
@@ -2679,7 +2712,7 @@ class SettingsWindow(QDialog):
 
     def _save(self):
         conf = self.conf
-        conf["ui_theme"] = self._theme
+        conf["ui_theme"] = _theme.normalize(self._theme)
         conf["ui_language"] = self.ui_language.currentData() or "auto"
         conf["mic_target"] = self.mic.currentData() or ""
         conf["language"] = self.language.currentData() or "auto"

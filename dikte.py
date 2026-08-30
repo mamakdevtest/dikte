@@ -30,10 +30,10 @@ if sys.platform == "darwin":
                           os.environ.get("PATH", "")) if part
     )
 
-from PyQt6.QtCore import QTimer, QElapsedTimer, QSocketNotifier, QUrl  # noqa: E402
+from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QSocketNotifier, QUrl  # noqa: E402
 from PyQt6.QtGui import QAction, QIcon, QDesktopServices  # noqa: E402
-from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
 
 import assistant  # noqa: E402
 import audio  # noqa: E402
@@ -90,7 +90,97 @@ def meeting_mic_silent(recording_seconds, mic_bytes):
     return recording_seconds > 10.0 and mic_bytes == 0
 
 
-# The loopback carries mastered playback while the microphone carries one
+
+# Turkish month abbreviations for the tray's meeting list. Locale-aware
+# formatting would drag in QLocale per-item; the list is short and fixed.
+TR_MONTHS = ("Oca", "Şub", "Mar", "Nis", "May", "Haz",
+             "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara")
+
+
+def meeting_meta(ts, _re=None):
+    """'2026-08-30 20:12' -> '30 Ağu · 20:12', or '' for anything unparsable.
+
+    Pure: the tray menu and the tests both call it, and a bad row in the
+    meetings file must never take the menu down with it.
+    """
+    if not isinstance(ts, str):
+        return ""
+    try:
+        date, _, clock = ts.partition(" ")
+        year, month, day = date.split("-")
+        month = int(month)
+        if not 1 <= month <= 12:
+            return ""
+        day = int(day)
+        if not 1 <= day <= 31:
+            return ""
+        hh, mm = clock.split(":")[:2]
+        hour, minute = int(hh), int(mm)
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return ""
+    except (ValueError, IndexError):
+        return ""
+    return f"{day} {TR_MONTHS[month - 1]} · {hour:02d}:{minute:02d}"
+
+
+def elide_title(text, width):
+    """Elide a meeting title to `width` pixels with the current menu font.
+
+    Needs no QApplication: a QFont constructed here measures the same as the
+    menu's default, and a caller with no Qt app (tests) still gets a sane cut.
+    """
+    from PyQt6.QtGui import QFont, QFontMetrics, QGuiApplication
+    app = QGuiApplication.instance()
+    if app is None:
+        # No QApplication (a bare import in a test): a pixel measure needs a
+        # font engine, so cut by characters instead of dying for it.
+        text = text or ""
+        return text if len(text) <= 40 else text[:39] + "…"
+    font = app.font()
+    return QFontMetrics(font).elidedText(text or "", Qt.TextElideMode.ElideRight, max(0, int(width)))
+
+
+class HintMenu(QMenu):
+    """A menu that paints right-aligned shortcut hints from action properties.
+
+    The hints are display-only (they are never bound with setShortcut, which
+    would move the keys away from the global listener), so Qt has no idea
+    they exist and they have to be painted here: after the base class has
+    drawn each row, the hint from the action's `shortcutHint` property is
+    drawn right-aligned inside that row, in the muted foreground color.
+    """
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        from PyQt6.QtCore import QRectF
+        from PyQt6.QtGui import QColor, QFont, QPainter, QPen
+        painter = QPainter(self)
+        try:
+            color = QColor("#A8BCB5")
+            try:
+                from ui import theme as _theme
+                color = QColor(_theme.palette().get("fg2", "#A8BCB5"))
+            except Exception:
+                pass
+            font = QFont(self.font())
+            font.setPointSizeF(8.5)
+            painter.setFont(font)
+            painter.setPen(QPen(color))
+            for action in self.actions():
+                hint = action.property("shortcutHint")
+                if not hint or action.isSeparator() or not action.isVisible():
+                    continue
+                rect = self.actionGeometry(action)
+                if not rect.isValid():
+                    continue
+                # 10px-equivalent small text, right-aligned with the row's padding
+                target = QRectF(rect.adjusted(0, 0, -10, 0))
+                painter.drawText(target, Qt.AlignmentFlag.AlignRight
+                                 | Qt.AlignmentFlag.AlignVCenter, str(hint))
+        finally:
+            painter.end()
+
+
 # quiet voice; the overlay's halves get display-only gain so they respond
 # as visibly as each other. The recorded audio is never touched.
 MEETING_MINE_GAIN = 2.5
@@ -259,7 +349,6 @@ class Dikte:
         self.tray.show()
 
     # ---- tray ----------------------------------------------------------
-
     def _build_tray(self):
         # Keep menu and actions on self: PyQt does not take ownership when they
         # are only passed to addAction(), and garbage collection eats them.
@@ -270,7 +359,10 @@ class Dikte:
             _ic = lambda n: _icons.icon(n, 15, _pal.get("fg2", "#A8BCB5"))
         except Exception:
             _ic = lambda _n: QIcon()
-        self.menu = QMenu()
+        # HintMenu paints each action's `shortcutHint` property right-aligned,
+        # the way the design mock shows the keys. Most hints are display-only:
+        # the keys themselves belong to the global listener, not to this menu.
+        self.menu = HintMenu()
         # Ensure QSS is applied (non-native) so dark/light tokens are readable on all OS
         try:
             self.menu.setStyleSheet(QApplication.instance().styleSheet() if QApplication.instance() else "")
@@ -278,61 +370,83 @@ class Dikte:
             pass
         self.toggle_action = QAction(_ic("mic"), t("Start recording"), self.menu)
         self.toggle_action.triggered.connect(self._toggle)
+        self._hint(self.toggle_action, "Ctrl Space", "Ctrl+Space")
         self.menu.addAction(self.toggle_action)
-
         # Named in _refresh_tray, which is where the chosen provider is known.
         self.ask_action = QAction(_ic("terminal"), "", self.menu)
         self.ask_action.triggered.connect(self._toggle_ask)
+        self._hint(self.ask_action, "Ctrl Alt C")
         self.menu.addAction(self.ask_action)
-
         self.reset_action = QAction(_ic("refresh"), t("Start a new conversation"), self.menu)
         self.reset_action.triggered.connect(self.reset_conversation)
+        self._hint(self.reset_action, "Ctrl N", "Ctrl+N")
         self.menu.addAction(self.reset_action)
-
         self.ask_cancel_action = QAction(_ic("stop"), "", self.menu)
         self.ask_cancel_action.triggered.connect(self.cancel_ask)
         self.ask_cancel_action.setEnabled(False)
+        self._hint(self.ask_cancel_action, "Ctrl Shift S")
         self.menu.addAction(self.ask_cancel_action)
-
         self.cancel_action = QAction(_ic("x"), t("Discard the recording"), self.menu)
         # The inner method, so that a menu click is never mistaken for the KDE
         # shortcut echoing the built-in listener's press.
         self.cancel_action.triggered.connect(self._cancel)
         self.cancel_action.setEnabled(False)
+        self._hint(self.cancel_action, "Esc")
         self.menu.addAction(self.cancel_action)
         self.menu.addSeparator()
-
         self.meeting_action = QAction(_ic("users"), t("Record a meeting"), self.menu)
         self.meeting_action.triggered.connect(self._toggle_meeting)
+        self._hint(self.meeting_action, "Ctrl M", "Ctrl+M")
         self.menu.addAction(self.meeting_action)
-
         self.meeting_cancel_action = QAction(_ic("trash"), t("Discard the meeting"), self.menu)
         self.meeting_cancel_action.triggered.connect(self.cancel_meeting)
         self.meeting_cancel_action.setEnabled(False)
+        self._hint(self.meeting_cancel_action, "Ctrl Shift M")
         self.menu.addAction(self.meeting_cancel_action)
-
-        self.meetings_menu = QMenu(t("Meetings"), self.menu)
+        self.meetings_menu = HintMenu(t("Meetings"), self.menu)
         self.meetings_menu.setIcon(_ic("fileText"))
         self.meetings_menu.aboutToShow.connect(self._refresh_meetings_menu)
         self.menu.addMenu(self.meetings_menu)
         self.menu.addSeparator()
-
         self.settings_action = QAction(_ic("dashboard"), t("Dashboard…"), self.menu)
         self.settings_action.triggered.connect(self.open_dashboard)
+        self._hint(self.settings_action, "Ctrl ;", "Ctrl+;")
         self.menu.addAction(self.settings_action)
-
         self.restart_action = QAction(_ic("restart"), t("Restart"), self.menu)
         self.restart_action.triggered.connect(self.restart)
+        self._hint(self.restart_action, "Ctrl R")
         self.menu.addAction(self.restart_action)
         self.menu.addSeparator()
-
         self.quit_action = QAction(_ic("power"), t("Quit"), self.menu)
         self.quit_action.triggered.connect(self.app.quit)
+        self._hint(self.quit_action, "Alt F4")
         self.menu.addAction(self.quit_action)
-
         self.tray.setContextMenu(self.menu)
         self.tray.setToolTip(t("Dikte: ready"))
         self._set_icon("audio-input-microphone")
+
+    def _hint(self, action, hint, keys=None):
+        """Show `hint` right-aligned on `action`; bind `keys` only when safe.
+
+        The bound ones (toggle, reset, meeting, settings) mirror behaviour the
+        keys already trigger globally, so the menu firing them can only ever
+        land on the same action the listener would have taken. Everything
+        else stays display-only: its real shortcut lives elsewhere (the
+        global listener, the overlay's Esc) or is app-level (Alt+F4).
+        """
+        action.setProperty("shortcutHint", hint)
+        if keys:
+            from PyQt6.QtGui import QKeySequence
+            action.setShortcut(QKeySequence(keys))
+
+    def _tray_icon(self, name, color_key):
+        """A themed glyph in an explicit palette color, or a null icon."""
+        try:
+            from ui import icons as _icons
+            from ui import theme as _theme
+            return _icons.icon(name, 15, _theme.palette().get(color_key, "#A8BCB5"))
+        except Exception:
+            return QIcon()
 
     def _refresh_meetings_menu(self):
         """The newest meetings, ready to open, whenever the submenu shows."""
@@ -348,10 +462,15 @@ class Dikte:
         for row in rows:
             title = (row.get("title") or "").strip() \
                 or meeting.fallback_title(row.get("ts", ""))
-            action = self.meetings_menu.addAction(title)
+            action = self.meetings_menu.addAction(elide_title(title, 200))
+            action.setProperty("shortcutHint", meeting_meta(row.get("ts", "")))
             action.triggered.connect(
                 lambda _=False, base=row.get("base", ""):
                 self._open_meeting(base))
+        self.meetings_menu.addSeparator()
+        open_all = self.meetings_menu.addAction(t("All meetings…"))
+        open_all.setProperty("shortcutHint", "Ctrl O")
+        open_all.triggered.connect(lambda: self.open_dashboard("minutes"))
 
     def _open_meeting(self, base):
         doc, _wav = cfg.meeting_paths(base)
@@ -455,6 +574,18 @@ class Dikte:
             or (self.ask_state == IDLE and not self.recording)
         )
         self.reset_action.setEnabled(self.ask_state != BUSY)
+        # State accents, as the mock shows them: a red discard while a
+        # recording stands to be lost, a red stop while the agent runs,
+        # and a green record dot while capturing. Idle restores the
+        # neutral tint.
+        self.cancel_action.setIcon(
+            self._tray_icon("x", "err" if self.recording else "fg2"))
+        self.ask_cancel_action.setIcon(
+            self._tray_icon("stop", "err" if self.ask_state == BUSY else "fg2"))
+        self.toggle_action.setIcon(
+            self._tray_icon("mic", "ok" if self.capturing else "fg2"))
+        self.meeting_action.setIcon(
+            self._tray_icon("users", "err" if self.meeting_state == M_RECORDING else "fg2"))
         self.cancel_action.setEnabled(self.recording)
         # A command to the agent is the one job long enough to be worth calling
         # off once it is already running.
@@ -1767,6 +1898,13 @@ def run_app(args):
     app.setDesktopFileName("dikte")
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon())
+    # Colour theme from settings — full background tint, no black/white chrome.
+    try:
+        from ui import theme as _theme
+        conf0 = cfg.Config()
+        _theme.apply(conf0.get("ui_theme", "blue") or "blue")
+    except Exception:
+        pass
     # Before Dikte is built, because building it is what may start a server, and
     # a signal arriving in the middle of that would otherwise take the default
     # action and leave the server behind. A signal this early lands in the

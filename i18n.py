@@ -176,6 +176,7 @@ TR = {
     "Total dictations": "Toplam dikte",
     "Last 7 days": "Son 7 gün",
     "Meetings": "Toplantılar",
+    "All meetings…": "Tüm toplantıları aç...",
     "Meeting time": "Toplantı süresi",
     "Daily dictations": "Günlük dikteler",
     "Last 14 days": "Son 14 gün",
@@ -205,6 +206,16 @@ TR = {
     "Interface language": "Arayüz dili",
     "Automatic (system)": "Otomatik (sistem)",
     "Turkish": "Türkçe",
+    "Theme": "Tema",
+    "Application colour": "Uygulama rengi",
+    "The whole application follows the colour you pick — buttons, highlights "
+    "and the recording indicator.":
+        "Seçtiğin renk tüm uygulamaya uygulanır — düğmeler, vurgular ve kayıt "
+    "göstergesi dahil.",
+    "Blue": "Mavi", "Green": "Yeşil", "Violet": "Mor", "Orange": "Turuncu",
+    "Pink": "Pembe", "Teal": "Turkuaz",
+    "Terracotta (dark)": "Terracotta (koyu)",
+    "Light": "Açık",
     "English": "İngilizce",
     "Restart Dikte for the language change to reach every window.":
         "Dil değişikliğinin her pencereye işlemesi için Dikte'yi yeniden başlat.",
@@ -847,6 +858,7 @@ TR = {
     "Light theme": "Açık tema",
     "Dark theme": "Koyu tema",
     "Switch to light theme": "Açık temaya geç",
+    "Next theme": "Sonraki tema",
     "Switch to dark theme": "Koyu temaya geç",
 
     # --- AI ------------------------------------------------------------

@@ -66,7 +66,6 @@ def _badge_pixmap(size=34):
 
 
 class AppShell(QWidget):
-    theme_toggled = pyqtSignal()
     compactToggled = pyqtSignal(bool)
 
     def __init__(self, whisper_label="Whisper", parent=None):
@@ -163,11 +162,6 @@ class AppShell(QWidget):
         fl.addWidget(engine)
         self._foot_widget = foot
 
-        self.theme_button = QPushButton()
-        self.theme_button.setProperty("variant", "ghost")
-        self.theme_button.setFixedHeight(30)
-        self.theme_button.clicked.connect(self.theme_toggled.emit)
-        fl.addWidget(self.theme_button)
         col.addWidget(foot)
         return sidebar
 
@@ -294,21 +288,17 @@ class AppShell(QWidget):
     # ---- theme -----------------------------------------------------------
 
     def _apply_theme_text(self):
-        c = theme.palette(self._theme_name)
-        icon_name = "moon" if self._theme_name == "dark" else "sun"
-        self.theme_button.setIcon(_icons.icon(icon_name, 14, c["fg2"]))
-        self.theme_button.setToolTip(
-            _t("Switch to light theme") if self._theme_name == "dark" else _t("Switch to dark theme"))
-        if getattr(self, "_compact", False):
-            self.theme_button.setText("")
-        else:
-            self.theme_button.setText(
-                "  " + (_t("Light theme") if self._theme_name == "dark" else _t("Dark theme")))
+        # Theme is chosen only in Settings → General; sidebar has no toggle.
         self._apply_collapse_icon()
 
     def set_theme(self, name):
-        self._theme_name = name if name in ("dark", "light") else "dark"
+        try:
+            from ui import theme as _theme
+            self._theme_name = name if name in _theme.THEMES else _theme.normalize(name)
+        except Exception:
+            self._theme_name = name if name else "blue"
         self._apply_theme_text()
+
 
     def _apply_collapse_icon(self):
         try:

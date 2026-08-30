@@ -418,7 +418,7 @@ da senin soracağın soruya verilecek bir yanıt yok.
   ve varsayımını bir yan cümlede söyle"""
 
 DEFAULTS = {
-    "ui_theme": "dark",             # dark | light — persisted, toggled in Settings
+    "ui_theme": "blue",             # one of blue|green|violet|orange|pink|teal
     "ui_language": "auto",          # auto | tr | en
     # User-created OpenAI-compatible gateways; the built-ins stay in their
     # flat <name>_api_key / <name>_base_url settings. See providers.py.
