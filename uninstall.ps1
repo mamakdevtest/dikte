@@ -42,8 +42,12 @@ try { $srcDir = (Get-ItemProperty $unregKey).InstallLocation } catch {}
 # launchers out from under it. Non-fatal if it is not running.
 function Probe-Python([string]$cand, [string[]]$sel) {
     try {
-        $null = & $cand @sel -c "pass" 2>$null
-        return ($LASTEXITCODE -eq 0)
+        $out = & $cand @sel -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $ver = ($out | Select-Object -Last 1).Trim()
+        if (-not $ver -or $ver -notmatch '^\d+\.\d+') { return $false }
+        $p = $ver.Split('.'); if ([int]$p[0] -lt 3 -or ([int]$p[0] -eq 3 -and [int]$p[1] -lt 11)) { return $false }
+        return $true
     } catch { return $false }
 }
 
@@ -55,6 +59,12 @@ foreach ($cand in @("python","python3")) {
 # The py launcher wants an explicit version selector, which must reach it as a
 # separate argument: "& 'py -3'" looks for one program literally named "py -3".
 if (-not $python -and (Probe-Python "py" @("-3"))) { $python = "py"; $pyArgs = @("-3") }
+# Fallback: direct file scan like install.ps1
+if (-not $python) {
+    $cands = @()
+    $cands += Get-ChildItem -Path "$env:LOCALAPPDATA\Programs\Python\Python*\python.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+    foreach ($p in $cands) { if (Probe-Python $p @()) { $python = $p; $pyArgs=@(); break } }
+}
 
 if ($python) {
     if (Get-Process | Where-Object { $_.ProcessName -match "^python(w)?$" } | Select-Object -First 1) {

@@ -23,10 +23,16 @@ class WasapiError(Exception):
 
 
 _WIN = sys.platform == "win32"
-
+_ole32 = None
+# Corporate hardening: ole32 may be blocked by AppLocker or missing on N/KN editions.
+# Import must never crash; WASAPI will simply report as unavailable.
 if _WIN:
-    _ole32 = ctypes.WinDLL("ole32", use_last_error=True)
+    try:
+        _ole32 = ctypes.WinDLL("ole32", use_last_error=True)
+    except (OSError, AttributeError):
+        _ole32 = None
 
+if _WIN and _ole32 is not None:
     class _GUID(ctypes.Structure):
         _fields_ = [("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
                     ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8)]
@@ -382,7 +388,7 @@ _avail_lock = threading.Lock()
 def available():
     """Can this process talk to WASAPI at all? Cached per process."""
     global _avail_cache
-    if not _WIN:
+    if not _WIN or _ole32 is None:
         return False
     with _avail_lock:
         if _avail_cache is not None:

@@ -15,6 +15,25 @@ import socket
 import sys
 import threading
 
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
+def _win32_message_box(title, text):
+    """Show a native MessageBox on Windows when no console is visible (pythonw)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, str(text), str(title), 0x00000010)
+    except Exception:
+        pass
+
 # A Wayland client cannot place a window in a screen corner, so the indicator
 # is drawn through XWayland. Not applicable on Windows/macOS.
 if sys.platform not in ("win32", "darwin"):
@@ -30,10 +49,23 @@ if sys.platform == "darwin":
                           os.environ.get("PATH", "")) if part
     )
 
-from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QSocketNotifier, QUrl  # noqa: E402
-from PyQt6.QtGui import QAction, QIcon, QDesktopServices  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
-from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
+try:
+    from PyQt6.QtCore import Qt, QTimer, QElapsedTimer, QSocketNotifier, QUrl  # noqa: E402
+    from PyQt6.QtGui import QAction, QIcon, QDesktopServices  # noqa: E402
+    from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
+    from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
+except (ImportError, OSError) as _qt_err:
+    _msg = (
+        f"PyQt6 gerekli ama bulunamadi:\n{_qt_err}\n\n"
+        "Cozum:\n"
+        "  python -m pip install PyQt6\n\n"
+        "Sonra tekrar deneyin:  python dikte.py --gui\n"
+        "Detay: https://github.com/anomalyco/opencode/issues"
+    )
+    print(f"dikte: PyQt6 missing: {_qt_err}", file=sys.stderr)
+    print("dikte: install with: python -m pip install PyQt6", file=sys.stderr)
+    _win32_message_box("Dikte - PyQt6 eksik", _msg)
+    sys.exit(1)
 
 import assistant  # noqa: E402
 import audio  # noqa: E402

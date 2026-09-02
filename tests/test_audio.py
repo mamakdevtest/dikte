@@ -615,7 +615,7 @@ class ConcurrentCapture(unittest.TestCase):
     """
 
     def test_linux_pulse_pipewire_is_shared(self):
-        with mock.patch.object(sys, "platform", "linux"):
+        with mock.patch.object(sys, "platform", "linux"), only_these_tools("parec"):
             info = audio.concurrent_capture_info()
             self.assertTrue(info["shared"])
             self.assertFalse(info["needs_fanout"])
@@ -623,7 +623,7 @@ class ConcurrentCapture(unittest.TestCase):
             self.assertTrue(audio.can_concurrent_capture())
 
     def test_macos_avfoundation_is_shared(self):
-        with mock.patch.object(sys, "platform", "darwin"):
+        with mock.patch.object(sys, "platform", "darwin"), only_these_tools("ffmpeg"):
             info = audio.concurrent_capture_info()
             self.assertTrue(info["shared"])
             self.assertFalse(info["needs_fanout"])
@@ -654,16 +654,25 @@ class ConcurrentCapture(unittest.TestCase):
                  mock.patch.object(sys, "platform", plat):
                 with mock.patch.object(audio.wasapi, "available",
                                         return_value=True):
-                    info = audio.concurrent_capture_info()
-                    self.assertIsInstance(info["reason"], str)
-                    self.assertTrue(info["reason"])
-                    self.assertIn("platform", info)
-                    self.assertEqual(info["platform"], plat)
+                    # linux/darwin branches need a tool to report shared;
+                    # without it they still carry a reason but claim exclusive.
+                    # Wrap with a fake tool so the reason path matches shared.
+                    if plat in ("linux", "darwin"):
+                        ctx = only_these_tools("ffmpeg" if plat == "darwin" else "parec")
+                    else:
+                        ctx = contextlib.nullcontext()
+                    with ctx:
+                        info = audio.concurrent_capture_info()
+                        self.assertIsInstance(info["reason"], str)
+                        self.assertTrue(info["reason"])
+                        self.assertIn("platform", info)
+                        self.assertEqual(info["platform"], plat)
 
     def test_no_fanout_needed_on_any_current_platform(self):
         """Option B (single-hub fan-out) is unnecessary on supported OSes."""
         for plat in ("linux", "darwin"):
-            with mock.patch.object(sys, "platform", plat):
+            with mock.patch.object(sys, "platform", plat), \
+                 only_these_tools("ffmpeg" if plat == "darwin" else "parec"):
                 self.assertFalse(audio.concurrent_capture_info()["needs_fanout"])
         with mock.patch.object(sys, "platform", "win32"), \
              mock.patch.object(audio.wasapi, "available", return_value=True):

@@ -461,11 +461,19 @@ class MeetingSettings(DikteTest):
         self.assertEqual(conf.speaker_names(), ("Yusuf", "Ayşe"))
 
     def test_the_meeting_prompt_lists_who_was_there(self):
-        conf = self.config(meeting_self_name="Yusuf", meeting_other_name="Ayşe")
+        conf = self.config(meeting_style="executive", meeting_self_name="Yusuf", meeting_other_name="Ayşe")
         self.assertIn("Yusuf", conf.meeting_prompt())
+        # Auto style returns the style-picker prompt, not the minutes template;
+        # participants are only appended for concrete styles.
+        auto_conf = self.config(meeting_style="auto", meeting_self_name="Yusuf")
+        self.assertNotIn("Yusuf", auto_conf.meeting_prompt())
 
     def test_the_meeting_prompt_with_nobody_named(self):
-        self.assertEqual(cfg.Config().meeting_prompt(), cfg.MEETING_PROMPT_EN)
+        # default_meeting_prompt is the legacy single template; meeting_prompt
+        # with a concrete style uses that style's template.
+        self.assertEqual(cfg.default_meeting_prompt(), cfg.MEETING_PROMPT_EN)
+        conf = self.config(meeting_style="executive")
+        self.assertEqual(conf.meeting_prompt(), cfg.meeting_style_template("executive"))
 
 
 class History(DikteTest):

@@ -21,7 +21,23 @@ import signal
 import sys
 import time
 
-from PyQt6.QtCore import QCoreApplication, QTimer
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+try:
+    from PyQt6.QtCore import QCoreApplication, QTimer
+except (ImportError, OSError) as _e:
+    # Friendly message for Windows installs where PyQt6 was not installed yet
+    # or DLL load failed (missing VC++ Redistributable).
+    print(f"dikte: PyQt6 is not installed or failed to load ({_e}). Install it with:", file=sys.stderr)
+    print("  python -m pip install PyQt6", file=sys.stderr)
+    print("  If DLL load failed, install VC++ Redistributable: https://aka.ms/vc14", file=sys.stderr)
+    raise
 
 import api
 import assistant
@@ -51,28 +67,48 @@ _app = None
 
 # --- talking to the terminal ----------------------------------------------
 
+def _safe_print(text, file=None, flush=False):
+    """Print without crashing on Windows cp1254 / legacy consoles."""
+    try:
+        print(text, file=file, flush=flush)
+    except UnicodeEncodeError:
+        # Fallback: replace unencodable chars; avoids hard crash on ✓/✗ etc.
+        enc = getattr(file or sys.stdout, "encoding", None) or "utf-8"
+        try:
+            data = (text + "\n").encode(enc, errors="replace").decode(enc, errors="replace")
+            (file or sys.stdout).write(data)
+            if flush:
+                (file or sys.stdout).flush()
+        except Exception:
+            try:
+                print(text.encode("utf-8", errors="replace").decode("utf-8", errors="replace"),
+                      file=file, flush=flush)
+            except Exception:
+                pass
+
+
 def out(opts, payload, text=""):
     """The answer: one JSON object, or the plain thing a person wanted."""
     if opts.json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        _safe_print(json.dumps(payload, ensure_ascii=False, indent=2))
     elif text:
-        print(text)
+        _safe_print(text)
     return 0
 
 
 def note(opts, message):
     """A progress line. Never stdout: stdout is the answer."""
     if message and not opts.quiet:
-        print(message, file=sys.stderr, flush=True)
+        _safe_print(message, file=sys.stderr, flush=True)
 
 
 def fail(opts, message, code=1, **extra):
     if opts.json:
         payload = {"ok": False, "error": str(message)}
         payload.update(extra)
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        _safe_print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        print(f"dikte: {message}", file=sys.stderr)
+        _safe_print(f"dikte: {message}", file=sys.stderr)
     return code
 
 
