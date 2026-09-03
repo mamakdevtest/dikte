@@ -1077,7 +1077,8 @@ class SettingsWindow(QDialog):
 
         def work():
             try:
-                self._agy_models_loaded.emit(providers.agy_models(), "")
+                self._agy_models_loaded.emit(
+                    providers.agy_models(conf=self.conf, save=True), "")
             except api.ApiError as exc:
                 self._agy_models_loaded.emit([], str(exc))
 

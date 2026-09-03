@@ -15,6 +15,7 @@ from unittest import mock
 import api
 import cleanup
 import ggml
+import providers
 from tests.support import DikteTest, fake_urlopen, sent_json, url_error
 from tests.test_api import FakeServer, chat_reply
 
@@ -165,7 +166,7 @@ class ClaudeCode(DikteTest):
     def setUp(self):
         super().setUp()
         self.conf = self.config(cleanup_provider="claude")
-        self.patch_attr(cleanup.shutil, "which", lambda name: f"/usr/bin/{name}")
+        self.patch_attr(providers.shutil, "which", lambda name: f"/usr/bin/{name}")
 
     def run_cleanup(self, text="uh, book it", **kwargs):
         patcher, calls = fake_run(**kwargs)
@@ -216,7 +217,7 @@ class ClaudeCode(DikteTest):
         self.assertTrue(issubclass(cleanup.CleanupError, api.ApiError))
 
     def test_a_program_that_is_not_installed_says_so_before_running_anything(self):
-        self.patch_attr(cleanup.shutil, "which", lambda name: "")
+        self.patch_attr(providers.shutil, "which", lambda name: "")
         with self.assertRaises(cleanup.CleanupError) as caught:
             self.run_cleanup(stdout="Book it.")
         self.assertIn("claude", str(caught.exception))
@@ -235,7 +236,7 @@ class Codex(DikteTest):
     def setUp(self):
         super().setUp()
         self.conf = self.config(cleanup_provider="codex")
-        self.patch_attr(cleanup.shutil, "which", lambda name: f"/usr/bin/{name}")
+        self.patch_attr(providers.shutil, "which", lambda name: f"/usr/bin/{name}")
 
     def run_cleanup(self, text="uh, book it", **kwargs):
         patcher, calls = fake_run(**kwargs)
@@ -288,7 +289,7 @@ class Antigravity(DikteTest):
     def setUp(self):
         super().setUp()
         self.conf = self.config(cleanup_provider="antigravity")
-        self.patch_attr(cleanup.shutil, "which", lambda name: f"/usr/bin/{name}")
+        self.patch_attr(providers.shutil, "which", lambda name: f"/usr/bin/{name}")
 
     def run_cleanup(self, text="uh, book it", **kwargs):
         patcher, calls = fake_run(**kwargs)
@@ -325,7 +326,7 @@ class Antigravity(DikteTest):
                 self.assertNotIn("--effort", cmd)
 
     def test_a_program_that_is_not_installed_says_so(self):
-        self.patch_attr(cleanup.shutil, "which", lambda name: "")
+        self.patch_attr(providers.shutil, "which", lambda name: "")
         with self.assertRaises(cleanup.CleanupError) as caught:
             self.run_cleanup(stdout="Book it.")
         self.assertIn("agy", str(caught.exception))

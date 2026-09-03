@@ -27,7 +27,6 @@ while they work.
 
 import json
 import os
-import shutil
 import subprocess
 import threading
 import time
@@ -110,6 +109,17 @@ def executable(name):
     """The CLI a provider runs, or "" when it needs none."""
     return {"claude": "claude", "codex": "codex",
             "antigravity": "agy"}.get(name, "")
+
+
+def _resolved(name, conf):
+    """What cmd[0] should be: the PATH name, or the off-PATH install folder.
+
+    resolve_binary answers the bare name on PATH, so a normal machine runs
+    exactly what it always ran; the Windows fallback answers an absolute
+    path, which is the only thing that runs there.
+    """
+    return (providers.resolve_binary(executable(name), conf)
+            or executable(name))
 
 
 def display_name(conf):
@@ -267,7 +277,7 @@ def ask(prompt, conf, on_stage=None, should_stop=None):
         return _ask_plain_http(name, prompt, conf, on_stage)
 
     binary = executable(name)
-    if not shutil.which(binary):
+    if not providers.resolve_binary(binary, conf):
         raise AssistantError(t(
             "{binary} not found. Install it, or pick another provider under "
             "Settings → Agent.", binary=binary,
@@ -300,7 +310,7 @@ class _SessionGone(Exception):
 
 def _ask_claude(prompt, conf, session, on_stage, should_stop):
     cmd = [
-        "claude", "-p", prompt,
+        _resolved("claude", conf), "-p", prompt,
         "--output-format", "stream-json", "--verbose",
         "--model", conf["assistant_model"],
         "--permission-mode", conf["assistant_permission_mode"],
@@ -375,7 +385,8 @@ def _ask_codex(prompt, conf, session, on_stage, should_stop):
     if effort:
         settings += ["-c", f'model_reasoning_effort="{effort}"']
 
-    cmd = (["codex", "exec", "resume", session] if session else ["codex", "exec"])
+    cmd = ([_resolved("codex", conf), "exec", "resume", session] if session
+           else [_resolved("codex", conf), "exec"])
     cmd += settings + [body]
 
     found = {"answer": "", "warning": "", "session": "", "failure": ""}
@@ -427,7 +438,7 @@ def _ask_antigravity(prompt, conf, on_stage):
         on_stage(t("Thinking…"))
     body = f"{conf.assistant_prompt()}\n\n---\n\n{prompt}"
     cmd = [
-        "agy", "--print", body,
+        _resolved("antigravity", conf), "--print", body,
         "--output-format", "text",
     ]
     # An empty setting means whatever Antigravity itself is set to, the same

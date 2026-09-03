@@ -16,7 +16,6 @@ the agent can reach while it reads one, the better.
 """
 
 import os
-import shutil
 import subprocess
 import tempfile
 
@@ -200,7 +199,7 @@ def _claude(text, conf, system_prompt, timeout):
     if effort:
         cmd += ["--effort", effort]
 
-    answer = _output(cmd, timeout, "Claude")
+    answer = _output(cmd, conf, timeout, "Claude")
     if not answer:
         raise CleanupError(t("{service} answered with nothing.", service="Claude"))
     return answer
@@ -232,7 +231,7 @@ def _codex(text, conf, system_prompt, timeout):
     os.close(handle)
     cmd += ["-o", last_message, body]
     try:
-        _output(cmd, timeout, "Codex")
+        _output(cmd, conf, timeout, "Codex")
         answer = _read(last_message)
     finally:
         try:
@@ -269,7 +268,7 @@ def _agy(text, conf, system_prompt, timeout):
         "--output-format", "text",
     ]
 
-    answer = _output(cmd, timeout, "Antigravity")
+    answer = _output(cmd, conf, timeout, "Antigravity")
     if not answer:
         raise CleanupError(t("{service} answered with nothing.",
                              service="Antigravity"))
@@ -278,7 +277,7 @@ def _agy(text, conf, system_prompt, timeout):
 
 # --- running a CLI --------------------------------------------------------
 
-def _output(cmd, timeout, service):
+def _output(cmd, conf, timeout, service):
     """Run cmd to the end and return what it printed.
 
     It runs in the home directory rather than wherever the agent is pointed: a
@@ -286,11 +285,13 @@ def _output(cmd, timeout, service):
     none of them are about this transcript.
     """
     binary = cmd[0]
-    if not shutil.which(binary):
+    resolved = providers.resolve_binary(binary, conf)
+    if not resolved:
         raise CleanupError(t(
             "{binary} not found. Install it, or pick another cleanup provider "
             "under Settings → API and models.", binary=binary,
         ))
+    cmd = [resolved, *cmd[1:]]
     try:
         done = subprocess.run(
             cmd, cwd=os.path.expanduser("~"), stdin=subprocess.DEVNULL,

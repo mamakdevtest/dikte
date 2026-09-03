@@ -783,6 +783,9 @@ DEFAULTS = {
     # User-created OpenAI-compatible gateways; the built-ins stay in their
     # flat <name>_api_key / <name>_base_url settings. See providers.py.
     "providers": [],
+    # CLI binaries a drive search once found, {name: absolute path}, rechecked
+    # on every use; never edited by hand, written by providers.locate_binary.
+    "cli_binary_cache": {},
     "openai_api_key": "",
     "openai_base_url": "https://api.openai.com/v1",
     "groq_api_key": "",

@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import uuid
 
 import api
@@ -201,9 +202,191 @@ def cli_providers():
 
 
 def executable(pid):
-    """The installed path of a CLI provider's executable, or None."""
+    """What to run for a CLI provider: the PATH name, or its install folder.
+
+    None when there is nothing to run.
+    """
     name = _EXECUTABLES.get(pid)
-    return shutil.which(name) if name else None
+    return resolve_binary(name) if name else None
+
+
+# Install locations beyond PATH, per binary name: (env var, path parts).
+# The Antigravity installer drops agy.exe under %LOCALAPPDATA% and the PATH
+# entry is the documented #1 Windows install issue, so a present-but-unlisted
+# agy must still run.
+_WINDOWS_FALLBACKS = {
+    "agy": (("LOCALAPPDATA", ("agy", "bin", "agy.exe")),
+            ("LOCALAPPDATA", ("Antigravity", "agy.exe"))),
+}
+
+
+# Walk hits remembered for this process, {name: absolute path}. Every read
+# rechecks the file is still there, so a stale entry just falls through.
+_FOUND = {}
+
+
+def _env_override(name):
+    """An explicit binary path out of the environment, agy-py style."""
+    if not name:
+        return None
+    candidate = os.environ.get(f"{name.upper()}_BINARY", "").strip()
+    if candidate and os.path.isfile(candidate):
+        return candidate
+    return None
+
+
+def _app_paths_lookup(name):
+    """The App Paths registration installers leave, HKCU then HKLM."""
+    if os.name != "nt" or not name:
+        return None
+    try:
+        import winreg
+    except ImportError:
+        return None
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(
+                    root,
+                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"
+                    fr"\{name}.exe") as key:
+                path, _kind = winreg.QueryValueEx(key, "")
+        except OSError:
+            continue
+        if path and os.path.isfile(str(path)):
+            return str(path)
+    return None
+
+
+def resolve_binary(name, conf=None):
+    """The name or path to run for a CLI binary.
+
+    PATH first by its bare name, exactly as before; on Windows past that,
+    the environment override, the App Paths registration, the vendor's own
+    install folders and the remembered drive-search hit. None when there is
+    nothing to run. Everything here is a couple of stat calls, never a walk.
+    """
+    if not name:
+        return None
+    override = _env_override(name)
+    if override:
+        return override
+    if shutil.which(name):
+        return name
+    hit = _FOUND.get(name)
+    if hit:
+        if os.path.isfile(hit):
+            return hit
+        _FOUND.pop(name, None)
+    if os.name == "nt":
+        found = _app_paths_lookup(name)
+        if found:
+            return found
+        for env_var, parts in _WINDOWS_FALLBACKS.get(name, ()):
+            root = os.environ.get(env_var, "")
+            candidate = os.path.join(root, *parts) if root else ""
+            if candidate and os.path.isfile(candidate):
+                return candidate
+    if conf is not None:
+        try:
+            cached = (conf.get("cli_binary_cache") or {}).get(name)
+        except (AttributeError, TypeError, ValueError):
+            cached = None
+        if cached and os.path.isfile(cached):
+            return cached
+    return None
+
+
+# Folder names a drive walk never enters.
+_DEEP_SKIP = frozenset({
+    "windows", "windowsapps", "$recycle.bin", "system volume information",
+    "perflogs", "recovery", "config.msi", "$windows.~bt", "$windows.~ws",
+})
+
+
+def _walk(target, roots, max_depth, deadline):
+    stack = [(root, 0) for root in roots]
+    while stack:
+        if time.monotonic() > deadline:
+            return None
+        path, depth = stack.pop()
+        try:
+            with os.scandir(path) as entries:
+                listing = sorted(entries, key=lambda e: e.name.lower())
+        except OSError:
+            continue
+        subdirs = []
+        for entry in listing:
+            try:
+                if entry.is_symlink():
+                    continue
+                if entry.is_file(follow_symlinks=False):
+                    if entry.name.lower() == target:
+                        return os.path.join(path, entry.name)
+                elif entry.is_dir(follow_symlinks=False):
+                    if entry.name.lower() in _DEEP_SKIP:
+                        continue
+                    if max_depth is None or depth < max_depth:
+                        subdirs.append((os.path.join(path, entry.name),
+                                        depth + 1))
+            except OSError:
+                continue
+        stack.extend(reversed(subdirs))
+    return None
+
+
+def deep_search_binary(name, timeout=15, roots=None):
+    """Walk the drive for name.exe within the time budget, Windows only.
+
+    Shallow installs are found first: depth 3 and under is swept before the
+    deeper pass, on the same deadline. `roots` overrides the drive (tests,
+    portable layouts); without it there is nothing to walk off Windows.
+    """
+    if not name:
+        return None
+    if roots is None:
+        if os.name != "nt":
+            return None
+        drive = os.environ.get("SystemDrive", "C:") or "C:"
+        roots = [drive if drive.endswith(os.sep) else drive + os.sep]
+    target = (name + ".exe").lower()
+    try:
+        deadline = time.monotonic() + float(timeout)
+    except (TypeError, ValueError):
+        deadline = time.monotonic() + 15
+    for max_depth in (3, None):
+        hit = _walk(target, [str(root) for root in roots], max_depth,
+                    deadline)
+        if hit or time.monotonic() > deadline:
+            return hit
+    return None
+
+
+def locate_binary(name, conf=None, timeout=15, roots=None, save=False):
+    """Fast resolve, then a bounded drive walk; a walk hit is remembered.
+
+    The hit lands in this process and, with a conf, in cli_binary_cache;
+    `save` persists it (live settings only — a _ConfView copy must never be
+    saved over the real file). Runs where a walk would stall — dictation,
+    agent ask — stay on resolve_binary; the settings Fetch/Test threads call
+    here.
+    """
+    found = resolve_binary(name, conf)
+    if found:
+        return found
+    hit = deep_search_binary(name, timeout=timeout, roots=roots)
+    if hit:
+        _FOUND[name] = hit
+        if conf is not None:
+            try:
+                cache = dict(conf.get("cli_binary_cache") or {})
+                if cache.get(name) != hit:
+                    cache[name] = hit
+                    conf["cli_binary_cache"] = cache
+                    if save:
+                        conf.save()
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass
+    return hit
 
 
 def executable_version(pid):
@@ -581,13 +764,17 @@ def _codex_current_model(text):
     return match.group(1).strip() if match else ""
 
 
-def agy_models(timeout=20):
+def agy_models(timeout=20, conf=None, save=False, roots=None):
     """The model slugs `agy models` prints, one per line.
 
     Antigravity is the one CLI that lists its own catalog; the call is a
-    local account query, no prompt is run.
+    local account query, no prompt is run. With a conf, a missing binary is
+    searched for on the drive first (settings Fetch/Test threads only).
     """
     path = executable("antigravity")
+    if not path and conf is not None:
+        path = locate_binary("agy", conf, timeout=timeout, roots=roots,
+                             save=save)
     if not path:
         raise api.ApiError(t("{service} is not installed.",
                              service="Antigravity"))
@@ -671,7 +858,7 @@ def test_provider(conf, pid, timeout=30):
                     # first is current if set, else first fixed
                     base += f" ({models[0]})"
             elif who.id == "antigravity":
-                models = agy_models(timeout=timeout)
+                models = agy_models(timeout=timeout, conf=conf)
                 if models:
                     base += f" ({models[0]})"
         except Exception:
