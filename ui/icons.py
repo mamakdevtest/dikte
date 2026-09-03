@@ -86,27 +86,48 @@ def svg(name, color=None):
     """The full SVG document for an icon, with the stroke coloured in."""
     if color is None:
         color = _default_color()
-    return _SVG_OPEN.format(color=color) + ICONS.get(name, "") + "</svg>"
+    inner = ICONS.get(name, "").replace("currentColor", color)
+    return _SVG_OPEN.format(color=color) + inner + "</svg>"
 
 
 def pixmap(name, size=17, color=None):
-    """Render an icon to a QPixmap of the given pixel size."""
+    """Render an icon to a QPixmap of the given pixel size.
+
+    Safe offscreen: never raises, returns a null pixmap when Qt cannot
+    render (no application, invalid SVG).
+    """
     if color is None:
         color = _default_color()
-    renderer = QSvgRenderer(QByteArray(svg(name, color).encode("utf-8")))
-    if not renderer.isValid():
-        return QPixmap()
-    pm = QPixmap(int(size), int(size))
-    pm.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pm)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return pm
+    try:
+        renderer = QSvgRenderer(QByteArray(svg(name, color).encode("utf-8")))
+        if not renderer.isValid():
+            return QPixmap()
+        pm = QPixmap(int(size), int(size))
+        pm.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pm)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            renderer.render(painter, QRectF(0, 0, size, size))
+        finally:
+            painter.end()
+        return pm
+    except Exception:
+        try:
+            return QPixmap()
+        except Exception:
+            # As a last resort (no QApplication), return an uninitialised
+            # pixmap without constructing pixels.
+            return QPixmap.__new__(QPixmap)
 
 
 def icon(name, size=17, color=None):
-    """A QIcon for a named glyph. `color` is a hex string; None uses theme fg."""
+    """A QIcon for a named glyph. `color` is a hex string; None uses theme fg.
+
+    Safe offscreen: never raises, returns a null QIcon when rendering fails.
+    """
     if color is None:
         color = _default_color()
-    return QIcon(pixmap(name, size, color))
+    try:
+        return QIcon(pixmap(name, size, color))
+    except Exception:
+        return QIcon()

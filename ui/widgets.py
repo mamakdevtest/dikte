@@ -9,7 +9,7 @@ one exception: it paints its own animated knob, since Qt QSS has no ``::after``.
 from PyQt6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
-    QBoxLayout, QCheckBox, QFrame, QGraphicsOpacityEffect, QGridLayout,
+    QBoxLayout, QCheckBox, QComboBox, QFrame, QGraphicsOpacityEffect, QGridLayout,
     QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
@@ -138,17 +138,13 @@ class EmptyState(QWidget):
         t = QLabel(title)
         t.setAlignment(Qt.AlignmentFlag.AlignCenter)
         t.setObjectName("emptyTitle")
-        t.setStyleSheet("font-weight: 600; font-size: 14px;")
         self._title = t
         layout.addWidget(t)
         d = QLabel(desc)
         d.setWordWrap(True)
         d.setAlignment(Qt.AlignmentFlag.AlignCenter)
         d.setObjectName("emptyDesc")
-        d.setProperty("emptyDesc", True)
         self._desc = d
-        # Use QSS property rather than interpolated palette string, refreshed on show.
-        d.setStyleSheet("font-size: 12.5px;")
         layout.addWidget(d)
         layout.addStretch(1)
         self._refresh_palette()
@@ -158,10 +154,12 @@ class EmptyState(QWidget):
         if hasattr(self, "_icon") and self._icon is not None:
             self._icon.setPixmap(_icons.pixmap(self._icon_name, 19, c["fg3"]))
         if hasattr(self, "_desc") and self._desc is not None:
-            # Update via dynamic property so theme changes are reflected; keep font-size.
-            self._desc.setStyleSheet(f"color: {c['fg3']}; font-size: 12.5px;")
+            # Colour comes from QSS QLabel#emptyDesc so theme.apply() repaints.
             self._desc.style().unpolish(self._desc)
             self._desc.style().polish(self._desc)
+        if hasattr(self, "_title") and self._title is not None:
+            self._title.style().unpolish(self._title)
+            self._title.style().polish(self._title)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -412,6 +410,68 @@ def gate(toggle, rows):
     return toggle
 
 
+# ---- model row ----------------------------------------------------------
+
+class ModelRow(QWidget):
+    """Editable model combo + Fetch button + status dot in one row.
+
+    Shared helper for the provider/model rows (transcribe, cleanup, meeting,
+    assistant): the combo stays editable so a typed id survives a fetch, the
+    Fetch button triggers ``on_fetch``, and the dot reflects fetch status.
+    Colours come from QSS (``variant``/``dot`` props) so theme.apply() repaints.
+    """
+
+    def __init__(self, items=(), fetch_text=None, parent=None, on_fetch=None):
+        super().__init__(parent)
+        self.combo = QComboBox(self)
+        self.combo.setEditable(True)
+        self.combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        if items:
+            self.combo.addItems(list(items))
+        self.fetch = btn(fetch_text or "Fetch", variant="secondary", size="sm",
+                         parent=self)
+        if on_fetch is not None:
+            self.fetch.clicked.connect(on_fetch)
+        # Status dot; ``status`` is an alias kept for callers.
+        self.dot = Dot("idle", self)
+        self.status = self.dot
+        self.button = self.fetch
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self.combo, 1)
+        layout.addWidget(self.fetch, 0)
+        layout.addWidget(self.dot, 0, Qt.AlignmentFlag.AlignVCenter)
+
+    def set_status(self, kind="idle"):
+        """Update the status dot (ok/sage/warn/err/info/idle/rec)."""
+        self.dot.setProperty("dot", kind)
+        self.dot.style().unpolish(self.dot)
+        self.dot.style().polish(self.dot)
+        return self.dot
+
+    def set_models(self, models, keep_current=True):
+        """Replace combo items, keeping the typed value when asked."""
+        current = self.combo.currentText() if keep_current else ""
+        self.combo.clear()
+        self.combo.addItems(list(models))
+        if keep_current and current:
+            self.combo.setCurrentText(current)
+        return self.combo
+
+    def currentText(self):
+        return self.combo.currentText()
+
+    def setCurrentText(self, text):
+        self.combo.setCurrentText(text)
+
+
+def model_row(items=(), fetch_text=None, parent=None, on_fetch=None):
+    """Build a ModelRow and return (row, combo, fetch_button)."""
+    row = ModelRow(items, fetch_text, parent, on_fetch)
+    return row, row.combo, row.fetch
+
+
 # ---- segmented control --------------------------------------------------
 
 class SegmentedControl(QWidget):
@@ -488,7 +548,6 @@ class CornerPicker(QWidget):
         self._apply_active()
 
     def _apply_active(self):
-        c = theme.palette()
         for name, btn in self._buttons.items():
             active = name == self._corner
             btn.setProperty("active", active)
@@ -496,13 +555,9 @@ class CornerPicker(QWidget):
             btn.style().polish(btn)
             pill = getattr(btn, "_pill", None)
             if pill is not None:
-                if active:
-                    pill.setStyleSheet(f"background: {c['sageDark']}; border-radius: 3px;")
-                    pill.setGraphicsEffect(None)
-                else:
-                    pill.setStyleSheet(f"background: {c['borderStrong']}; border-radius: 3px;")
-                    # Use opacity via stylesheet: Qt doesn't support opacity, keep 0.55 via alpha blend
-                    # Already handled via color; keep visible.
+                pill.setProperty("miniPill", "active" if active else "idle")
+                pill.style().unpolish(pill)
+                pill.style().polish(pill)
 
     def corner(self):
         return self._corner
@@ -540,7 +595,7 @@ class MiniScreen(QFrame):
         row.setSpacing(5)
         dot = QLabel(self._ov)
         dot.setFixedSize(4, 4)
-        dot.setStyleSheet(f"background: {theme.palette()['terra']}; border-radius: 2px;")
+        dot.setProperty("ov", "dot")
         row.addWidget(dot)
         bars = QWidget(self._ov)
         bars_layout = QHBoxLayout(bars)
@@ -550,12 +605,12 @@ class MiniScreen(QFrame):
         for h in (3, 6, 4, 7, 5):
             bar = QLabel(bars)
             bar.setFixedSize(2, h)
-            bar.setStyleSheet(f"background: {theme.palette()['terra']}; border-radius: 1px;")
+            bar.setProperty("ov", "bar")
             bars_layout.addWidget(bar, 0, Qt.AlignmentFlag.AlignVCenter)
         bars.setFixedHeight(8)
         row.addWidget(bars)
         timer = QLabel("0:12", self._ov)
-        timer.setStyleSheet(f"font-size: 8px; color: {theme.palette()['fg']}; font-family: 'JetBrains Mono', monospace;")
+        timer.setProperty("ov", "timer")
         row.addWidget(timer)
         self._ov.adjustSize()
         self._reposition()

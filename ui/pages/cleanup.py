@@ -15,8 +15,22 @@ def build(window):
           "decide how much it may touch your words."),
     )
 
+    # --- Custom-prompt opt-in: single gate for both editors ---
+    from ..widgets import SectionCard, ToggleSwitch
+    window.cleanup_custom_enabled = ToggleSwitch()
+    opt_card = SectionCard(
+        t("Use custom prompt"),
+        t("Off: the default correction runs. On: your prompts below run."),
+        window.cleanup_custom_enabled,
+    )
+    opt_row = QLabel(t("Do you want to create a custom prompt?"))
+    opt_row.setObjectName("rowLabel")
+    opt_row.setWordWrap(True)
+    opt_card.add(opt_row)
+    outer.addWidget(opt_card)
+
     # --- AI Text Processing controls — single Editing Level only ---
-    from PyQt6.QtWidgets import QGroupBox, QFormLayout, QHBoxLayout, QSpinBox, QLabel
+    from PyQt6.QtWidgets import QGroupBox, QFormLayout, QSpinBox
     ai_box = QGroupBox(t("AI Text Processing"))
     ai_form = QFormLayout(ai_box)
     ai_form.setContentsMargins(20, 16, 20, 12)
@@ -38,6 +52,7 @@ def build(window):
 
     inner = QTabWidget()
     inner.setDocumentMode(True)
+    window.cleanup_prompt_tabs = inner
     window.cleanup_prompt = window._prompt_page(
         inner, t("Dictation"),
         t("System instruction given to the cleanup model. This is where you "
@@ -52,6 +67,10 @@ def build(window):
         cfg.default_file_cleanup_prompt,
     )
     outer.addWidget(inner, 1)
+    try:
+        window.cleanup_custom_enabled.toggled.connect(inner.setEnabled)
+    except Exception:
+        pass
 
     hint = QLabel(t("Names and terms you say often (optional). They go to the "
                     "transcription model as a hint, and to the cleanup model as a "

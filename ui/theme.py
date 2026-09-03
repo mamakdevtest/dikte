@@ -426,39 +426,57 @@ QLabel[note="ok"]   {{ background: {_mix(c["ok"], c["surface"], 0.08)};
 QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {{
     background: {c["field"]}; border: 1px solid {c["border"]};
     border-radius: 6px; color: {c["fg"]}; selection-background-color: {c["sage"]};
-    padding: 0 10px; min-height: 30px; }}
-QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QPlainTextEdit:hover {{
+    selection-color: {c["fg"]}; padding: 0 10px; min-height: 30px; }}
+QComboBox {{ min-height: 30px; padding-right: 28px; }}
+QComboBox QLineEdit {{ background: transparent; border: none; padding: 0; }}
+QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QPlainTextEdit:hover, QTextEdit:hover {{
     border-color: {c["borderStrong"]}; }}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus {{
-    border-color: {c["borderStrong"]}; background: {c["field"]}; }}
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{
-    background: {c["surface2"]}; color: {c["fg3"]}; }}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
+    border-color: {c["sageDark"]}; background: {c["field"]}; }}
+QComboBox:on {{ border-color: {c["sageDark"]}; }}
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
+QPlainTextEdit:disabled, QTextEdit:disabled {{
+    background: {c["surface2"]}; color: {c["fg3"]}; border-color: {c["border"]}; }}
 QPlainTextEdit, QTextEdit {{ padding: 8px 10px; }}
 QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding; subcontrol-position: center right; }}
 {chev_rule}
 {chev_disabled_rule}
 QComboBox QAbstractItemView {{ background: {c["surface"]}; color: {c["fg"]};
     border: 1px solid {c["border"]}; selection-background-color: {c["surface2"]};
-    selection-color: {c["fg"]}; }}
+    selection-color: {c["fg"]}; outline: 0; }}
+QComboBox QAbstractItemView::item {{ min-height: 28px; padding: 4px 10px; border: none; }}
+QComboBox QAbstractItemView::item:selected {{ background: {c["surface2"]}; color: {c["fg"]}; }}
+QComboBox QAbstractItemView::item:hover {{ background: {c["surface2"]}; }}
 QComboBox::down-arrow:disabled {{ opacity: 0.6; }}
 
 /* ---- buttons ----------------------------------------------------------- */
 QPushButton {{ min-height: 32px; padding: 0 13px; border-radius: 6px;
                font-size: 13px; font-weight: 500; border: 1px solid transparent; }}
+QPushButton:focus {{ border-color: {c["sageDark"]}; }}
 QPushButton[size="sm"] {{ min-height: 26px; padding: 0 9px; font-size: 12px; }}
 QPushButton[variant="primary"] {{ background: {c["terraDeep"]}; color: "#FFF8F5"; }}
 QPushButton[variant="primary"]:hover {{ background: {c["terra"]}; }}
+QPushButton[variant="primary"]:pressed {{ background: {c["terraDeep"]}; }}
+QPushButton[variant="primary"]:focus {{ border: 1px solid {c["sageDark"]}; }}
 QPushButton[variant="ink"] {{ background: {c["inkBtn"]}; color: {c["onInk"]}; }}
 QPushButton[variant="ink"]:hover {{ background: {_mix(c["inkBtn"], c["surface2"], 0.78)}; }}
+QPushButton[variant="ink"]:pressed {{ background: {c["inkBtn"]}; }}
 QPushButton[variant="secondary"] {{ background: {c["field"]};
     border-color: {c["border"]}; color: {c["fg"]}; }}
 QPushButton[variant="secondary"]:hover {{ background: {c["surface2"]};
     border-color: {c["borderStrong"]}; }}
-QPushButton[variant="ghost"] {{ color: {c["fg2"]}; }}
+QPushButton[variant="secondary"]:pressed {{ background: {c["surface2"]}; }}
+QPushButton[variant="ghost"] {{ color: {c["fg2"]}; border-color: transparent; }}
 QPushButton[variant="ghost"]:hover {{ background: {c["surface2"]}; color: {c["fg"]}; }}
-QPushButton[variant="danger"] {{ color: {c["err"]}; }}
+QPushButton[variant="ghost"]:pressed {{ background: {c["surface2"]}; }}
+QPushButton[variant="danger"] {{ color: {c["err"]}; border-color: transparent; }}
 QPushButton[variant="danger"]:hover {{ background: {_mix(c["err"], c["surface"], 0.09)}; }}
-QPushButton:disabled {{ color: {c["fg3"]}; background: {c["surface2"]}; }}
+QPushButton[variant="danger"]:pressed {{ background: {_mix(c["err"], c["surface"], 0.16)}; }}
+QPushButton:disabled {{ color: {c["fg3"]}; background: {c["surface2"]}; border-color: {c["border"]}; }}
+QPushButton[variant="ghost"]:disabled, QPushButton[variant="danger"]:disabled {{
+    background: transparent; color: {c["fg3"]}; border-color: transparent; }}
+QPushButton[variant="primary"]:disabled {{
+    background: {c["surface2"]}; color: {c["fg3"]}; border-color: {c["border"]}; }}
 
 /* ---- checkboxes (toggles) --------------------------------------------- */
 QCheckBox[kind="toggle"] {{ spacing: 0; }}
@@ -510,6 +528,16 @@ QFrame#miniScreen {{ background: {c["surface2"]}; border: 1px solid {c["borderSt
                     border-radius: 6px; }}
 QLabel#miniOv {{ background: {c["field"]}; border: 1px solid {c["border"]};
                 border-radius: 6px; font-family: "JetBrains Mono", monospace; font-size: 8px; color: {c["fg"]}; }}
+QLabel[miniPill="active"] {{ background: {c["sageDark"]}; border-radius: 3px; }}
+QLabel[miniPill="idle"] {{ background: {c["borderStrong"]}; border-radius: 3px; }}
+QLabel[ov="dot"] {{ background: {c["terra"]}; border-radius: 2px; }}
+QLabel[ov="bar"] {{ background: {c["terra"]}; border-radius: 1px; }}
+QLabel[ov="timer"] {{ font-size: 8px; color: {c["fg"]};
+                      font-family: "JetBrains Mono", monospace; }}
+QLabel#emptyTitle {{ font-weight: 600; font-size: 14px; color: {c["fg"]}; }}
+QLabel#emptyDesc {{ font-size: 12.5px; color: {c["fg3"]}; }}
+QLabel#engineModel {{ font-size: 12.5px; font-weight: 600; color: {c["fg"]}; }}
+QLabel#engineStatus {{ font-size: 11.5px; color: {c["fg2"]}; }}
 
 /* ---- misc -------------------------------------------------------------- */
 QSplitter::handle {{ background: transparent; }}

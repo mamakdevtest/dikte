@@ -2189,6 +2189,10 @@ class SettingsWindow(QDialog):
             out["cleanup_enabled"] = bool(self.cleanup_enabled.isChecked()) if hasattr(self, "cleanup_enabled") else True
             out["cleanup_provider"] = (self.cleanup_provider.currentData() or "local") if hasattr(self, "cleanup_provider") else "local"
             out["transcribe_prompt"] = (self.transcribe_prompt.toPlainText().strip() if hasattr(self, "transcribe_prompt") else "")
+            try:
+                out["cleanup_custom_enabled"] = bool(self.cleanup_custom_enabled.isChecked()) if hasattr(self, "cleanup_custom_enabled") else False
+            except Exception:
+                out["cleanup_custom_enabled"] = False
             out["cleanup_prompt"] = (self.cleanup_prompt.toPlainText().strip() if hasattr(self, "cleanup_prompt") else "")
             out["assistant_provider"] = (self.assistant_provider.currentData() or "claude") if hasattr(self, "assistant_provider") else "claude"
             out["meeting_provider"] = (self.meeting_provider.currentData() or "local") if hasattr(self, "meeting_provider") else "local"
@@ -2610,6 +2614,22 @@ class SettingsWindow(QDialog):
         self.local_llm_preload.setChecked(conf["local_llm_preload"])
         self._select_data(self.local_llm_reasoning, conf["local_llm_reasoning"])
         self.local_llm.load(conf["local_llm_model"], conf["local_llm_repo"])
+        try:
+            custom_on = bool(conf.get("cleanup_custom_enabled", False))
+        except Exception:
+            custom_on = False
+        try:
+            if hasattr(self, "cleanup_custom_enabled"):
+                self.cleanup_custom_enabled.blockSignals(True)
+                self.cleanup_custom_enabled.setChecked(custom_on)
+                self.cleanup_custom_enabled.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "cleanup_prompt_tabs"):
+                self.cleanup_prompt_tabs.setEnabled(custom_on)
+        except Exception:
+            pass
         self.cleanup_prompt.setPlainText(conf["cleanup_prompt"] or cfg.default_cleanup_prompt())
         self.file_cleanup_prompt.setPlainText(
             conf["file_cleanup_prompt"] or cfg.default_file_cleanup_prompt()
@@ -2877,11 +2897,22 @@ class SettingsWindow(QDialog):
         conf["local_llm_preload"] = self.local_llm_preload.isChecked()
         conf["local_llm_reasoning"] = self.local_llm_reasoning.currentData() or ""
 
-        prompt = self.cleanup_prompt.toPlainText().strip()
-        conf["cleanup_prompt"] = "" if prompt == cfg.default_cleanup_prompt() else prompt
-        file_prompt = self.file_cleanup_prompt.toPlainText().strip()
-        conf["file_cleanup_prompt"] = ("" if file_prompt == cfg.default_file_cleanup_prompt()
-                                       else file_prompt)
+        try:
+            custom_on = bool(self.cleanup_custom_enabled.isChecked()) if hasattr(self, "cleanup_custom_enabled") else False
+        except Exception:
+            custom_on = False
+        conf["cleanup_custom_enabled"] = custom_on
+        if custom_on:
+            prompt = self.cleanup_prompt.toPlainText().strip()
+            conf["cleanup_prompt"] = "" if prompt == cfg.default_cleanup_prompt() else prompt
+            file_prompt = self.file_cleanup_prompt.toPlainText().strip()
+            conf["file_cleanup_prompt"] = ("" if file_prompt == cfg.default_file_cleanup_prompt()
+                                           else file_prompt)
+        else:
+            # Off: keep stored customs out of the run; clear them so defaults
+            # cannot be shadowed later. Glossary (transcribe_prompt) is untouched.
+            conf["cleanup_prompt"] = ""
+            conf["file_cleanup_prompt"] = ""
         conf["transcribe_prompt"] = self.transcribe_prompt.toPlainText().strip()
 
         assistant_provider = self.assistant_provider.currentData() or "claude"

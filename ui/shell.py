@@ -178,7 +178,7 @@ class AppShell(QWidget):
         wave.setPixmap(_icons.pixmap("wave", 15, theme.palette()["sageDark"]))
         top.addWidget(wave)
         model = QLabel(whisper_label)
-        model.setStyleSheet("font-size: 12.5px; font-weight: 600;")
+        model.setObjectName("engineModel")
         model.setWordWrap(False)
         model.setMinimumWidth(0)
         try:
@@ -198,7 +198,7 @@ class AppShell(QWidget):
         status.setSpacing(6)
         status.addWidget(Dot("ok"))
         ready = QLabel(_t("Ready"))
-        ready.setStyleSheet("color: %s; font-size: 11.5px;" % theme.palette()["fg2"])
+        ready.setObjectName("engineStatus")
         self._engine_status_label = ready
         status.addWidget(ready)
         status.addStretch(1)

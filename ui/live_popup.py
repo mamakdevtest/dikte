@@ -62,10 +62,13 @@ class LivePopup(QWidget):
         self.text = QPlainTextEdit()
         self.text.setReadOnly(True)
         self.text.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.text.setObjectName("live_popup_text")
         self.text.setPlaceholderText(t("Words will appear here as they are heard…"))
+        # Structural QSS only (no frozen palette hex): tone comes from
+        # QPalette via _refresh_palette() + QPainter via _palette().
         self.text.setStyleSheet(
-            "QPlainTextEdit { background: transparent; color: %s; "
-            "border: none; font-size: 13px; }" % QColor(_palette()["fg"]).name()
+            "QPlainTextEdit#live_popup_text { background: transparent; "
+            "border: none; font-size: 13px; }"
         )
         layout.addWidget(self.text)
 
@@ -74,15 +77,42 @@ class LivePopup(QWidget):
         self.arrow.setText("▼")
         self.arrow.setCursor(Qt.CursorShape.PointingHandCursor)
         self.arrow.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        fg = QColor(_palette()["fg"]).name()
         self.arrow.setStyleSheet(
-            "QToolButton { background: transparent; border: none; color: %s; "
+            "QToolButton#live_popup_expand { background: transparent; border: none; "
             "font-size: 12px; padding: 2px 8px; border-radius: 6px; } "
-            "QToolButton:hover { background: rgba(255, 255, 255, 28); }" % fg
+            "QToolButton#live_popup_expand:hover { background: rgba(255, 255, 255, 28); }"
         )
         self.arrow.clicked.connect(self._toggle_expanded)
+        self._refresh_palette()
         self._apply_expanded_labels()
         self._place_arrow()
+
+    def _refresh_palette(self):
+        """Apply the current theme tone via QPalette (no frozen hex in QSS)."""
+        try:
+            p = _palette()
+            fg = QColor(p.get("fg", "#E7F0EC"))
+            fg3 = QColor(p.get("fg3", "#7C918A"))
+        except Exception:
+            return
+        try:
+            pal = self.text.palette()
+            pal.setColor(self.text.backgroundRole(), QColor(0, 0, 0, 0))
+            pal.setColor(pal.ColorRole.Text, fg)
+            try:
+                pal.setColor(pal.ColorRole.PlaceholderText, fg3)
+            except Exception:
+                pass
+            self.text.setPalette(pal)
+        except Exception:
+            pass
+        try:
+            apal = self.arrow.palette()
+            apal.setColor(apal.ColorRole.ButtonText, fg)
+            apal.setColor(apal.ColorRole.WindowText, fg)
+            self.arrow.setPalette(apal)
+        except Exception:
+            pass
 
     def _apply_expanded_labels(self):
         tip = t("Collapse") if self._expanded else t("Expand")

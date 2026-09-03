@@ -38,6 +38,11 @@ def _hex_to_qcolor(hex_str, alpha=255):
 
 
 def _palette_colors():
+    """Theme palette with a headless-import fallback (mirrors overlay.py).
+
+    Reads ``ui.theme.palette()`` when available so all overlays share one
+    source of truth; falls back to hardcoded dark tokens for headless import.
+    """
     try:
         from ui import theme as _theme
         p = _theme.palette()
@@ -48,18 +53,12 @@ def _palette_colors():
             "terra": "#E08A72", "sageDark": "#A8C7B5", "ok": "#75C59B",
             "err": "#DF8582", "warn": "#D8B870", "info": "#82B9CE",
         }
-    def mix(a, b, share):
-        av = tuple(int(a[i:i+2],16) for i in (1,3,5))
-        bv = tuple(int(b[i:i+2],16) for i in (1,3,5))
-        r = round(av[0]*share+bv[0]*(1-share))
-        g = round(av[1]*share+bv[1]*(1-share))
-        b_ = round(av[2]*share+bv[2]*(1-share))
-        c = QColor(r,g,b_)
-        return c
-    BG = mix(p["field"], p["surface"], 0.92, 238) if "mix" not in dir() else _hex_to_qcolor(p["field"],238)
-    # fallback simple
+    BG = _hex_to_qcolor(p["field"], 238)
     try:
-        BG = QColor(p["field"])
+        field = tuple(int(p["field"][i:i + 2], 16) for i in (1, 3, 5))
+        surface = tuple(int(p["surface"][i:i + 2], 16) for i in (1, 3, 5))
+        mixed = tuple(round(field[i] * 0.92 + surface[i] * 0.08) for i in range(3))
+        BG = QColor(*mixed)
         BG.setAlpha(238)
     except Exception:
         pass

@@ -316,6 +316,13 @@ TR = {
         "Altyazı için yazılmıştır: satırlar yerinde kalır, hiçbir şey kısaltılmaz, "
         "yanlış duyulan kelimeler bağlamdan düzeltilir.",
     "Reset to default": "Varsayılana döndür",
+    "Do you want to create a custom prompt?":
+        "Özel prompt oluşturmak istiyor musun?",
+    "Use custom prompt": "Özel prompt kullan",
+    "Off: the default correction runs. On: your prompts below run.":
+        "Kapalı: varsayılan düzeltme çalışır. Açık: aşağıdaki promptların çalışır.",
+    "Custom prompt is off; the default correction runs.":
+        "Özel prompt kapalı; varsayılan düzeltme çalışır.",
     "Names and terms you say often (optional). They go to the transcription "
     "model as a hint, and to the cleanup model as a glossary, so it can repair "
     "the ones that still come out wrong.":

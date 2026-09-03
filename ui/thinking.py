@@ -61,12 +61,14 @@ class ThinkingPopup(QWidget):
         head.setSpacing(8)
         self.dot = QLabel(self.card)
         self.dot.setFixedSize(8, 8)
+        self.dot.setProperty("dot", "info")
         head.addWidget(self.dot)
         self.title = QLabel("Dusunuyor…", self.card)
         self.title.setStyleSheet("font-size: 13px; font-weight: 600;")
         head.addWidget(self.title, 1)
         self.elapsed_lbl = QLabel("00:00", self.card)
-        self.elapsed_lbl.setStyleSheet("font-family: 'JetBrains Mono', monospace; font-size: 11px;")
+        self.elapsed_lbl.setObjectName("meta")
+        self.elapsed_lbl.setProperty("mono", "true")
         head.addWidget(self.elapsed_lbl)
         # spinner placeholder
         self.spinner = QLabel(self.card)
@@ -83,12 +85,14 @@ class ThinkingPopup(QWidget):
         # log area
         self.log_area = QLabel("", self.card)
         self.log_area.setWordWrap(True)
+        self.log_area.setObjectName("meta")
         self.log_area.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.log_area.setMinimumHeight(42)
-        # subtle separator
+        # subtle separator (styled by app QSS QFrame#rowSeparator)
         self.sep = QFrame(self.card)
+        self.sep.setObjectName("rowSeparator")
         self.sep.setFixedHeight(1)
-        card_l.addWidget(sep)
+        card_l.addWidget(self.sep)
         card_l.addWidget(self.log_area)
 
         # actions
@@ -129,19 +133,42 @@ class ThinkingPopup(QWidget):
         self.hide()
 
     def _apply_theme(self):
-        c = _theme.palette()
-        self.card.setStyleSheet(
-            f"QFrame#card {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; }}"
-        )
-        self.dot.setStyleSheet(f"background: {c['info']}; border-radius: 4px;")
-        self.elapsed_lbl.setStyleSheet(f"font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {c['fg3']};")
-        self.log_area.setStyleSheet(f"font-size: 11.5px; color: {c['fg3']};")
-        self.sep.setStyleSheet(f"background: {c['border']}; border: none;")
-        # re-polish
-        self.style().unpolish(self.card)
-        self.style().polish(self.card)
-        self.style().unpolish(self.dot)
-        self.style().polish(self.dot)
+        """Refresh tone from the shared theme without frozen palette strings.
+
+        Card/dot/separator/timestamps are styled by objectName + dynamic
+        properties (``QFrame#card``, ``QLabel[dot="info"]``,
+        ``QFrame#rowSeparator``, ``QLabel#meta``) from the application QSS;
+        muted text roles fall back to QPalette so offscreen windows without a
+        global stylesheet keep the same professional tone. Called live by the
+        settings UI after a theme switch.
+        """
+        try:
+            c = _theme.palette()
+        except Exception:
+            c = {}
+        self.card.setObjectName("card")
+        self.dot.setProperty("dot", "info")
+        self.sep.setObjectName("rowSeparator")
+        self.elapsed_lbl.setObjectName("meta")
+        self.elapsed_lbl.setProperty("mono", "true")
+        self.log_area.setObjectName("meta")
+        try:
+            fg3 = QColor(c.get("fg3", "#7C918A"))
+            for lbl in (self.elapsed_lbl, self.log_area):
+                pal = lbl.palette()
+                pal.setColor(pal.ColorRole.WindowText, fg3)
+                pal.setColor(pal.ColorRole.Text, fg3)
+                lbl.setPalette(pal)
+        except Exception:
+            pass
+        # re-polish dynamic properties
+        try:
+            for w in (self.card, self.dot, self.sep,
+                      self.elapsed_lbl, self.log_area):
+                self.style().unpolish(w)
+                self.style().polish(w)
+        except Exception:
+            pass
 
     # ---- public API ----
     def show_thinking(self, initial_stage="Dusunuyor…"):
@@ -221,20 +248,9 @@ class ThinkingPopup(QWidget):
         if self._start_ts is not None and not self._paused:
             secs = int(time.monotonic() - self._start_ts)
             self.elapsed_lbl.setText(f"{secs//60:02d}:{secs%60:02d}")
-        # spinner via stylesheet trick: rotate dot opacity
-        # simple: pulse dot
-        pulse = 0.5 + 0.5 * (abs((self._phase % 6.28) - 3.14) / 3.14)  # not used, placeholder
-        # trigger repaint for spinner custom draw if needed
+        # dot keeps its themed QLabel[dot="info"] tone (no per-tick QSS churn);
+        # spinner repaint preserves the tick-driven activity cue.
         self.spinner.update()
-        # dot pulse
-        alpha = 0.55 + 0.45 * (0.5 + 0.5 * __import__("math").sin(self._phase * 1.6))
-        c = _theme.palette().get("info", "#82B9CE")
-        # keep dot color with alpha via stylesheet
-        # we can't animate alpha via stylesheet easily, so just update style each tick (light cost)
-        try:
-            self.dot.setStyleSheet(f"background: {c}; border-radius: 4px; opacity: {alpha:.2f};")
-        except Exception:
-            pass
 
     def paintEvent(self, ev):
         # card handles background, no extra

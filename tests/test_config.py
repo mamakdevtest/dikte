@@ -383,7 +383,8 @@ class CleanupPrompt(DikteTest):
         self.assertIn("Düzenleme Seviyesi", prompt_tr)
 
     def test_a_prompt_of_your_own(self):
-        conf = self.config(cleanup_prompt="  Only fix punctuation.  ")
+        conf = self.config(cleanup_custom_enabled=True,
+                           cleanup_prompt="  Only fix punctuation.  ")
         self.assertTrue(conf.cleanup_prompt().startswith("Only fix punctuation."))
 
     def test_the_glossary_is_appended(self):
@@ -403,7 +404,8 @@ class CleanupPrompt(DikteTest):
         self.assertIn("Editing Level", sub)
 
     def test_a_subtitle_prompt_of_your_own(self):
-        conf = self.config(file_cleanup_prompt="Keep the stamps.")
+        conf = self.config(cleanup_custom_enabled=True,
+                           file_cleanup_prompt="Keep the stamps.")
         self.assertTrue(conf.cleanup_prompt(subtitles=True).startswith("Keep the stamps."))
         self.assertTrue(conf.cleanup_prompt().startswith(cfg.CLEANUP_PROMPT_EN))
 

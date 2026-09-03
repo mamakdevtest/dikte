@@ -842,6 +842,7 @@ DEFAULTS = {
     # reasoning about a comma is 300 tokens of waiting.
     "local_llm_reasoning": "none",
     "cleanup_prompt": "",           # empty -> language-specific default
+    "cleanup_custom_enabled": False,  # True -> use stored custom prompts; False -> defaults only
     "auto_paste": True,
     "paste_shortcut": paste.desktop().shortcuts[0],   # cmd+v on a Mac
     "restore_clipboard": False,
@@ -1010,6 +1011,22 @@ class Config:
         stored_prompt = self.data["cleanup_prompt"].strip()
         if stored_prompt and _fingerprint(stored_prompt) in LEGACY_PROMPTS:
             self.data["cleanup_prompt"] = ""
+        stored_file_prompt = self.data.get("file_cleanup_prompt", "").strip()
+        if stored_file_prompt and _fingerprint(stored_file_prompt) in LEGACY_PROMPTS:
+            self.data["file_cleanup_prompt"] = ""
+        # Opt-in migration: an existing custom string means the user already
+        # opted in; otherwise the flag stays off and defaults run.
+        try:
+            if "cleanup_custom_enabled" not in (stored or {}):
+                has_custom = bool(self.data.get("cleanup_prompt", "").strip()
+                                  or self.data.get("file_cleanup_prompt", "").strip())
+                self.data["cleanup_custom_enabled"] = bool(has_custom)
+            else:
+                self.data["cleanup_custom_enabled"] = bool(
+                    self.data.get("cleanup_custom_enabled", False))
+        except Exception:
+            self.data["cleanup_custom_enabled"] = bool(
+                self.data.get("cleanup_custom_enabled", False))
         # Clamp the sole AI editing policy and coerce booleans.
         try:
             self.data["ai_edit_level"] = max(1, min(5, int(self.data.get("ai_edit_level", 3))))
@@ -1211,11 +1228,16 @@ class Config:
     def cleanup_prompt(self, with_timestamps=False, with_speakers=False,
                        subtitles=False):
         turkish = i18n.language() == "tr"
+        try:
+            custom_on = bool(self.data.get("cleanup_custom_enabled", False))
+        except Exception:
+            custom_on = False
         if subtitles:
-            prompt = (self["file_cleanup_prompt"].strip()
-                      or default_file_cleanup_prompt())
+            stored = self["file_cleanup_prompt"].strip() if custom_on else ""
+            prompt = stored or default_file_cleanup_prompt()
         else:
-            prompt = self["cleanup_prompt"].strip() or default_cleanup_prompt()
+            stored = self["cleanup_prompt"].strip() if custom_on else ""
+            prompt = stored or default_cleanup_prompt()
         # Dynamic AI policy layer (1..5) — not a replacement for the base prompt
         # Keep base behavior, add policy. For subtitles, keep lighter policy as well.
         edit = self._clamped_edit_level()

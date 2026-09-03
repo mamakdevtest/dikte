@@ -625,6 +625,23 @@ def cmd_config_set(opts):
 
     conf = cfg.Config()
     conf[opts.key] = value
+    # CLI coherence with the opt-in gate: storing a custom prompt opts in,
+    # clearing it while both customs are empty opts out.
+    try:
+        if opts.key in ("cleanup_prompt", "file_cleanup_prompt"):
+            if isinstance(value, str) and value.strip():
+                conf["cleanup_custom_enabled"] = True
+            else:
+                other = ("file_cleanup_prompt" if opts.key == "cleanup_prompt"
+                         else "cleanup_prompt")
+                try:
+                    other_empty = not str(conf[other]).strip()
+                except Exception:
+                    other_empty = True
+                if other_empty:
+                    conf["cleanup_custom_enabled"] = False
+    except Exception:
+        pass
     try:
         conf.save()
     except OSError as exc:
