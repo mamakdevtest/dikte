@@ -2,12 +2,15 @@
 
 from PyQt6.QtCore import Qt, QPointF, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QSpinBox, QWidget
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QSizePolicy, QSpinBox, QWidget
 
 import paste
 from i18n import t
 
-from ..widgets import CornerPicker, MiniScreen, SectionCard, SettingRow, gate, switch_row
+from ..widgets import (
+    CornerPicker, InfoNote, MiniScreen, SectionCard, SettingRow,
+    gate, switch_row,
+)
 from . import page, scrolled
 
 def _theme_label(key):
@@ -114,13 +117,18 @@ class _ThemeSwatch(QWidget):
         painter.end()
 
 
-def _combo(items, width=None):
+def _expanding(widget, min_width):
+    """Minimum width + Expanding: grows for long TR labels, never truncates."""
+    widget.setMinimumWidth(min_width)
+    widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    return widget
+
+
+def _combo(items, min_width=220):
     box = QComboBox()
     for label, data in items:
         box.addItem(label, data)
-    if width:
-        box.setFixedWidth(width)
-    return box
+    return _expanding(box, min_width)
 
 
 def build(window):
@@ -179,7 +187,7 @@ def build(window):
     window.paste_shortcut = QComboBox()
     window.paste_shortcut.setEditable(True)
     window.paste_shortcut.addItems(paste.desktop().shortcuts)
-    window.paste_shortcut.setFixedWidth(180)
+    _expanding(window.paste_shortcut, 180)
     window.paste_shortcut.setToolTip(t(
         "macOS asks for Accessibility permission the first time this is sent."
         if paste.desktop() is paste.MACOS else
@@ -200,9 +208,11 @@ def build(window):
     outer.addWidget(result_card)
     result_row, window.result_overlay_enabled = switch_row(
         t("Show result overlay after dictation"),
-        t("When enabled, the final transcript appears in a small overlay with Copy and Close actions. "
-          "Auto Paste behavior is unchanged."))
+        t("The final transcript appears in a small overlay."))
     result_card.add(result_row)
+    result_card.add(InfoNote(
+        t("Auto Paste behavior is unchanged."),
+        variant="info"))
 
     # --- recording --------------------------------------------------------
     recording = SectionCard(t("Recording behavior"))
@@ -279,17 +289,19 @@ def build(window):
     window.max_seconds = QSpinBox()
     window.max_seconds.setRange(10, 3600)
     window.max_seconds.setSuffix(t(" s"))
-    window.max_seconds.setFixedWidth(120)
+    window.max_seconds.setMinimumWidth(120)
     recording.add(SettingRow(t("Longest recording"),
                              t("A recording that reaches this stops on its own and "
                                "is still transcribed."), window.max_seconds))
     live_row, window.live_transcript = switch_row(
         t("Live transcript preview"),
-        t("While recording, the words are shown as they are heard — the small "
-          "lines button on the indicator opens a wider view. It transcribes "
-          "the newest seconds with the same provider dictation uses, so a "
-          "hosted provider makes a few extra small calls."))
+        t("Shows the words as they are heard."))
     recording.add(live_row)
+    recording.add(InfoNote(
+        t("The small lines button on the indicator opens a wider view. It "
+          "transcribes the newest seconds with the same provider dictation "
+          "uses, so a hosted provider makes a few extra small calls."),
+        variant="info"))
 
     # --- silence ----------------------------------------------------------
     silence = SectionCard(t("Silence detection"))
@@ -303,13 +315,16 @@ def build(window):
     window.silence_db = QSpinBox()
     window.silence_db.setRange(-80, -20)
     window.silence_db.setSuffix(" dB")
-    window.silence_db.setFixedWidth(120)
-    window.silence_db.setToolTip(t(
-        "Speech also has to rise {margin} dB above the recording's own noise "
-        "floor, so this absolute floor rarely needs touching.", margin=10))
-    threshold_row = SettingRow(t("Silence threshold"), "", window.silence_db,
-                               dependent=True)
+    window.silence_db.setMinimumWidth(120)
+    threshold_row = SettingRow(t("Silence threshold"),
+                               t("Audio below this counts as silence."),
+                               window.silence_db, dependent=True)
     silence.add(threshold_row)
+    silence.add(InfoNote(
+        t("Speech also has to rise {margin} dB above the recording's own noise "
+          "floor, so this absolute floor rarely needs touching. Lower it if quiet "
+          "speech gets dropped; raise it if noise still gets through.", margin=10),
+        variant="info"))
 
     hallucination_row, window.filter_hallucinations = switch_row(
         t("Discard stock phrases models invent for near-silent audio"),

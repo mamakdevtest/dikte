@@ -5,7 +5,7 @@ the rolling preview collect here in a panel big enough to read at a glance,
 for dictation and for the microphone side of a meeting alike.
 """
 
-from PyQt6.QtCore import QRect, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
     QPlainTextEdit, QToolButton, QVBoxLayout, QWidget,
@@ -31,7 +31,8 @@ def _palette():
         p = _theme.palette()
     else:
         p = {"field": "#142123", "border": "#314548", "fg": "#E7F0EC",
-             "fg3": "#7C918A", "surface2": "#223234"}
+             "fg3": "#7C918A", "surface2": "#223234",
+             "terra": "#E08A72"}
     return p
 
 
@@ -43,10 +44,12 @@ class LivePopup(QWidget):
 
     def __init__(self, corner="bottom-left", below=None):
         super().__init__(None)
+        self.setObjectName("LivePopup")
         self.corner = corner
         self.below = below
         self._overlay_coordinator = None
         self._expanded = False
+        self.setProperty("expanded", False)
         flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -74,13 +77,15 @@ class LivePopup(QWidget):
 
         self.arrow = QToolButton(self)
         self.arrow.setObjectName("live_popup_expand")
+        self.arrow.setProperty("expanded", False)
         self.arrow.setText("▼")
         self.arrow.setCursor(Qt.CursorShape.PointingHandCursor)
         self.arrow.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Structural QSS only (no frozen colour): tone comes from QPalette
+        # via _refresh_palette(), hover is the cursor + tooltip, not a tint.
         self.arrow.setStyleSheet(
             "QToolButton#live_popup_expand { background: transparent; border: none; "
-            "font-size: 12px; padding: 2px 8px; border-radius: 6px; } "
-            "QToolButton#live_popup_expand:hover { background: rgba(255, 255, 255, 28); }"
+            "font-size: 12px; padding: 2px 8px; border-radius: 6px; }"
         )
         self.arrow.clicked.connect(self._toggle_expanded)
         self._refresh_palette()
@@ -111,6 +116,11 @@ class LivePopup(QWidget):
             apal.setColor(apal.ColorRole.ButtonText, fg)
             apal.setColor(apal.ColorRole.WindowText, fg)
             self.arrow.setPalette(apal)
+        except Exception:
+            pass
+        try:
+            self.style().unpolish(self.arrow)
+            self.style().polish(self.arrow)
         except Exception:
             pass
 
@@ -151,6 +161,13 @@ class LivePopup(QWidget):
         if expanded == self._expanded:
             return
         self._expanded = expanded
+        try:
+            self.setProperty("expanded", expanded)
+            self.arrow.setProperty("expanded", expanded)
+            self.style().unpolish(self.arrow)
+            self.style().polish(self.arrow)
+        except Exception:
+            pass
         if expanded:
             area = self._screen_area()
             cap = int(area.height() * MAX_AREA_FRACTION) if area is not None \
@@ -171,12 +188,21 @@ class LivePopup(QWidget):
         bg.setAlpha(242)
         painter.setBrush(bg)
         painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), RADIUS, RADIUS)
+        # Signature element: a small live dot tying the card to the pill.
+        # Paint-only; the arrow hit-rect and text margins are untouched.
+        try:
+            dot = QColor(p.get("terra", "#E08A72"))
+        except Exception:
+            dot = QColor("#E08A72")
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(dot)
+        painter.drawEllipse(QPointF(17.5, 17.0), 3.5, 3.5)
         painter.setPen(QColor(p["fg"]))
         font = QFont(self.font())
         font.setPointSizeF(9.5)
         font.setBold(True)
         painter.setFont(font)
-        header = QRect(14, 8, self.width() - 58, 18)
+        header = QRect(28, 8, self.width() - 72, 18)
         painter.drawText(header,
                          int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
                          t("Live speech"))

@@ -1,10 +1,11 @@
 """Shortcuts page: the two global keys and the built-in listener."""
 
-from PyQt6.QtWidgets import QCheckBox, QFormLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QFormLayout, QHBoxLayout, QWidget
 
 import hotkey
 from i18n import t
 
+from ..widgets import InfoNote, SectionCard
 from . import page, scrolled
 
 
@@ -14,7 +15,10 @@ def build(window):
         t("Global key combinations that work wherever the focus is."),
     )
 
-    form = QFormLayout()
+    keys = SectionCard()
+    outer.addWidget(keys)
+    holder = QWidget()
+    form = QFormLayout(holder)
     form.setContentsMargins(20, 4, 20, 4)
     window._shortcut_row(
         form, "toggle", t("Start and stop"),
@@ -37,16 +41,23 @@ def build(window):
         t("No global shortcut installed. The tray menu starts a meeting too."),
         placeholder="Ctrl+Alt+M",
     )
-    outer.addLayout(form)
+    keys.add(holder)
 
+    listener = SectionCard(t("Built-in listener"))
+    outer.addWidget(listener)
     window.evdev_enabled = QCheckBox(t(
         "Use the built-in listener (/dev/input), for when the {desktop} "
         "shortcut is not active yet", desktop=hotkey.desktop_name()))
     window.evdev_enabled.setToolTip(t(
         "Works immediately, no session restart. The only difference: the key "
         "combination also reaches the focused application."))
-    outer.addWidget(window.evdev_enabled)
+    ev_wrap = QWidget()
+    ev_lay = QHBoxLayout(ev_wrap)
+    ev_lay.setContentsMargins(20, 12, 20, 12)
+    ev_lay.addWidget(window.evdev_enabled, 1)
+    listener.add(ev_wrap)
     window.evdev_enabled.setVisible(hotkey.installs_shortcuts())
+    ev_wrap.setVisible(hotkey.installs_shortcuts())
 
     if hotkey.shortcut_needs_restart():
         explanation = t(
@@ -61,10 +72,7 @@ def build(window):
             "Dikte asks macOS for these combinations itself, while it is "
             "running. Nothing is installed, and no other application receives "
             "them in the meantime.")
-    note = QLabel(explanation)
-    note.setWordWrap(True)
-    note.setProperty("note", "info")
-    outer.addWidget(note)
+    listener.add(InfoNote(explanation, variant="info"))
     outer.addStretch(1)
 
     return scrolled(body)

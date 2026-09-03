@@ -49,9 +49,12 @@ def _palette_colors():
     except Exception:
         p = {
             "field": "#142123", "surface": "#1B292B", "surface2": "#223234",
-            "border": "#314548", "fg": "#E7F0EC", "fg3": "#7C918A",
-            "terra": "#E08A72", "sageDark": "#A8C7B5", "ok": "#75C59B",
+            "border": "#314548", "borderStrong": "#4A6261",
+            "fg": "#E7F0EC", "fg2": "#A8BCB5", "fg3": "#7C918A",
+            "terra": "#E08A72", "terraDeep": "#C66F5D",
+            "sage": "#8FAF9E", "sageDark": "#A8C7B5", "ok": "#75C59B",
             "err": "#DF8582", "warn": "#D8B870", "info": "#82B9CE",
+            "onInk": "#F2F7F4",
         }
     BG = _hex_to_qcolor(p["field"], 238)
     try:
@@ -81,6 +84,7 @@ class ResultOverlay(QWidget):
 
     def __init__(self, corner="bottom-left", below=None, parent=None):
         super().__init__(None)
+        self.setObjectName("ResultOverlay")
         self.corner = corner
         self.below = below
         self._overlay_coordinator = None
@@ -88,6 +92,7 @@ class ResultOverlay(QWidget):
         self._text = ""
         self._preview = ""
         self._expanded = False
+        self.setProperty("expanded", False)
         self._hover_expand = False
         self._hover_copy = False
         self._hover_close = False
@@ -165,6 +170,15 @@ class ResultOverlay(QWidget):
             return line[:48].rstrip() + "…"
         return line
 
+    def _sync_expanded_property(self):
+        """Mirror expanded state as a dynamic property for QSS targeting."""
+        try:
+            self.setProperty("expanded", bool(self._expanded))
+            self.style().unpolish(self)
+            self.style().polish(self)
+        except Exception:
+            pass
+
     def show_result(self, text: str, msec=None):
         """Show result. If msec is None, stay until user closes. Otherwise auto-hide after msec."""
         txt = (text or "").strip()
@@ -176,6 +190,7 @@ class ResultOverlay(QWidget):
         self._text = txt
         self._preview = self._format_preview(txt)
         self._expanded = False
+        self._sync_expanded_property()
         self._update_geometry()
         self._reposition()
         if not self.isVisible():
@@ -192,6 +207,7 @@ class ResultOverlay(QWidget):
         if self._expanded == expanded:
             return
         self._expanded = expanded
+        self._sync_expanded_property()
         self._update_geometry()
         self._reposition()
         self.update()
@@ -243,6 +259,7 @@ class ResultOverlay(QWidget):
         self._concealed = True
         self.hide()
         self._expanded = False
+        self._sync_expanded_property()
         self._hover_expand = False
         self._hover_copy = False
         self._hover_close = False
@@ -412,7 +429,7 @@ class ResultOverlay(QWidget):
             btn_y = self.height() - 34
             # copy button
             self._copy_rect = QRectF(14, btn_y, BTN_W_COPY, BTN_H)
-            copy_bg = QColor(p.get("terraDeep", "#C66F5D") if "terraDeep" in p else "#C66F5D")
+            copy_bg = QColor(p.get("terraDeep", "#C66F5D"))
             # use primary variant imitation
             # Actually use terraDeep for primary copy
             if self._hover_copy:
@@ -422,7 +439,7 @@ class ResultOverlay(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(copy_bg)
             painter.drawRoundedRect(self._copy_rect, 6, 6)
-            painter.setPen(QColor("#FFF8F5"))
+            painter.setPen(QColor(p.get("onInk", "#FFF8F5")))
             painter.setFont(self._label_font_obj())
             painter.drawText(self._copy_rect, int(Qt.AlignmentFlag.AlignCenter), t("Copy"))
             # close button (X)

@@ -631,8 +631,13 @@ class SettingsWindow(QDialog):
         layout = QVBoxLayout(box)
         layout.setContentsMargins(20, 16, 20, 12)
         self.provider_grid = QGridLayout()
+        self.provider_grid.setHorizontalSpacing(8)
+        self.provider_grid.setVerticalSpacing(6)
+        self.provider_grid.setColumnStretch(0, 0)
         self.provider_grid.setColumnStretch(1, 1)
         self.provider_grid.setColumnStretch(2, 1)
+        self.provider_grid.setColumnStretch(3, 0)
+        self.provider_grid.setColumnMinimumWidth(0, 140)
         layout.addLayout(self.provider_grid)
         self._first_custom_row = self._built_in_rows()
         row = QHBoxLayout()
@@ -651,17 +656,21 @@ class SettingsWindow(QDialog):
             if who.custom:
                 continue
             name = QLabel(who.name)
+            name.setMinimumWidth(140)
+            name.setWordWrap(True)
             self.provider_grid.addWidget(name, row, 0)
             button = QPushButton(t("Test"))
             button.clicked.connect(
                 lambda *_, pid=pid: self._test_provider(pid))
             answer = QLabel("")
             answer.setWordWrap(True)
+            answer.setMinimumWidth(80)
             if pid in self.KEY_PLACEHOLDERS:
                 name.setToolTip(providers.base_url(self.conf, pid))
                 field = QLineEdit()
                 field.setEchoMode(QLineEdit.EchoMode.Password)
                 field.setPlaceholderText(t(self.KEY_PLACEHOLDERS[pid]))
+                field.setMinimumWidth(120)
                 self.provider_grid.addWidget(field, row, 1)
                 self.provider_grid.addWidget(answer, row, 2)
                 self.provider_grid.addWidget(button, row, 3)
@@ -690,11 +699,23 @@ class SettingsWindow(QDialog):
         for pid, who in defs.items():
             if not who.custom:
                 continue
+            base = who.base_url or ""
             name = QLabel(who.name)
-            cred = QLabel(providers.mask(providers.credential(self.conf, pid))
-                          or t("no key"))
-            answer = QLabel(self._provider_tests.get(pid, "") or who.base_url)
-            answer.setWordWrap(True)
+            name.setMinimumWidth(140)
+            name.setWordWrap(True)
+            name.setToolTip(base)
+            masked = (providers.mask(providers.credential(self.conf, pid))
+                      or t("no key"))
+            cred = QLabel(masked)
+            cred.setWordWrap(False)
+            cred.setMinimumWidth(120)
+            cred.setMaximumWidth(200)
+            cred.setToolTip(masked)
+            initial = self._provider_tests.get(pid, "") or base
+            answer = QLabel(initial)
+            answer.setWordWrap(False)
+            answer.setMinimumWidth(80)
+            answer.setToolTip(base if base else initial)
             keys = QPushButton(t("Keys…"))
             keys.clicked.connect(
                 lambda *_, pid=pid: self._edit_provider_keys(pid))
@@ -713,14 +734,20 @@ class SettingsWindow(QDialog):
             self.provider_grid.addWidget(name, row, 0)
             self.provider_grid.addWidget(cred, row, 1)
             self.provider_grid.addWidget(answer, row, 2)
-            for column, button in enumerate((keys, url, rename, remove, test),
-                                            start=3):
-                self.provider_grid.addWidget(button, row, column)
-                self._custom_row_widgets.append(button)
-            self._custom_row_widgets += [name, cred, answer]
+            self.provider_grid.addWidget(test, row, 3)
+            actions = QWidget()
+            alay = QHBoxLayout(actions)
+            alay.setContentsMargins(0, 0, 0, 0)
+            alay.setSpacing(6)
+            alay.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            for button in (keys, url, rename, remove):
+                alay.addWidget(button)
+            alay.addStretch(1)
+            self.provider_grid.addWidget(actions, row + 1, 0, 1, 4)
+            self._custom_row_widgets += [name, cred, answer, test, actions]
             self._provider_creds[pid] = cred
             self._testers[pid] = (test, answer)
-            row += 1
+            row += 2
 
     def _refresh_providers(self):
         """Redraw the registry rows, and offer what the registry holds in every

@@ -74,7 +74,65 @@ ICONS = {
 }
 
 
+# Internal name -> vendored Lucide file under assets/fonts/icons/.
+# ``stop`` has no vendor equivalent (it is a filled glyph, not a stroke) and
+# keeps the built-in table entry below.
+_VENDOR_MAP = {
+    "mic": "mic.svg", "micOff": "mic-off.svg",
+    "sliders": "sliders-horizontal.svg", "plug": "plug.svg",
+    "eraser": "eraser.svg", "terminal": "terminal.svg", "users": "users.svg",
+    "fileText": "file-text.svg", "fileAudio": "file-volume.svg",
+    "keyboard": "keyboard.svg", "search": "search.svg",
+    "dashboard": "layout-dashboard.svg", "plus": "plus.svg", "x": "x.svg",
+    "chevD": "chevron-down.svg", "chevR": "chevron-right.svg",
+    "chevL": "chevron-left.svg", "check": "check.svg",
+    "checkC": "circle-check-big.svg", "xC": "circle-x.svg",
+    "alert": "triangle-alert.svg", "info": "info.svg",
+    "help": "circle-question-mark.svg", "dots": "ellipsis.svg",
+    "copy": "copy.svg", "trash": "trash-2.svg", "folder": "folder.svg",
+    "refresh": "refresh-cw.svg", "download": "download.svg",
+    "upload": "upload.svg", "play": "play.svg", "pause": "pause.svg",
+    "eye": "eye.svg", "eyeOff": "eye-off.svg", "pencil": "pencil.svg",
+    "key": "key-round.svg", "globe": "globe.svg", "cpu": "cpu.svg",
+    "bell": "bell.svg", "wave": "audio-waveform.svg",
+    "headphones": "headphones.svg", "monitor": "monitor.svg",
+    "power": "power.svg", "restart": "rotate-ccw.svg",
+    "filter": "funnel.svg", "calendar": "calendar.svg", "tag": "tag.svg",
+    "type": "type.svg", "clock": "clock.svg",
+    "arrowUR": "arrow-up-right.svg", "minus": "minus.svg",
+    "square": "square.svg", "save": "save.svg", "sun": "sun.svg",
+    "moon": "moon.svg",
+}
+
+_vendor_cache = {}
+
+
+def _vendor_svg_path(name):
+    """A vendored ``<file>.svg`` for an internal icon name, if one exists."""
+    import os
+    fname = _VENDOR_MAP.get(name)
+    if not fname:
+        return ""
+    if fname in _vendor_cache:
+        return _vendor_cache[fname]
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for cand in (os.path.join(base, "assets", "fonts", "icons", fname),
+                 os.path.join(base, "docs", "fonts", "icons", fname),
+                 os.path.join(base, "docs", "fonts", fname),
+                 os.path.join(base, "assets", "fonts", fname)):
+        if os.path.isfile(cand):
+            _vendor_cache[fname] = cand
+            return cand
+    _vendor_cache[fname] = ""
+    return ""
+
+
 def _default_color():
+    try:
+        from . import tokens as _tokens
+        return _tokens.get()["fg"]
+    except Exception:
+        pass
     try:
         from . import theme as _theme
         return _theme.palette().get("fg", "#E7F0EC")
@@ -83,9 +141,20 @@ def _default_color():
 
 
 def svg(name, color=None):
-    """The full SVG document for an icon, with the stroke coloured in."""
+    """The full SVG document for an icon, with the stroke coloured in.
+
+    Vendored Lucide files (``assets/fonts/icons/``) win when one is mapped;
+    otherwise the built-in stroke table below renders — same renderer path.
+    """
     if color is None:
         color = _default_color()
+    vendor = _vendor_svg_path(name)
+    if vendor:
+        try:
+            with open(vendor, "r", encoding="utf-8") as fh:
+                return fh.read().replace("currentColor", color)
+        except Exception:
+            pass
     inner = ICONS.get(name, "").replace("currentColor", color)
     return _SVG_OPEN.format(color=color) + inner + "</svg>"
 

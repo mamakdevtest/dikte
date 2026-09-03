@@ -112,10 +112,13 @@ def _palette_colors():
             return _palette_cache
         p = {
             "field": "#142123", "surface": "#1B292B", "surface2": "#223234",
-            "border": "#314548",
-            "fg": "#E7F0EC", "fg3": "#7C918A", "terra": "#E08A72",
-            "sageDark": "#A8C7B5", "info": "#82B9CE", "ok": "#75C59B",
+            "border": "#314548", "borderStrong": "#4A6261",
+            "fg": "#E7F0EC", "fg2": "#A8BCB5", "fg3": "#7C918A",
+            "terra": "#E08A72", "terraDeep": "#C66F5D",
+            "sage": "#8FAF9E", "sageDark": "#A8C7B5",
+            "info": "#82B9CE", "ok": "#75C59B",
             "err": "#DF8582", "warn": "#D8B870",
+            "onInk": "#F2F7F4",
         }
     BG = _mix_qcolor(p["field"], p["surface"], 0.92, 238)
     BORDER = _hex_to_qcolor(p["border"], 255)
@@ -131,10 +134,16 @@ def _palette_colors():
     STATE_COLORS = {"recording": REC, "asking": ASK, "meeting": REC, "busy": BUSY,
                     "done": OK, "warning": WARN, "error": ERR}
     out = {
-        "BG": BG, "SURFACE2": _hex_to_qcolor(p["surface2"]),
-        "BORDER": BORDER, "TEXT": TEXT, "MUTED": MUTED,
+        "BG": BG, "SURFACE2": _hex_to_qcolor(p.get("surface2", "#223234")),
+        "SURFACE": _hex_to_qcolor(p.get("surface", "#1B292B")),
+        "BORDER": BORDER,
+        "BORDER_STRONG": _hex_to_qcolor(p.get("borderStrong", "#4A6261")),
+        "TEXT": TEXT, "MUTED": MUTED,
+        "FG2": _hex_to_qcolor(p.get("fg2", "#A8BCB5")),
         "REC": REC, "ASK": ASK, "BUSY": BUSY, "OK": OK, "ERR": ERR, "WARN": WARN,
-        "THEM": THEM, "STATE_COLORS": STATE_COLORS,
+        "THEM": THEM, "TERRA_DEEP": _hex_to_qcolor(p.get("terraDeep", "#C66F5D")),
+        "ON_INK": _hex_to_qcolor(p.get("onInk", "#F2F7F4")),
+        "STATE_COLORS": STATE_COLORS,
     }
     _palette_cache = out
     _palette_cache_key = theme_name
@@ -367,6 +376,7 @@ class Overlay(QWidget):
 
     def __init__(self, corner="bottom-left", below=None, dismissable=False, interactive_live=False):
         super().__init__(None)
+        self.setObjectName("dikteOverlay")
         self.corner = corner
         self.below = below
         self._overlay_coordinator = None
@@ -477,6 +487,19 @@ class Overlay(QWidget):
     def overlay_coordinator(self):
         return self._overlay_coordinator
 
+    def _sync_state_property(self):
+        """Mirror state as dynamic properties for objectName-based styling.
+
+        Painting stays in QPainter with theme tokens; the properties only
+        let an application QSS target ``QWidget#dikteOverlay[state="..."]``
+        without any frozen inline stylesheet.
+        """
+        try:
+            self.setProperty("state", self.state)
+            self.setProperty("paused", bool(self._paused))
+        except Exception:
+            pass
+
     def show_recording(self, asking=False):
         """The same ribbon either way, in a different colour when what is being
         recorded is a command for Claude rather than something to paste."""
@@ -502,6 +525,7 @@ class Overlay(QWidget):
         self.levels2 = [0.0] * BARS
         self.muted = False
         self._hide_timer.stop()
+        self._sync_state_property()
         self._appear()
 
     def show_resumed(self, asking=False):
@@ -515,6 +539,7 @@ class Overlay(QWidget):
         self._button_pressed = False
         self._waveform_dirty = True
         self._hide_timer.stop()
+        self._sync_state_property()
         self._appear()
 
     def show_meeting(self):
@@ -541,6 +566,7 @@ class Overlay(QWidget):
         self._meeting_collapsed = False
         self._layout_cache = None
         self._hide_timer.stop()
+        self._sync_state_property()
         self._set_meeting_toggle_accessibility()
         self._appear()
 
@@ -647,6 +673,7 @@ class Overlay(QWidget):
         # leaving LIVE, ensure reveal is complete
         self._reveal_progress = 1.0
         self._reveal_t0 = 0.0
+        self._sync_state_property()
         self._appear()
         if msec is None:
             self._hide_timer.stop()
@@ -667,6 +694,7 @@ class Overlay(QWidget):
         self._button_pressed = False
         self._waveform_dirty = True
         self._hide_timer.stop()
+        self._sync_state_property()
         self._appear()
 
     def set_paused(self, paused: bool):
@@ -693,6 +721,7 @@ class Overlay(QWidget):
             self.levels2 = list(self._wave2.get_display_levels())
         self._waveform_dirty = True
         self._timer_dirty = True
+        self._sync_state_property()
         self._sync_animation_timer()
         self.update()
 
@@ -1258,6 +1287,7 @@ class Overlay(QWidget):
         was_showing = self.showing
         self._anim.stop()
         self.state = "hidden"
+        self._sync_state_property()
         self._concealed = True
         self._paused = False
         self._wave.set_paused(False)
@@ -1548,6 +1578,15 @@ class Overlay(QWidget):
         painter.setPen(QPen(border, 1))
         painter.setBrush(bg)
         painter.drawRoundedRect(main_rect, _PILL_RADIUS, _PILL_RADIUS)
+        # Inner top highlight for depth (paint-only, no layout impact).
+        try:
+            hi = QColor(cols["TEXT"])
+            hi.setAlpha(14)
+            painter.setPen(QPen(hi, 1.0))
+            painter.drawLine(QPointF(main_rect.left() + 26.0, main_rect.top() + 1.5),
+                             QPointF(main_rect.right() - 26.0, main_rect.top() + 1.5))
+        except Exception:
+            pass
 
         accent = state_colors.get(self.state, muted)
         if self.state == PAUSED_STATE:
@@ -1557,6 +1596,7 @@ class Overlay(QWidget):
         if self.state in LIVE or self.state == PAUSED_STATE:
             self._draw_waveform(painter, accent)
             self._draw_time(painter)
+            self._draw_level_rail(painter, cols, main_rect, accent)
             if self.state == "meeting":
                 self._draw_meeting_toggle(painter, cols)
             if not (self.state == "meeting" and self._meeting_collapsed):
@@ -1571,6 +1611,53 @@ class Overlay(QWidget):
             self._draw_message(painter)
             if self._can_dismiss:
                 self._draw_dismiss(painter)
+
+    def _live_level(self):
+        """Current loudness 0..1 for the signature level rail (paint-only)."""
+        try:
+            if self._paused or self.state == PAUSED_STATE:
+                return 0.0
+            mine = self._wave.get_display_levels()
+            level = float(mine[-1]) if mine else 0.0
+            if self.state == "meeting":
+                theirs = self._wave2.get_display_levels()
+                if theirs:
+                    level = max(level, float(theirs[-1]))
+            return max(0.0, min(1.0, level))
+        except Exception:
+            return 0.0
+
+    def _draw_level_rail(self, painter, cols, main_rect, accent):
+        """Signature element: a thin live-level rail along the pill's bottom.
+
+        Paint-only; layout geometry and every hit-rect are untouched. The
+        track is silent surface2, the fill is the state's accent at the
+        current loudness. Paused shows the empty track.
+        """
+        try:
+            track = QRectF(main_rect.left() + 18.0, main_rect.bottom() - 9.0,
+                           main_rect.width() - 36.0, 3.0)
+            if track.width() <= 0:
+                return
+            painter.setPen(Qt.PenStyle.NoPen)
+            rail_bg = QColor(cols["SURFACE2"])
+            rail_bg.setAlpha(210)
+            painter.setBrush(rail_bg)
+            painter.drawRoundedRect(track, 1.5, 1.5)
+            level = self._live_level()
+            if level < 0.02:
+                return
+            fill_w = track.width() * max(0.0, min(1.0, level))
+            if fill_w < 1.0:
+                return
+            fill = QColor(accent)
+            fill.setAlpha(235)
+            painter.setBrush(fill)
+            painter.drawRoundedRect(
+                QRectF(track.left(), track.top(), fill_w, track.height()),
+                1.5, 1.5)
+        except Exception:
+            pass
 
     def _draw_live_button(self, painter, cols):
         """The doorway to the wider live view: lines of text in a frame."""

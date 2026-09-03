@@ -147,15 +147,16 @@ def build(window):
 
     body, outer = page(
         t("Agent"),
-        t("This shortcut records the same way dictation does, but the "
-          "transcript is not what gets pasted. It goes to an agent as a "
-          "command, and what comes back is pasted instead: the answer to a "
-          "question, or a sentence saying what was done. Claude Code and "
-          "Codex run as the session you would have opened yourself, with your "
-          "skills, your connected services and your account."),
+        t("Dictate a command; the agent's answer is pasted instead of the "
+          "transcript."),
     )
 
-    window.assistant_found = QLabel("")
+    outer.addWidget(InfoNote(t(
+        "Claude Code and Codex run as the session you would have opened "
+        "yourself, with your skills, your connected services and your "
+        "account."), variant="info"))
+
+    window.assistant_found = InfoNote("", variant="warn")
     window.assistant_found.setWordWrap(True)
     outer.addWidget(window.assistant_found)
 
@@ -203,30 +204,30 @@ def build(window):
              t("The tray menu can stop one earlier."),
              window.assistant_timeout)
 
-    # --- per-provider boxes ---------------------------------------------
+    # --- per-provider boxes (visibility via the whole box) -----------------
     window.claude_box = _provider_card(SectionCard(t("Claude Code")), t("Claude Code"))
     outer.addWidget(window.claude_box)
+    claude_form = _CardForm(window.claude_box)
     window.assistant_model = QComboBox()
     window.assistant_model.setEditable(True)
     window.assistant_model.addItems(ASSISTANT_MODELS)
     window.assistant_model.setToolTip(t("“sonnet” always means the newest of that line."))
     window.refresh_assistant_claude_models = btn(t("Fetch model list"), "secondary", "sm")
     window.refresh_assistant_claude_models.clicked.connect(window._load_claude_models)
-    _setting(window.claude_box, how_form, t("Model"),
+    _setting(window.claude_box, claude_form, t("Model"),
              t("Opus thinks harder and answers slower."),
              window._row(window.assistant_model,
                           window.refresh_assistant_claude_models))
-    # Model holder registered under how_form above is wrong card; re-register
-    # under a dedicated map is unnecessary: visibility is via the whole box.
     window.assistant_permission = _expanding(QComboBox(), 320)
     for label, value in PERMISSION_MODES:
         window.assistant_permission.addItem(t(label), value)
-    _setting(window.claude_box, how_form, t("Permissions"),
+    _setting(window.claude_box, claude_form, t("Permissions"),
              t("What the agent may do unsupervised."),
              window.assistant_permission)
 
     window.codex_box = _provider_card(SectionCard(t("Codex")), t("Codex"))
     outer.addWidget(window.codex_box)
+    codex_form = _CardForm(window.codex_box)
     window.assistant_codex_model = QComboBox()
     window.assistant_codex_model.setEditable(True)
     window.assistant_codex_model.addItem(t("Codex's own default"), "")
@@ -234,25 +235,26 @@ def build(window):
         window.assistant_codex_model.addItem(name, name)
     window.refresh_assistant_codex_models = btn(t("Fetch model list"), "secondary", "sm")
     window.refresh_assistant_codex_models.clicked.connect(window._load_codex_models)
-    _setting(window.codex_box, how_form, t("Model"),
+    _setting(window.codex_box, codex_form, t("Model"),
              t("Codex model, or its own default."),
              window._row(window.assistant_codex_model,
                           window.refresh_assistant_codex_models))
     window.assistant_codex_sandbox = _expanding(QComboBox(), 320)
     for label, value in CODEX_SANDBOXES:
         window.assistant_codex_sandbox.addItem(t(label), value)
-    _setting(window.codex_box, how_form, t("Sandbox"),
+    _setting(window.codex_box, codex_form, t("Sandbox"),
              t("What the agent may touch."),
              window.assistant_codex_sandbox)
 
     window.agy_box = _provider_card(SectionCard(t("Antigravity")), t("Antigravity"))
     outer.addWidget(window.agy_box)
+    agy_form = _CardForm(window.agy_box)
     window.assistant_agy_model = QComboBox()
     window.assistant_agy_model.setEditable(True)
     window.assistant_agy_model.addItems(AGY_ASSISTANT_MODELS)
     window.refresh_assistant_agy_models = btn(t("Fetch model list"), "secondary", "sm")
     window.refresh_assistant_agy_models.clicked.connect(window._load_agy_models)
-    _setting(window.agy_box, how_form, t("Model"),
+    _setting(window.agy_box, agy_form, t("Model"),
              t("Slug carries the effort; shared thinking may not apply."),
              window._row(window.assistant_agy_model,
                           window.refresh_assistant_agy_models))
@@ -262,11 +264,12 @@ def build(window):
 
     window.gateway_box = _provider_card(SectionCard(t("Gateway")), "")
     outer.addWidget(window.gateway_box)
+    gateway_form = _CardForm(window.gateway_box)
     window.assistant_gateway_model = QComboBox()
     window.assistant_gateway_model.setEditable(True)
     window.refresh_assistant_gateway_models = btn(t("Fetch model list"), "secondary", "sm")
     window.refresh_assistant_gateway_models.clicked.connect(window._load_assistant_gateway_models)
-    _setting(window.gateway_box, how_form, t("Model"),
+    _setting(window.gateway_box, gateway_form, t("Model"),
              t("Plain question and answer over this gateway's key."),
              window._row(window.assistant_gateway_model,
                           window.refresh_assistant_gateway_models))

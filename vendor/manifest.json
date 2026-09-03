@@ -1,0 +1,35 @@
+{
+  "$schema": "dikte-vendor-manifest-v1",
+  "description": "Pinned third-party/vendor assets used by Dikte's UI. Every entry records source URL, sha256 and license. Refresh only through this manifest; inspect diffs before accepting.",
+  "updated": "2026-09-03",
+  "fonts": {
+    "SpaceGrotesk-Variable.ttf": {
+      "path": "assets/fonts/SpaceGrotesk-Variable.ttf",
+      "role": "display face (page titles, brand)",
+      "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf",
+      "sha256": "acad6de1fc93436f5c0f1f4137751ef04f1aea3063e7036535970ffcfbd79f72",
+      "license": "OFL-1.1",
+      "license_text": "https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/OFL.txt"
+    },
+    "Inter-Variable.ttf": {
+      "path": "assets/fonts/Inter-Variable.ttf",
+      "role": "body face fallback (docs/fonts statics load first)",
+      "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+      "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+      "license": "OFL-1.1",
+      "license_text": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/OFL.txt"
+    }
+  },
+  "icons": {
+    "set": "Lucide stroke SVGs (ISC), 56 files under assets/fonts/icons/",
+    "source": "https://github.com/lucide-icons/lucide",
+    "license": "ISC",
+    "notes": "vendor/font-license-notes.md",
+    "mapping": "Dikte icon key -> Lucide file, with sha256 per file, in vendor/font-license-notes.md section 2"
+  },
+  "rules": [
+    "Only .ttf/.otf/.svg vendor files; never executables or code.",
+    "Every file pinned here with source URL, sha256 and license before use.",
+    "Loaded at runtime via QFontDatabase (fonts) and ui/icons.py (SVG); docs/fonts/ statics remain the first-choice body/mono faces."
+  ]
+}

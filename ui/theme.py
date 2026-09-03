@@ -1,10 +1,10 @@
-"""Design tokens and the QSS generator for Dikte's settings UI.
+"""Theme adapter over :mod:`ui.tokens` and :mod:`ui.qss`.
 
 The exported prototype (`design/Dikte-Yeniden-Tasarım-Prototipi/assets/dikte.css`)
-is the visual contract. Its ``:root`` and ``[data-theme=light]`` variables are
-frozen here as plain dictionaries, one per theme, and ``stylesheet()`` turns one
-into a single QSS string. There is exactly one QSS string per theme; switching
-the theme re-applies it to the whole application.
+is the visual contract. Token values live in ``ui/tokens.py``; the QSS engine
+lives in ``ui/qss.py``. This module keeps the historic API — ``stylesheet()``,
+``apply()``, ``palette()``, ``normalize()``, ``current()``, ``toggle()`` and
+the ``TOKENS``/``THEMES`` keys — delegating every answer to the new engine.
 """
 
 import os
@@ -15,132 +15,22 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontDatabase
 from PyQt6.QtWidgets import QApplication, QGraphicsDropShadowEffect
 
-# The palette is the prototype's CSS variables, keyed by the same names the
-# stylesheet uses, so the QSS below reads almost like the source CSS.
-DARK = {
-    "canvas": "#11191B",
-    "sidebar": "#162225",
-    "surface": "#1B292B",
-    "surface2": "#233537",
-    "field": "#142123",
-    "border": "#314548",
-    "borderStrong": "#4A6261",
-    "fg": "#E7F0EC",
-    "fg2": "#A8BCB5",
-    "fg3": "#7C918A",
-    "terra": "#E08A72",
-    "terraDeep": "#C66F5D",
-    "sage": "#8FAF9E",
-    "sageDark": "#A8C7B5",
-    "ok": "#75C59B",
-    "warn": "#D8B870",
-    "err": "#DF8582",
-    "info": "#82B9CE",
-    "inkBtn": "#0C1315",
-    "onInk": "#F2F7F4",
-}
+from . import qss as _qss
+from . import tokens as _tokens
 
-LIGHT = {
-    "canvas": "#F1F6F3",
-    "sidebar": "#E5EEE9",
-    "surface": "#FBFDFC",
-    "surface2": "#EDF4F0",
-    "field": "#FFFFFF",
-    "border": "#CBD9D2",
-    "borderStrong": "#AFC4B8",
-    "fg": "#17211F",
-    "fg2": "#536963",
-    "fg3": "#71847E",
-    "terra": "#C96D59",
-    "terraDeep": "#A85544",
-    "sage": "#B7CCBD",
-    "sageDark": "#3F6B5A",
-    "ok": "#2F7D5B",
-    "warn": "#A87924",
-    "err": "#B94B4B",
-    "info": "#2B7390",
-    "inkBtn": "#17211F",
-    "onInk": "#F2F7F4",
-}
-
-
-
-def _mix_hex(hex_a, hex_b, share_a):
-    """`share_a` parts of a, the rest b — available before the later helpers."""
-    a = tuple(int(hex_a[i:i + 2], 16) for i in (1, 3, 5))
-    b = tuple(int(hex_b[i:i + 2], 16) for i in (1, 3, 5))
-    return "#%02x%02x%02x" % tuple(
-        round(a[i] * share_a + b[i] * (1 - share_a)) for i in range(3)
-    )
-
-
-def _derive_theme(name, accent, accent_deep, accent_soft, accent_dark):
-    """A full dark UI whose *background* is tinted by the chosen colour.
-
-    Layout, radii and type stay the same; only the paint changes. Neutrals
-    are charcoal mixed with the accent so canvas, sidebar, cards and fields
-    all read as that colour's room — not a fixed black with a coloured button.
-    Accent tokens still drive primary buttons, selection and recording dots.
-    """
-    # Deep charcoal anchors; mixed toward the accent so each theme's room
-    # is visibly different without washing out text contrast.
-    ink = "#0A0E10"
-    charcoal = "#10161A"
-    return {
-        "canvas": _mix_hex(charcoal, accent, 0.82),
-        "sidebar": _mix_hex(charcoal, accent, 0.72),
-        "surface": _mix_hex("#1A2226", accent, 0.78),
-        "surface2": _mix_hex("#243036", accent, 0.72),
-        "field": _mix_hex("#141C20", accent, 0.85),
-        "border": _mix_hex("#2E3C42", accent, 0.70),
-        "borderStrong": _mix_hex("#4A5E66", accent, 0.62),
-        "fg": _mix_hex("#E8F0EC", accent, 0.94),
-        "fg2": _mix_hex("#A8B8B2", accent, 0.82),
-        "fg3": _mix_hex("#7A8C86", accent, 0.78),
-        "terra": accent,
-        "terraDeep": accent_deep,
-        "sage": accent_soft,
-        "sageDark": accent_dark,
-        "ok": "#75C59B",
-        "warn": "#D8B870",
-        "err": "#DF8582",
-        "info": "#82B9CE",
-        "inkBtn": ink,
-        "onInk": "#F2F7F4",
-    }
-
-
-# Six full-background colour themes. Same chrome, different rooms.
-BLUE = _derive_theme("blue", "#6A8FD8", "#4468B8", "#5E7FA8", "#8FB0E8")
-GREEN = _derive_theme("green", "#6BC59B", "#3E9E6E", "#7FAF9B", "#8ED0AF")
-VIOLET = _derive_theme("violet", "#9A7FD8", "#6F55B8", "#8375A8", "#B39AE8")
-ORANGE = _derive_theme("orange", "#E09A5E", "#C2763B", "#B08A78", "#E8AE7E")
-PINK = _derive_theme("pink", "#D87FA8", "#B85A82", "#A87A96", "#E89BBE")
-TEAL = _derive_theme("teal", "#5EC5C5", "#3B9E9E", "#7AA8A8", "#8ED8D8")
-
-THEMES = {
-    "blue": BLUE, "green": GREEN, "violet": VIOLET,
-    "orange": ORANGE, "pink": PINK, "teal": TEAL,
-}
-
-# dark/light kept only as silent aliases for old configs — the product
-# surface is the six colours; Settings never offers black/white again.
-TOKENS = dict(THEMES)
-TOKENS["dark"] = DARK   # legacy alias → migrate away on load
-TOKENS["light"] = LIGHT
-
-# Radii and the fixed geometry the prototype pins in px. Kept as integers so a
-# future spacing helper can read them without parsing QSS.
-RADII = {"r1": 4, "r2": 6, "r3": 8, "r4": 12}
-
-# Shadows from dikte.css --sh-1/2/3 per theme (used via QGraphicsDropShadowEffect, not QSS)
-_SHADOW_DARK = {
-    "sh1": "0 1px 2px rgba(20,20,18,.05)",
-    "sh2": "0 1px 2px rgba(20,20,18,.06),0 6px 20px rgba(20,20,18,.09)",
-    "sh3": "0 2px 6px rgba(20,20,18,.08),0 18px 48px rgba(20,20,18,.16)",
-}
-SHADOWS = {name: dict(_SHADOW_DARK) for name in (
-    "blue", "green", "violet", "orange", "pink", "teal", "dark", "light")}
+# Re-exported token tables — same keys, same dict objects as ui.tokens.
+DARK = _tokens.DARK
+LIGHT = _tokens.LIGHT
+BLUE = _tokens.BLUE
+GREEN = _tokens.GREEN
+VIOLET = _tokens.VIOLET
+ORANGE = _tokens.ORANGE
+PINK = _tokens.PINK
+TEAL = _tokens.TEAL
+THEMES = _tokens.THEMES
+TOKENS = _tokens.TOKENS
+RADII = _tokens.RADII
+SHADOWS = _tokens.SHADOWS
 
 _current = "blue"
 _fonts_loaded = False
@@ -254,18 +144,15 @@ def palette(theme=None):
 
 def _mix(hex_a, hex_b, share_a):
     """A hex colour that is `share_a` parts of a, the rest b (0.0..1.0)."""
-    a = tuple(int(hex_a[i:i + 2], 16) for i in (1, 3, 5))
-    b = tuple(int(hex_b[i:i + 2], 16) for i in (1, 3, 5))
-    return "#%02x%02x%02x" % tuple(
-        round(a[i] * share_a + b[i] * (1 - share_a)) for i in range(3)
-    )
+    return _qss.mix(hex_a, hex_b, share_a)
+
+
+def _mix_hex(hex_a, hex_b, share_a):
+    return _qss.mix(hex_a, hex_b, share_a)
 
 
 def _rgba(hex_color, alpha):
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
-    return f"rgba({r},{g},{b},{alpha:.2f})"
+    return _qss.rgba(hex_color, alpha)
 
 
 def shadow_effect(level=1, theme=None):
@@ -296,254 +183,12 @@ def shadow_effect(level=1, theme=None):
 
 def stylesheet(theme=None):
     """The whole QSS for one theme, as a single string."""
-    c = palette(theme)
-    border_soft = _mix(c["border"], c["canvas"], 0.62)
-    border_row = _mix(c["border"], c["canvas"], 0.52)
-    border_panel = _mix(c["border"], c["surface"], 0.75)
-    field_mix = _mix(c["field"], c["surface"], 0.92)
-    # Chevron for QComboBox dropdown — generated per-theme to ensure contrast
-    _theme_name = theme if theme in TOKENS else _current
-    chev = _chevron_path(_theme_name)
-    chev_disabled = _chevron_disabled_path(_theme_name)
-    if chev:
-        chev_rule = f'QComboBox::down-arrow {{ image: url({chev}); width: 14px; height: 14px; }}'
-    else:
-        chev_rule = 'QComboBox::down-arrow { width: 14px; height: 14px; }'
-    if chev_disabled:
-        chev_disabled_rule = f'QComboBox::down-arrow:disabled {{ image: url({chev_disabled}); }}'
-    else:
-        chev_disabled_rule = ''
-    return f"""
-* {{ font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-     font-size: 13px; }}
-QWidget {{ color: {c["fg"]}; background: transparent; }}
-QDialog {{ background: {c["canvas"]}; }}
-QWidget#sidebar {{ background: {c["sidebar"]};
-                    border-right: 1px solid {border_soft}; }}
-QWidget#main {{ background: {c["canvas"]}; }}
-
-/* ---- the page stack ---------------------------------------------------- */
-QTabWidget::pane {{ border: none; background: {c["canvas"]}; }}
-QTabBar {{ background: transparent; }}
-QTabBar::tab {{ background: transparent; padding: 6px 12px; color: {c["fg2"]}; }}
-QTabBar::tab:selected {{ color: {c["fg"]}; border-bottom: 2px solid {c["sageDark"]}; }}
-QTabBar::tab:hover {{ color: {c["fg"]}; }}
-QScrollArea {{ border: none; background: transparent; }}
-QScrollArea > QWidget > QWidget {{ background: transparent; }}
-
-/* ---- sidebar ----------------------------------------------------------- */
-QLabel#brandName {{ font-size: 14.5px; font-weight: 700; }}
-QLabel#brandSub {{ font-size: 11px; color: {c["fg3"]}; }}
-QLabel#navLabel {{ font-size: 13px; font-weight: 500; color: {c["fg2"]}; }}
-QPushButton#navItem {{ text-align: left; padding: 0 9px; border-radius: 6px;
-                       border: none; background: transparent;
-                       min-height: 32px; }}
-QPushButton#navItem:hover {{ background: {_mix(c["surface"], c["sidebar"], 0.55)}; }}
-QPushButton#navItem[active="true"] {{
-    background: {_mix(c["sage"], c["sidebar"], 0.30)};
-    border: 1px solid {_mix(c["sageDark"], c["canvas"], 0.26)}; }}
-QPushButton#navItem[active="true"] QLabel#navLabel {{ color: {c["fg"]}; }}
-
-/* ---- cards (QGroupBox doubles as the card) ----------------------------- */
-QGroupBox {{
-    background: {c["surface"]};
-    border: 1px solid {c["border"]};
-    border-radius: 8px;
-    margin-top: 8px;
-    padding: 14px 20px 8px 20px;
-    font-weight: 600;
-}}
-QGroupBox::title {{
-    subcontrol-origin: margin; subcontrol-position: top left;
-    left: 16px; padding: 0 4px; color: {c["fg"]}; font-size: 13px;
-}}
-QFrame#card {{ background: {c["surface"]}; border: 1px solid {c["border"]};
-               border-radius: 8px; }}
-QFrame#panel {{ background: {_mix(c["surface2"], c["surface"], 0.55)};
-               border: 1px solid {border_panel};
-               border-radius: 6px; }}
-QLabel#cardTitle {{ font-size: 15px; font-weight: 600; }}
-QLabel#cardDesc {{ font-size: 12.5px; color: {c["fg2"]}; }}
-
-/* ---- labels ------------------------------------------------------------ */
-QLabel#pageTitle {{ font-size: 24px; font-weight: 600; }}
-QLabel#pageSub {{ font-size: 13px; color: {c["fg2"]}; }}
-QLabel#rowLabel {{ font-size: 13.5px; font-weight: 500; }}
-QLabel#rowHelp {{ font-size: 12px; color: {c["fg3"]}; }}
-QLabel#meta {{ font-size: 11px; color: {c["fg3"]}; }}
-QLabel[mono="true"] {{ font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
-                       font-size: 11.5px; }}
-QLabel#kbd {{ font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
-              font-size: 11.5px; color: {c["fg"]};
-              background: {c["surface2"]}; border: 1px solid {c["border"]};
-              border-bottom: 2px solid {c["border"]}; border-radius: 4px;
-              padding: 1px 6px; }}
-
-/* ---- dots and chips ---------------------------------------------------- */
-QLabel[dot="ok"]   {{ background: {c["ok"]}; border-radius: 4px; }}
-QLabel[dot="sage"] {{ background: {c["sageDark"]}; border-radius: 4px; }}
-QLabel[dot="warn"] {{ background: {c["warn"]}; border-radius: 4px; }}
-QLabel[dot="err"]  {{ background: {c["err"]}; border-radius: 4px; }}
-QLabel[dot="info"] {{ background: {c["info"]}; border-radius: 4px; }}
-QLabel[dot="idle"] {{ background: {c["fg3"]}; border-radius: 4px; }}
-QLabel[dot="rec"]  {{ background: {c["terra"]}; border-radius: 4px; }}
-
-QFrame[chip="sage"] {{ background: {_mix(c["sage"], c["surface"], 0.30)};
-                       color: {c["sageDark"]}; border: 1px solid {_mix(c["sageDark"], c["canvas"], 0.22)};
-                       border-radius: 11px; }}
-QFrame[chip="sage"] QLabel {{ font-size: 11.5px; color: {c["sageDark"]}; }}
-QFrame[chip="gray"] {{ background: {c["surface2"]}; color: {c["fg2"]};
-                       border: 1px solid {c["border"]}; border-radius: 11px; }}
-QFrame[chip="gray"] QLabel {{ font-size: 11.5px; color: {c["fg2"]}; }}
-QFrame[chip="tan"]  {{ background: {_mix(c["warn"], c["surface"], 0.14)};
-                       color: "#8A6A14"; border: 1px solid {_mix(c["warn"], c["canvas"], 0.34)};
-                       border-radius: 11px; }}
-QFrame[chip="tan"] QLabel {{ font-size: 11.5px; color: "#8A6A14"; }}
-QFrame[chip="red"]  {{ background: {_mix(c["err"], c["surface"], 0.10)};
-                       color: {c["err"]}; border: 1px solid {_mix(c["err"], c["canvas"], 0.28)};
-                       border-radius: 11px; }}
-QFrame[chip="red"] QLabel {{ font-size: 11.5px; color: {c["err"]}; }}
-QFrame[chip="ok"]   {{ background: {_mix(c["ok"], c["surface"], 0.12)};
-                       color: {c["ok"]}; border: 1px solid {_mix(c["ok"], c["canvas"], 0.28)};
-                       border-radius: 11px; }}
-QFrame[chip="ok"] QLabel {{ font-size: 11.5px; color: {c["ok"]}; }}
-
-/* ---- notes ------------------------------------------------------------- */
-QLabel[note="info"] {{ background: {_mix(c["info"], c["surface"], 0.07)};
-                       color: {c["fg2"]}; border: 1px solid {_mix(c["info"], c["canvas"], 0.24)};
-                       border-radius: 6px; padding: 8px 12px; }}
-QLabel[note="warn"] {{ background: {_mix(c["warn"], c["surface"], 0.11)};
-                       color: {c["fg2"]}; border: 1px solid {_mix(c["warn"], c["canvas"], 0.38)};
-                       border-radius: 6px; padding: 8px 12px; }}
-QLabel[note="err"]  {{ background: {_mix(c["err"], c["surface"], 0.07)};
-                       color: {c["fg2"]}; border: 1px solid {_mix(c["err"], c["canvas"], 0.26)};
-                       border-radius: 6px; padding: 8px 12px; }}
-QLabel[note="ok"]   {{ background: {_mix(c["ok"], c["surface"], 0.08)};
-                       color: {c["fg2"]}; border: 1px solid {_mix(c["ok"], c["canvas"], 0.26)};
-                       border-radius: 6px; padding: 8px 12px; }}
-
-/* ---- fields ------------------------------------------------------------ */
-QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {{
-    background: {c["field"]}; border: 1px solid {c["border"]};
-    border-radius: 6px; color: {c["fg"]}; selection-background-color: {c["sage"]};
-    selection-color: {c["fg"]}; padding: 0 10px; min-height: 30px; }}
-QComboBox {{ min-height: 30px; padding-right: 28px; }}
-QComboBox QLineEdit {{ background: transparent; border: none; padding: 0; }}
-QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QPlainTextEdit:hover, QTextEdit:hover {{
-    border-color: {c["borderStrong"]}; }}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
-    border-color: {c["sageDark"]}; background: {c["field"]}; }}
-QComboBox:on {{ border-color: {c["sageDark"]}; }}
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
-QPlainTextEdit:disabled, QTextEdit:disabled {{
-    background: {c["surface2"]}; color: {c["fg3"]}; border-color: {c["border"]}; }}
-QPlainTextEdit, QTextEdit {{ padding: 8px 10px; }}
-QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding; subcontrol-position: center right; }}
-{chev_rule}
-{chev_disabled_rule}
-QComboBox QAbstractItemView {{ background: {c["surface"]}; color: {c["fg"]};
-    border: 1px solid {c["border"]}; selection-background-color: {c["surface2"]};
-    selection-color: {c["fg"]}; outline: 0; }}
-QComboBox QAbstractItemView::item {{ min-height: 28px; padding: 4px 10px; border: none; }}
-QComboBox QAbstractItemView::item:selected {{ background: {c["surface2"]}; color: {c["fg"]}; }}
-QComboBox QAbstractItemView::item:hover {{ background: {c["surface2"]}; }}
-QComboBox::down-arrow:disabled {{ opacity: 0.6; }}
-
-/* ---- buttons ----------------------------------------------------------- */
-QPushButton {{ min-height: 32px; padding: 0 13px; border-radius: 6px;
-               font-size: 13px; font-weight: 500; border: 1px solid transparent; }}
-QPushButton:focus {{ border-color: {c["sageDark"]}; }}
-QPushButton[size="sm"] {{ min-height: 26px; padding: 0 9px; font-size: 12px; }}
-QPushButton[variant="primary"] {{ background: {c["terraDeep"]}; color: "#FFF8F5"; }}
-QPushButton[variant="primary"]:hover {{ background: {c["terra"]}; }}
-QPushButton[variant="primary"]:pressed {{ background: {c["terraDeep"]}; }}
-QPushButton[variant="primary"]:focus {{ border: 1px solid {c["sageDark"]}; }}
-QPushButton[variant="ink"] {{ background: {c["inkBtn"]}; color: {c["onInk"]}; }}
-QPushButton[variant="ink"]:hover {{ background: {_mix(c["inkBtn"], c["surface2"], 0.78)}; }}
-QPushButton[variant="ink"]:pressed {{ background: {c["inkBtn"]}; }}
-QPushButton[variant="secondary"] {{ background: {c["field"]};
-    border-color: {c["border"]}; color: {c["fg"]}; }}
-QPushButton[variant="secondary"]:hover {{ background: {c["surface2"]};
-    border-color: {c["borderStrong"]}; }}
-QPushButton[variant="secondary"]:pressed {{ background: {c["surface2"]}; }}
-QPushButton[variant="ghost"] {{ color: {c["fg2"]}; border-color: transparent; }}
-QPushButton[variant="ghost"]:hover {{ background: {c["surface2"]}; color: {c["fg"]}; }}
-QPushButton[variant="ghost"]:pressed {{ background: {c["surface2"]}; }}
-QPushButton[variant="danger"] {{ color: {c["err"]}; border-color: transparent; }}
-QPushButton[variant="danger"]:hover {{ background: {_mix(c["err"], c["surface"], 0.09)}; }}
-QPushButton[variant="danger"]:pressed {{ background: {_mix(c["err"], c["surface"], 0.16)}; }}
-QPushButton:disabled {{ color: {c["fg3"]}; background: {c["surface2"]}; border-color: {c["border"]}; }}
-QPushButton[variant="ghost"]:disabled, QPushButton[variant="danger"]:disabled {{
-    background: transparent; color: {c["fg3"]}; border-color: transparent; }}
-QPushButton[variant="primary"]:disabled {{
-    background: {c["surface2"]}; color: {c["fg3"]}; border-color: {c["border"]}; }}
-
-/* ---- checkboxes (toggles) --------------------------------------------- */
-QCheckBox[kind="toggle"] {{ spacing: 0; }}
-QCheckBox[kind="toggle"]::indicator {{ width: 34px; height: 18px;
-    border-radius: 9px; border: 1px solid {c["borderStrong"]};
-    background: {_mix(c["borderStrong"], c["surface2"], 0.62)}; }}
-QCheckBox[kind="toggle"]::indicator:checked {{
-    background: {c["sageDark"]}; border-color: {c["sageDark"]}; }}
-QCheckBox[kind="toggle"]::indicator:disabled {{ opacity: 0.4; }}
-QCheckBox {{ color: {c["fg"]}; spacing: 8px; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {c["borderStrong"]};
-    border-radius: 4px; background: {c["field"]}; }}
-QCheckBox::indicator:checked {{ background: {c["sageDark"]};
-    border-color: {c["sageDark"]}; }}
-
-/* ---- lists ------------------------------------------------------------- */
-QListWidget {{ background: {c["surface"]}; border: 1px solid {c["border"]};
-    border-radius: 8px; color: {c["fg"]}; padding: 4px; }}
-QListWidget::item {{ padding: 8px 10px; border-radius: 6px; }}
-QListWidget::item:selected {{ background: {_mix(c["sage"], c["surface"], 0.20)};
-    color: {c["fg"]}; border-left: 2px solid {c["sageDark"]}; }}
-QListWidget::item:hover {{ background: {_mix(c["surface2"], c["canvas"], 0.62)}; }}
-
-/* ---- menus (tray) ------------------------------------------------------ */
-QMenu {{ background: {c["surface"]}; border: 1px solid {c["border"]};
-        border-radius: 8px; padding: 5px; }}
-QMenu::item {{ height: 31px; padding: 0 10px 0 10px; margin: 0;
-              border-radius: 6px; color: {c["fg"]}; }}
-QMenu::item:selected {{ background: {c["surface2"]}; color: {c["fg"]}; }}
-QMenu::item:disabled {{ color: {c["fg3"]}; }}
-QMenu::separator {{ height: 1px; background: {border_row}; margin: 5px 6px; }}
-QMenu::item:disabled:selected {{ background: transparent; }}
-QMenu::indicator {{ width: 0px; }}
-
-/* ---- progress ---------------------------------------------------------- */
-QProgressBar {{ border: none; background: {_mix(c["borderStrong"], c["surface2"], 0.45)};
-    border-radius: 6px; height: 4px; text-align: center; }}
-QProgressBar::chunk {{ background: {c["sageDark"]}; border-radius: 6px; }}
-
-/* ---- overlay picker ---------------------------------------------------- */
-QWidget#cornerPicker {{ background: {c["surface2"]}; border: 1px solid {c["border"]};
-                       border-radius: 6px; }}
-QPushButton[cornerCell="true"] {{ background: transparent; border: 1px solid transparent;
-                                 border-radius: 6px; min-width: 44px; min-height: 34px; }}
-QPushButton[cornerCell="true"]:hover {{ background: {_mix(c["sage"], c["surface"], 0.16)}; }}
-QPushButton[cornerCell="true"][active="true"] {{ background: {_mix(c["sage"], c["surface"], 0.32)};
-                                                  border: 1px solid {c["sageDark"]}; }}
-QFrame#miniScreen {{ background: {c["surface2"]}; border: 1px solid {c["borderStrong"]};
-                    border-radius: 6px; }}
-QLabel#miniOv {{ background: {c["field"]}; border: 1px solid {c["border"]};
-                border-radius: 6px; font-family: "JetBrains Mono", monospace; font-size: 8px; color: {c["fg"]}; }}
-QLabel[miniPill="active"] {{ background: {c["sageDark"]}; border-radius: 3px; }}
-QLabel[miniPill="idle"] {{ background: {c["borderStrong"]}; border-radius: 3px; }}
-QLabel[ov="dot"] {{ background: {c["terra"]}; border-radius: 2px; }}
-QLabel[ov="bar"] {{ background: {c["terra"]}; border-radius: 1px; }}
-QLabel[ov="timer"] {{ font-size: 8px; color: {c["fg"]};
-                      font-family: "JetBrains Mono", monospace; }}
-QLabel#emptyTitle {{ font-weight: 600; font-size: 14px; color: {c["fg"]}; }}
-QLabel#emptyDesc {{ font-size: 12.5px; color: {c["fg3"]}; }}
-QLabel#engineModel {{ font-size: 12.5px; font-weight: 600; color: {c["fg"]}; }}
-QLabel#engineStatus {{ font-size: 11.5px; color: {c["fg2"]}; }}
-
-/* ---- misc -------------------------------------------------------------- */
-QSplitter::handle {{ background: transparent; }}
-QFrame#rowSeparator {{ background: {border_row}; max-height: 1px; min-height: 1px; border: none; }}
-QFrame#cardFooter {{ border-top: 1px solid {border_soft}; }}
-"""
+    name = theme if theme in TOKENS else _current
+    c = palette(name)
+    chev = _chevron_path(name)
+    chev_disabled = _chevron_disabled_path(name)
+    return _qss.stylesheet(c, theme_name=name,
+                           chevron=chev, chevron_disabled=chev_disabled)
 
 
 def apply(theme=None):
@@ -570,9 +215,4 @@ def toggle():
 
 def normalize(name):
     """Map legacy dark/light (and unknowns) onto a colour theme key."""
-    if name in THEMES:
-        return name
-    # Old black/white configs become blue — the first of the six.
-    return "blue"
-
-
+    return _tokens.normalize(name)

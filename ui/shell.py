@@ -16,6 +16,11 @@ from PyQt6.QtWidgets import (
 
 from . import icons as _icons
 from . import theme
+from .tokens import (
+    ENGINE_CARD_MAX_CHARS as _ENGINE_MAX,
+    SIDEBAR_COMPACT_WIDTH as _SIDEBAR_COMPACT,
+    SIDEBAR_WIDTH as _SIDEBAR_W,
+)
 from .widgets import Dot, Meta, StatusChip
 
 
@@ -102,7 +107,7 @@ class AppShell(QWidget):
     def _build_sidebar(self, whisper_label):
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(226)
+        sidebar.setFixedWidth(_SIDEBAR_W)
         col = QVBoxLayout(sidebar)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(0)
@@ -216,8 +221,8 @@ class AppShell(QWidget):
                 # Show just model (or provider if no model) to avoid truncation to "Deepgram · no".
                 if model_text:
                     short = model_text.strip().strip("'\"")
-                    if len(short) > 22:
-                        short = short[:19] + "…"
+                    if len(short) > _ENGINE_MAX:
+                        short = short[:_ENGINE_MAX - 3] + "…"
                     display = short
                 else:
                     display = provider_label or _t("Local whisper")
@@ -254,7 +259,9 @@ class AppShell(QWidget):
         self._nav_titles.append(title)
         if getattr(self, "_compact", False):
             button.setText("")
-            button.setStyleSheet("text-align: center; padding: 0;")
+            button.setProperty("compact", True)
+            button.style().unpolish(button)
+            button.style().polish(button)
         return index
 
     def set_page(self, index):
@@ -339,10 +346,10 @@ class AppShell(QWidget):
             title = self._nav_titles[idx] if idx < len(self._nav_titles) else button.text().strip()
             if compact:
                 button.setText("")
-                button.setStyleSheet("text-align: center; padding: 0;")
+                button.setProperty("compact", True)
             else:
                 button.setText("  " + title)
-                button.setStyleSheet("")
+                button.setProperty("compact", False)
             button.style().unpolish(button)
             button.style().polish(button)
         self._apply_theme_text()
@@ -366,7 +373,7 @@ class AppShell(QWidget):
         if animate and hasattr(self, "_sidebar") and self._sidebar is not None:
             try:
                 start_w = self._sidebar.width()
-                end_w = 64 if compact else 226
+                end_w = _SIDEBAR_COMPACT if compact else _SIDEBAR_W
                 if start_w == end_w:
                     self._apply_compact_layout(compact)
                     return
@@ -398,7 +405,7 @@ class AppShell(QWidget):
         self._apply_compact_layout(compact)
         if hasattr(self, "_sidebar") and self._sidebar is not None:
             try:
-                self._sidebar.setFixedWidth(64 if compact else 226)
+                self._sidebar.setFixedWidth(_SIDEBAR_COMPACT if compact else _SIDEBAR_W)
             except Exception:
                 pass
 

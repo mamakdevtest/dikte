@@ -168,7 +168,7 @@ class EmptyState(QWidget):
 
 # ---- buttons ------------------------------------------------------------
 
-_VARIANTS = ("primary", "ink", "secondary", "ghost", "danger", "rec")
+_VARIANTS = ("primary", "ink", "secondary", "ghost", "danger", "rec", "seg")
 
 
 def btn(text, variant="secondary", size=None, icon_name=None, icon_color=None,
@@ -479,26 +479,33 @@ class SegmentedControl(QWidget):
 
     def __init__(self, options, parent=None, on_change=None):
         super().__init__(parent)
+        self.setObjectName("seg")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         self.buttons = []
         for label, value in options:
             b = QPushButton(label)
-            b.setProperty("variant", "ghost")
+            b.setProperty("variant", "seg")
             b.setFixedHeight(27)
             b.setCheckable(True)
+            b.setAutoExclusive(True)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setProperty("value", value)
             if on_change is not None:
                 b.clicked.connect(lambda _=False, v=value: on_change(v))
             layout.addWidget(b)
             self.buttons.append(b)
         if self.buttons:
-            self.buttons[0].setChecked(True)
+            self.set_active(self.buttons[0].property("value"))
 
     def set_active(self, value):
         for b in self.buttons:
-            b.setChecked(b.property("value") == value)
+            checked = b.property("value") == value
+            b.setChecked(checked)
+            b.setProperty("active", checked)
+            b.style().unpolish(b)
+            b.style().polish(b)
 
 
 # ---- overlay picker ------------------------------------------------------

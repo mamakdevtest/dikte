@@ -1,54 +1,65 @@
 """Cleanup rules page: the two prompt sets and the names/terms glossary."""
 
-from PyQt6.QtWidgets import QLabel, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QHBoxLayout, QLabel, QPlainTextEdit, QSpinBox, QTabWidget, QWidget,
+)
 
 import config as cfg
 from i18n import t
 
+from ..widgets import (
+    InfoNote, SectionCard, SegmentedControl, SettingRow, ToggleSwitch,
+)
 from . import page, scrolled
+
+
+def _padded(widget):
+    """Card-body padding for widgets that carry none of their own."""
+    wrap = QWidget()
+    lay = QHBoxLayout(wrap)
+    lay.setContentsMargins(20, 0, 20, 8)
+    lay.addWidget(widget, 1)
+    return wrap
 
 
 def build(window):
     body, outer = page(
         t("Cleanup rules"),
-        t("System instructions given to the cleanup model; this is where you "
+        t("System instruction given to the cleanup model. This is where you "
           "decide how much it may touch your words."),
     )
 
     # --- Custom-prompt opt-in: single gate for both editors ---
-    from ..widgets import SectionCard, ToggleSwitch
     window.cleanup_custom_enabled = ToggleSwitch()
-    opt_card = SectionCard(
-        t("Use custom prompt"),
+    outer.addWidget(SectionCard(
+        t("Do you want to create a custom prompt?"),
         t("Off: the default correction runs. On: your prompts below run."),
         window.cleanup_custom_enabled,
-    )
-    opt_row = QLabel(t("Do you want to create a custom prompt?"))
-    opt_row.setObjectName("rowLabel")
-    opt_row.setWordWrap(True)
-    opt_card.add(opt_row)
-    outer.addWidget(opt_card)
+    ))
 
     # --- AI Text Processing controls — single Editing Level only ---
-    from PyQt6.QtWidgets import QGroupBox, QFormLayout, QSpinBox
-    ai_box = QGroupBox(t("AI Text Processing"))
-    ai_form = QFormLayout(ai_box)
-    ai_form.setContentsMargins(20, 16, 20, 12)
     # Editing Level 1..5 — sole policy (Shortening Freedom removed, folded into level)
-    from ..widgets import SegmentedControl
+    ai_card = SectionCard(t("AI Text Processing"))
+    outer.addWidget(ai_card)
     window.ai_edit_level = SegmentedControl([
-        (t("1 Minimum"), 1), (t("2 Light"), 2), (t("3 Balanced"), 3), (t("4 Free"), 4), (t("5 Intensive"), 5)
-    ], on_change=lambda v: window._ai_edit_changed(v) if hasattr(window, "_ai_edit_changed") else None)
-    # Also keep a spin for accessibility / test
+        (t("1 Minimum"), 1), (t("2 Light"), 2), (t("3 Balanced"), 3),
+        (t("4 Free"), 4), (t("5 Intensive"), 5),
+    ], on_change=lambda v: window._ai_edit_changed(v)
+        if hasattr(window, "_ai_edit_changed") else None)
+    ai_card.add(SettingRow(
+        t("Editing Level"),
+        t("How much the model may rewrite your words.")))
+    # Full-width row below the label: five segments never fit beside it.
+    ai_card.add(_padded(window.ai_edit_level))
+    # Accessibility / test mirror of the segmented control; never shown.
     window.ai_edit_spin = QSpinBox()
     window.ai_edit_spin.setRange(1, 5)
-    window.ai_edit_spin.setVisible(False)
-    ai_form.addRow(t("Editing Level"), window.ai_edit_level)
+    window.ai_edit_spin.setParent(body)
+    window.ai_edit_spin.hide()
     window.ai_edit_desc = QLabel("")
     window.ai_edit_desc.setWordWrap(True)
     window.ai_edit_desc.setProperty("note", "info")
-    ai_form.addRow(window.ai_edit_desc)
-    outer.addWidget(ai_box)
+    ai_card.add(_padded(window.ai_edit_desc))
 
     inner = QTabWidget()
     inner.setDocumentMode(True)
@@ -67,19 +78,21 @@ def build(window):
         cfg.default_file_cleanup_prompt,
     )
     outer.addWidget(inner, 1)
+    inner.setEnabled(window.cleanup_custom_enabled.isChecked())
     try:
         window.cleanup_custom_enabled.toggled.connect(inner.setEnabled)
     except Exception:
         pass
 
-    hint = QLabel(t("Names and terms you say often (optional). They go to the "
-                    "transcription model as a hint, and to the cleanup model as a "
-                    "glossary, so it can repair the ones that still come out wrong."))
-    hint.setWordWrap(True)
-    hint.setProperty("note", "info")
-    outer.addWidget(hint)
+    glossary = SectionCard(t("Names and terms"))
+    outer.addWidget(glossary)
+    glossary.add(_padded(InfoNote(
+        t("Names and terms you say often (optional). They go to the "
+          "transcription model as a hint, and to the cleanup model as a "
+          "glossary, so it can repair the ones that still come out wrong."),
+        variant="info")))
     window.transcribe_prompt = QPlainTextEdit()
     window.transcribe_prompt.setMaximumHeight(90)
-    outer.addWidget(window.transcribe_prompt)
+    glossary.add(_padded(window.transcribe_prompt))
 
     return scrolled(body)

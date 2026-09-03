@@ -25,6 +25,7 @@ class ThinkingPopup(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(None)
+        self.setObjectName("ThinkingPopup")
         self._paused = False
         self._log = []
         self._start_ts = None
@@ -64,7 +65,11 @@ class ThinkingPopup(QWidget):
         self.dot.setProperty("dot", "info")
         head.addWidget(self.dot)
         self.title = QLabel("Dusunuyor…", self.card)
-        self.title.setStyleSheet("font-size: 13px; font-weight: 600;")
+        self.title.setObjectName("thinkingTitle")
+        _title_font = QFont(self.title.font())
+        _title_font.setPointSizeF(13.0)
+        _title_font.setWeight(QFont.Weight.DemiBold)
+        self.title.setFont(_title_font)
         head.addWidget(self.title, 1)
         self.elapsed_lbl = QLabel("00:00", self.card)
         self.elapsed_lbl.setObjectName("meta")
@@ -79,7 +84,10 @@ class ThinkingPopup(QWidget):
         # stage line
         self.stage_lbl = QLabel("", self.card)
         self.stage_lbl.setWordWrap(True)
-        self.stage_lbl.setStyleSheet("font-size: 12.5px;")
+        self.stage_lbl.setObjectName("thinkingStage")
+        _stage_font = QFont(self.stage_lbl.font())
+        _stage_font.setPointSizeF(12.5)
+        self.stage_lbl.setFont(_stage_font)
         card_l.addWidget(self.stage_lbl)
 
         # log area
@@ -147,24 +155,28 @@ class ThinkingPopup(QWidget):
         except Exception:
             c = {}
         self.card.setObjectName("card")
-        self.dot.setProperty("dot", "info")
+        self.dot.setProperty("dot", "idle" if self._paused else "info")
         self.sep.setObjectName("rowSeparator")
         self.elapsed_lbl.setObjectName("meta")
         self.elapsed_lbl.setProperty("mono", "true")
         self.log_area.setObjectName("meta")
         try:
+            fg = QColor(c.get("fg", "#E7F0EC"))
+            fg2 = QColor(c.get("fg2", "#A8BCB5"))
             fg3 = QColor(c.get("fg3", "#7C918A"))
-            for lbl in (self.elapsed_lbl, self.log_area):
+            for lbl, col in ((self.title, fg), (self.stage_lbl, fg2),
+                             (self.elapsed_lbl, fg3), (self.log_area, fg3)):
                 pal = lbl.palette()
-                pal.setColor(pal.ColorRole.WindowText, fg3)
-                pal.setColor(pal.ColorRole.Text, fg3)
+                pal.setColor(pal.ColorRole.WindowText, col)
+                pal.setColor(pal.ColorRole.Text, col)
                 lbl.setPalette(pal)
         except Exception:
             pass
         # re-polish dynamic properties
         try:
             for w in (self.card, self.dot, self.sep,
-                      self.elapsed_lbl, self.log_area):
+                      self.elapsed_lbl, self.log_area,
+                      self.title, self.stage_lbl):
                 self.style().unpolish(w)
                 self.style().polish(w)
         except Exception:
@@ -177,6 +189,12 @@ class ThinkingPopup(QWidget):
         self.stage_lbl.setText(initial_stage)
         self.title.setText("Dusunuyor…")
         self._paused = False
+        try:
+            self.dot.setProperty("dot", "info")
+            self.style().unpolish(self.dot)
+            self.style().polish(self.dot)
+        except Exception:
+            pass
         self.pause_btn.setText("Duraklat")
         self.pause_btn.setIcon(_icons.icon("pause", 13))
         self._update_log()
@@ -200,6 +218,12 @@ class ThinkingPopup(QWidget):
         self.pause_btn.setText("Devam" if paused else "Duraklat")
         self.pause_btn.setIcon(_icons.icon("play" if paused else "pause", 13))
         self.title.setText("Duraklatildi" if paused else "Dusunuyor…")
+        try:
+            self.dot.setProperty("dot", "idle" if paused else "info")
+            self.style().unpolish(self.dot)
+            self.style().polish(self.dot)
+        except Exception:
+            pass
         self.pauseToggled.emit(paused)
 
     def hide_popup(self):

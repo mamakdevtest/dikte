@@ -182,6 +182,23 @@ class HintMenu(QMenu):
     drawn right-aligned inside that row, in the muted foreground color.
     """
 
+    def sizeHint(self):
+        base = super().sizeHint()
+        try:
+            from PyQt6.QtCore import QSize
+            from PyQt6.QtGui import QFont, QFontMetrics
+            hints = [str(a.property("shortcutHint")) for a in self.actions()
+                     if not a.isSeparator() and a.isVisible()
+                     and a.property("shortcutHint")]
+            if not hints:
+                return base
+            font = QFont(self.font())
+            font.setPointSizeF(8.5)
+            widest = max(QFontMetrics(font).horizontalAdvance(h) for h in hints)
+            return QSize(base.width() + widest + 28, base.height())
+        except Exception:
+            return base
+
     def paintEvent(self, event):
         super().paintEvent(event)
         from PyQt6.QtCore import QRectF
@@ -206,7 +223,9 @@ class HintMenu(QMenu):
                 if not rect.isValid():
                     continue
                 # 10px-equivalent small text, right-aligned with the row's padding
-                target = QRectF(rect.adjusted(0, 0, -10, 0))
+                target = QRectF(float(rect.x()), float(rect.y()),
+                                float(self.width() - rect.x()), float(rect.height()))
+                target.adjust(0, 0, -10, 0)
                 painter.drawText(target, Qt.AlignmentFlag.AlignRight
                                  | Qt.AlignmentFlag.AlignVCenter, str(hint))
         finally:

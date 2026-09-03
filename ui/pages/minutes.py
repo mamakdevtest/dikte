@@ -4,14 +4,21 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit,
-    QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
+    QSizePolicy, QTabWidget, QTextBrowser, QWidget,
 )
 
 import config as cfg
 from i18n import t
 
-from ..widgets import btn
+from ..widgets import SectionCard, SettingRow, btn
 from . import page, scrolled
+
+
+def _expanding(widget, min_width):
+    """Minimum width + Expanding: grows for long TR labels, never truncates."""
+    widget.setMinimumWidth(min_width)
+    widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    return widget
 
 
 class MarkdownView(QTextBrowser):
@@ -51,21 +58,28 @@ def build(window):
         t("Recorded meetings and the minutes written from them."),
     )
 
+    # --- list ------------------------------------------------------------
+    meetings = SectionCard(
+        t("Recorded meetings"),
+        t("Pick a meeting to read it."),
+    )
+    outer.addWidget(meetings)
     window.minutes_list = QListWidget()
     window.minutes_list.setWordWrap(True)
     window.minutes_list.setMaximumHeight(170)
     window.minutes_list.currentItemChanged.connect(window._show_minutes)
-    outer.addWidget(window.minutes_list)
+    meetings.add(window.minutes_list)
 
-    # Style picker + AI-auto + Preview/Source toggle
-    style_row = QHBoxLayout()
+    # --- format + view ---------------------------------------------------
+    reading = SectionCard(t("Reading"))
+    outer.addWidget(reading)
     window.minutes_style_label = QLabel("")
     window.minutes_style_label.setObjectName("meta")
-    style_row.addWidget(window.minutes_style_label)
-    style_row.addStretch(1)
+    window.minutes_style_label.setWordWrap(True)
+    reading.add(window.minutes_style_label)
     window.minutes_auto = QCheckBox(t("AI picks the best format"))
     window.minutes_auto.setChecked(True)
-    window.minutes_style = QComboBox()
+    window.minutes_style = _expanding(QComboBox(), 200)
     for key in cfg.STYLE_KEYS:
         window.minutes_style.addItem(
             cfg.STYLE_LABELS_TR.get(key, key), key)
@@ -75,31 +89,39 @@ def build(window):
         window.minutes_style.setEnabled(not checked)
 
     window.minutes_auto.toggled.connect(_on_auto_toggled)
-    style_row.addWidget(window.minutes_auto)
-    style_row.addWidget(QLabel(t("Format")))
-    style_row.addWidget(window.minutes_style)
-    window.minutes_view_toggle = QComboBox()
+    style_holder = QWidget()
+    style_lay = QHBoxLayout(style_holder)
+    style_lay.setContentsMargins(0, 0, 0, 0)
+    style_lay.setSpacing(8)
+    style_lay.addWidget(window.minutes_auto, 0)
+    style_lay.addWidget(window.minutes_style, 1)
+    reading.add(SettingRow(t("Format"),
+                           t("AI picks, or you pick."),
+                           style_holder))
+    window.minutes_view_toggle = _expanding(QComboBox(), 160)
     window.minutes_view_toggle.addItem(t("Preview"), "preview")
     window.minutes_view_toggle.addItem(t("Source"), "source")
     window.minutes_view_toggle.setCurrentIndex(0)
     window.minutes_view_toggle.currentIndexChanged.connect(
         lambda: window.minutes_view.set_source_mode(
             window.minutes_view_toggle.currentData() == "source"))
-    style_row.addWidget(window.minutes_view_toggle)
-    outer.addLayout(style_row)
+    reading.add(SettingRow(t("View"),
+                           t("Preview renders Markdown; Source shows it raw."),
+                           window.minutes_view_toggle))
 
     window.minutes_status = QLabel("")
     window.minutes_status.setWordWrap(True)
-    outer.addWidget(window.minutes_status)
+    reading.add(window.minutes_status)
 
+    # --- detail (Markdown minutes + raw transcript tabs) ------------------
     tabs = QTabWidget()
     window.minutes_view = MarkdownView()
     window.minutes_view.setPlaceholderText(t("Pick a meeting to read it."))
     window.minutes_raw_view = QPlainTextEdit()
     window.minutes_raw_view.setReadOnly(True)
-    window.minutes_raw_view.setPlaceholderText(t("Raw transcript (hammadde) — original before AI cleanup."))
+    window.minutes_raw_view.setPlaceholderText(t("Raw transcript — the original before AI cleanup."))
     tabs.addTab(window.minutes_view, t("Minutes"))
-    tabs.addTab(window.minutes_raw_view, t("Raw (hammadde)"))
+    tabs.addTab(window.minutes_raw_view, t("Raw"))
     window.minutes_tabs = tabs
     outer.addWidget(tabs, 1)
 
