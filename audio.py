@@ -317,6 +317,14 @@ class Recorder(QObject):
             _terminate_process(proc, timeout=1.5)
         if self._source is not None:
             self._source.close()
+        # Invalidate the pump generation only when the pump cannot finish
+        # on its own: a live WASAPI source whose close() unblocks read()
+        # with b"" leaves the thread parked on sleep(0.01) until the 2s
+        # join expires. The ffmpeg road instead ends itself (EOF on the
+        # pipe) and must NOT be invalidated — stop() reads the buffer the
+        # pump already filled.
+        if self._source is not None:
+            self._gen += 1
 
     def pause(self):
         if not self._session_active or self._paused:

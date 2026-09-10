@@ -106,8 +106,15 @@ class MeetingPipeline(QObject):
         return self._base if self.busy else ""
 
     def run(self, entry):
-        """Take a meeting row onwards from wherever it stopped."""
+        """Take a meeting row onwards from wherever it stopped.
+
+        Returns True when the pipeline was started, False otherwise
+        (busy, or the row is already done — re-running a done meeting
+        would bill another full LLM pass for nothing new).
+        """
         if self.busy:
+            return False
+        if (entry or {}).get("status") == "done":
             return False
         self._stop.clear()
         try:
@@ -781,10 +788,13 @@ def retry_meeting(base, conf):
     * no transcript yet (status ``recorded`` / ``failed`` before the
       transcript) — transcribes + cleans + writes the ``transcribed``
       checkpoint.
-    * transcript already on disk (status ``transcribed`` / ``done`` with a
+    * transcript already on disk (status ``transcribed`` with a
       readable document) — skips the audio/transcription entirely and
       re-runs only title + minutes (see MeetingPipeline._stored_transcript
       and the ``status="transcribed"`` write).
+
+    A ``done`` meeting is not retried: its minutes are already written, and
+    re-running would bill another full LLM pass for nothing new.
 
     Returns True when the pipeline was started, False when there is no such
     meeting or the pipeline is already busy.  The caller should listen to the

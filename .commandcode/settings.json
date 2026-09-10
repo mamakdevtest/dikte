@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(ls -la ~/.commandcode/skills/ 2>&1; echo ---; ls -la ~/.config/commandcode/skills/ 2>&1; echo ---; cmd skills list 2>&1 || command-code skills list 2>&1 || true; echo ---; pwd; ls)",
+      "Shell(cmd skills --help 2>&1; echo ===; cmd --help 2>&1 | head -n 100)",
+      "Shell(cmd skills add --help 2>&1; echo ===; cmd skills list --help 2>&1 || true)",
+      "Shell(find:*)",
+      "Shell(cmd:*)",
+      "Shell(head -n 30 ~/.commandcode/skills/impeccable/SKILL.md; echo ===; cat ~/.commandcode/skills/impeccable/scripts/VERSION 2>&1; echo ===; ls ~/.commandcode/skills/impeccable/; echo ===; cmd skills list --debug 2>&1 | grep -i -B2 -A6 impecc)",
+      "Shell(~/.commandcode/skills/impeccable/scripts/impeccable:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

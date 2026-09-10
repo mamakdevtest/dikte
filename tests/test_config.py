@@ -477,6 +477,11 @@ class MeetingSettings(DikteTest):
         conf = self.config(meeting_style="executive")
         self.assertEqual(conf.meeting_prompt(), cfg.meeting_style_template("executive"))
 
+    def test_the_meeting_instruction_box_wins_over_the_style(self):
+        conf = self.config(meeting_style="executive",
+                           meeting_prompt="  Summarize as a haiku.  ")
+        self.assertEqual(conf.meeting_prompt(), "Summarize as a haiku.")
+
 
 class History(DikteTest):
     def entry(self, text):
@@ -552,6 +557,28 @@ class History(DikteTest):
         cfg.delete_history([])
         self.assertEqual(len(cfg.read_history()), 1)
 
+    def test_concurrent_append_and_delete_loses_nothing(self):
+        import threading
+        barrier = threading.Barrier(2)
+        cfg.append_history(self.entry("seed"))
+
+        def append():
+            barrier.wait(timeout=5)
+            cfg.append_history(self.entry("racy"))
+
+        def delete():
+            barrier.wait(timeout=5)
+            cfg.delete_history([self.entry("seed")])
+
+        first, second = threading.Thread(target=append), threading.Thread(target=delete)
+        first.start()
+        second.start()
+        first.join(timeout=10)
+        second.join(timeout=10)
+        texts = [row["text"] for row in cfg.read_history()]
+        self.assertIn("racy", texts)
+        self.assertNotIn("seed", texts)
+
     def test_clearing(self):
         cfg.append_history(self.entry("a"))
         cfg.clear_history()
@@ -559,6 +586,24 @@ class History(DikteTest):
 
     def test_clearing_a_history_that_is_not_there(self):
         cfg.clear_history()   # must not raise
+
+    def test_delete_all_user_data_covers_voice_jobs_and_recordings(self):
+        import voice_jobs
+        from tests.support import make_wav, speech
+        cfg.append_history(self.entry("a"))
+        wav = make_wav(str(cfg.RECORDINGS_DIR / "keep.wav"), speech(0.5))
+        voice_jobs.save_voice_job({"id": "gone1", "status": "completed",
+                                   "audio_path": wav, "raw_transcript": "hi",
+                                   "result_text": "Hi."})
+        cfg.MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
+        (cfg.MEETINGS_DIR / "m.wav").write_bytes(b"x")
+        cfg.MEETINGS_FILE.write_text("{}\n".format(
+            __import__("json").dumps({"base": "m"})), encoding="utf-8")
+        cfg.delete_all_user_data()
+        self.assertEqual(cfg.read_history(), [])
+        self.assertEqual(voice_jobs.read_voice_jobs(), [])
+        self.assertEqual(list(cfg.RECORDINGS_DIR.glob("*.wav")), [])
+        self.assertFalse(cfg.MEETINGS_FILE.exists())
 
 
 class Meetings(DikteTest):

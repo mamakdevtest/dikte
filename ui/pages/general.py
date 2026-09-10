@@ -248,11 +248,11 @@ def build(window):
             window.corner.setCurrentIndex(idx)
             window.corner.blockSignals(False)
         mini_screen.setCorner(corner)
-        # Live preview: update conf and reposition any existing overlays immediately.
+        # Live preview only: never touch conf here (Save/Discard owns it).
         try:
-            if hasattr(window, "conf") and window.conf is not None:
-                window.conf["overlay_corner"] = corner
-            # Reposition live overlays if any (Dikte's indicator windows)
+            if hasattr(window, "preview_overlay_corner"):
+                window.preview_overlay_corner(corner)
+                return
             from PyQt6.QtWidgets import QApplication
             import overlay as _ov
             app = QApplication.instance()

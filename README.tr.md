@@ -97,11 +97,12 @@ diktelerine dokunmaz.
 
 Sesi yazıya çevirme ve temizleme, ayarlar penceresinde ayrı ayrı sağlayıcı
 seçer; ikisi de varsayılan olarak burada, kendi modellerinle çalışır. Bulutu
-seçersen sesi yazıya çevirme **OpenAI**, **Groq**, **OpenRouter**, **LLM API**
-(`gpt-4o-transcribe`) ya da **Deepgram**'da (varsayılan `nova-3`), temizleme
-OpenRouter'da (`google/gemini-3.5-flash-lite`) ya da **LLM API**'de veya
-kuruluysa Claude Code veya Codex'te çalışır. Anahtarları boş bırakırsan
-`OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `LLM_API_KEY` ve
+seçersen sesi yazıya çevirme **OpenAI**, **Groq** (`gpt-4o-transcribe`)
+ya da **Deepgram**'da (varsayılan `nova-3`), temizleme barındırılan bir
+ağ geçidinde veya kuruluysa Claude Code veya Codex'te çalışır. OpenRouter
+ve bağımsız LLM API artık yerleşik sağlayıcı değil: Ayarlar → Sağlayıcılar
+altında özel OpenAI-uyumlu ağ geçidi olarak eklersin. Anahtarları boş bırakırsan
+`OPENAI_API_KEY`, `GROQ_API_KEY` ve
 `DEEPGRAM_API_KEY` kullanılır; anahtarlar `~/.config/dikte/config.json`
 içinde, izinler 600, Mac'te ise `~/Library/Application Support/Dikte` altında.
 Temizlemeyi tamamen kapatabilirsin, o zaman ham transkript yapıştırılır; modelin
@@ -170,7 +171,7 @@ olmasını ister.
   oturumun aynısıdır, yani skill'lerin ve bağlı servislerin oradadır; "bunu
   perşembe üçe takvime koy" cümlesini Claude olmayan bir pencerede söyleyebilir
   olmanı sağlayan da budur. Codex (`codex exec`) da aynı şekilde çalışır;
-  OpenRouter ise ikisi de kurulu olmayan bir makinede düz soru cevap için
+  özel bir ağ geçidi ise ikisi de kurulu olmayan bir makinede düz soru cevap için
   duruyor. Sağlayıcı, model, izinler ve çalışma dizini Ayarlar → Ajan
   sekmesinde; arka arkaya verilen komutlar tek bir konuşmada kalır.
 - **Toplantılar** mikrofonla hoparlör çıkışından aynı anda kaydedilir; kimin ne
@@ -207,9 +208,9 @@ cli.py            komut satırı: bütün fiiller ve verdikleri cevap
 ipc.py            yerel sokette bir istek, bir cevap
 audio.py          PCM kaydı: diktede pw-record, toplantıda ffmpeg
 meeting.py        kanal ayırma, konuşmacı etiketi, temizleme, tutanak
-assistant.py      dikteyi Claude Code, Codex ya da OpenRouter'dan geçirme
+assistant.py      dikteyi Claude Code, Codex ya da özel bir ağ geçidinden geçirme
 api.py            transkript ve temizleme istekleri (yalnız stdlib)
-cleanup.py        transkripti kim temizler: OpenRouter, burası, Claude ya da Codex
+cleanup.py        transkripti kim temizler: barındırılan ağ geçidi, burası, Claude ya da Codex
 ggml.py           whisper.cpp ve llama.cpp'yi indirip burada çalıştırma
 hub.py            GitHub ve Hugging Face'te bugün ne olduğu
 worker.py         transkript → temizleme → pano → yapıştırma

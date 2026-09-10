@@ -9,3 +9,10 @@ graphify-out/
 .claude/settings.local.json
 .claude/mamak-context/
 .commandcode/taste/--*/
+.codex/*
+!.codex/config.example.toml
+_out.txt
+_ui.log
+*.part
+_genicon.py
+promt-v2.md

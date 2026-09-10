@@ -274,7 +274,7 @@ def ask(prompt, conf, on_stage=None, should_stop=None):
     """
     name = provider(conf)
     if name.startswith("user/"):
-        return _ask_plain_http(name, prompt, conf, on_stage)
+        return _ask_plain_http(name, prompt, conf, on_stage, should_stop)
 
     binary = executable(name)
     if not providers.resolve_binary(binary, conf):
@@ -288,7 +288,7 @@ def ask(prompt, conf, on_stage=None, should_stop=None):
         # no conversation this side can name, so every command is a one-shot.
         # The stored one still belongs to whichever provider wrote it, which is
         # what drops the conversation on a provider switch.
-        return _ask_antigravity(prompt, conf, on_stage)
+        return _ask_antigravity(prompt, conf, on_stage, should_stop)
 
     run = _ask_claude if name == "claude" else _ask_codex
     session = read_session(name, conf["assistant_session_minutes"] * 60)
@@ -425,7 +425,7 @@ def _codex_label(item):
 
 # --- Antigravity ----------------------------------------------------------
 
-def _ask_antigravity(prompt, conf, on_stage):
+def _ask_antigravity(prompt, conf, on_stage, should_stop=None):
     """One question, one plain-text answer, no thread to pick back up.
 
     `agy --print` has no system-prompt flag and no stream of events either —
@@ -436,6 +436,14 @@ def _ask_antigravity(prompt, conf, on_stage):
     """
     if on_stage:
         on_stage(t("Thinking…"))
+    if should_stop is not None:
+        try:
+            if should_stop():
+                raise Cancelled()
+        except Cancelled:
+            raise
+        except Exception:
+            pass
     body = f"{conf.assistant_prompt()}\n\n---\n\n{prompt}"
     cmd = [
         _resolved("antigravity", conf), "--print", body,
@@ -467,12 +475,20 @@ def _ask_antigravity(prompt, conf, on_stage):
     if done.returncode != 0 or not answer:
         raise AssistantError(last_line(done.stderr) or t(
             "{service} answered with nothing.", service="Antigravity"))
+    if should_stop is not None:
+        try:
+            if should_stop():
+                raise Cancelled()
+        except Cancelled:
+            raise
+        except Exception:
+            pass
     return answer, ""
 
 
 # --- a gateway ------------------------------------------------------------
 
-def _ask_plain_http(name, prompt, conf, on_stage):
+def _ask_plain_http(name, prompt, conf, on_stage, should_stop=None):
     """No tools, no files, no calendar: a question and an answer.
 
     It is the fallback for a machine with no CLI on it, so it says what it
@@ -482,6 +498,8 @@ def _ask_plain_http(name, prompt, conf, on_stage):
     """
     if on_stage:
         on_stage(t("Thinking…"))
+    if should_stop is not None and should_stop():
+        raise Cancelled()
     who = providers.provider(conf, name)
     if who is None:
         # An entry that has gone missing is a loud dead end rather than a
@@ -496,6 +514,23 @@ def _ask_plain_http(name, prompt, conf, on_stage):
             service=who.name))
     history = read_messages(name, conf["assistant_session_minutes"] * 60)
     messages = history + [{"role": "user", "content": prompt}]
+    aborter = None
+    if should_stop is not None:
+        aborter = api.Aborter()
+
+        def _watch_abort():
+            while True:
+                try:
+                    if should_stop():
+                        aborter.abort()
+                        return
+                except Exception:
+                    return
+                if aborter.aborted:
+                    return
+                threading.Event().wait(0.2)
+
+        threading.Thread(target=_watch_abort, daemon=True).start()
     try:
         answer = api.chat(
             messages, providers.credential(conf, name), chosen,
@@ -503,7 +538,10 @@ def _ask_plain_http(name, prompt, conf, on_stage):
             base_url=providers.base_url(conf, name),
             timeout=conf["assistant_timeout"],
             provider=name, service=who.name,
+            aborter=aborter,
         )
+    except api.Aborted as exc:
+        raise Cancelled() from exc
     except api.ApiError as exc:
         raise AssistantError(str(exc)) from exc
     write_session(name,

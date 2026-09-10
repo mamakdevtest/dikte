@@ -1095,8 +1095,16 @@ class Config:
     def save(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         tmp = CONFIG_FILE.with_suffix(".json.tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(self.data, fh, ensure_ascii=False, indent=2)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(self.data, fh, ensure_ascii=False, indent=2)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         try:
             os.chmod(tmp, 0o600)
         except OSError:
@@ -1285,8 +1293,20 @@ class Config:
         settings value is the fallback. "auto" means the model picks the
         format, so the prompt is the picker question. A custom prompt the
         user wrote for this style in the creator replaces the built-in one.
+        A non-empty meeting_prompt setting (the Meeting tab instruction box)
+        replaces the built-in template for a concrete style, but the auto
+        style still gets the picker question so the model can choose.
         """
+        override = (self["meeting_prompt"] or "").strip()
         key = style or self["meeting_style"] or "auto"
+        if override and key != "auto":
+            prompt = override
+            people = self.participants()
+            if people:
+                rule = (PARTICIPANTS_RULE_TR if i18n.language() == "tr"
+                        else PARTICIPANTS_RULE_EN)
+                prompt += rule.format(participants=people)
+            return prompt
         custom = (self["meeting_custom_prompts"] or {}).get(key, "").strip()
         if custom:
             prompt = custom
@@ -1523,13 +1543,98 @@ def delete_history(rows):
     doomed = {_row_key(row) for row in rows}
     if not doomed:
         return
+    lock = globals().get("_history_lock")
+    if lock is not None:
+        with lock:
+            kept = [json.dumps(row, ensure_ascii=False) + "\n"
+                    for row in _read_history_locked() if _row_key(row) not in doomed]
+            _write_history_locked(kept)
+        return
     kept = [json.dumps(row, ensure_ascii=False) + "\n"
             for row in read_history() if _row_key(row) not in doomed]
     _write_history(kept)
 
 
+def _read_history_locked():
+    """Read rows while the caller owns ``_history_lock``."""
+    try:
+        with open(HISTORY_FILE, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _write_history_locked(lines):
+    """Replace the file while the caller owns ``_history_lock``."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = HISTORY_FILE.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.writelines(lines)
+    tmp.replace(HISTORY_FILE)
+
+
 def clear_history():
     HISTORY_FILE.unlink(missing_ok=True)
+
+
+def delete_all_user_data():
+    """Remove every user-data artifact, not just the visible history.
+
+    "Clear History" used to leave raw transcripts, results, recordings and
+    meeting artifacts behind. This covers history, voice jobs (+ their audio),
+    recordings, meetings, and temp/session/cache files under DATA_DIR.
+    """
+    import shutil
+
+    import voice_jobs
+
+    lock = globals().get("_history_lock")
+    if lock is not None:
+        with lock:
+            HISTORY_FILE.unlink(missing_ok=True)
+    else:
+        HISTORY_FILE.unlink(missing_ok=True)
+    for job in voice_jobs.read_voice_jobs():
+        audio = (job.get("audio_path") or "") if isinstance(job, dict) else ""
+        if audio:
+            try:
+                pathlib.Path(audio).unlink(missing_ok=True)
+            except OSError:
+                pass
+    try:
+        voice_jobs._write_voice_jobs([])
+    except (OSError, voice_jobs.PersistenceError):
+        pass
+    for path in (RECORDINGS_DIR, MEETINGS_DIR):
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+    MEETINGS_FILE.unlink(missing_ok=True)
+    try:
+        for child in DATA_DIR.iterdir():
+            name = child.name
+            if name in ("history.jsonl", "voice_jobs.jsonl", "meetings.jsonl"):
+                continue
+            if name.endswith((".tmp", ".part", ".log")) or name in (
+                "assistant.json", "session.json",
+            ):
+                try:
+                    if child.is_dir() and not child.is_symlink():
+                        shutil.rmtree(child, ignore_errors=True)
+                    else:
+                        child.unlink(missing_ok=True)
+                except OSError:
+                    pass
+    except OSError:
+        pass
 
 
 # --- meetings -------------------------------------------------------------
@@ -1582,6 +1687,18 @@ def _write_meetings(rows):
 
 def save_meeting(entry):
     """Insert the row, or replace the one with the same base."""
+    lock = globals().get("_meetings_lock")
+    if lock is not None:
+        with lock:
+            rows = _read_meetings_locked()
+            for index, row in enumerate(rows):
+                if row["base"] == entry["base"]:
+                    rows[index] = entry
+                    break
+            else:
+                rows.append(entry)
+            _write_meetings_locked(rows)
+        return
     rows = read_meetings()
     for index, row in enumerate(rows):
         if row["base"] == entry["base"]:
@@ -1594,6 +1711,16 @@ def save_meeting(entry):
 
 def update_meeting(base, **changes):
     """Patch one row and hand it back, or None when it is gone."""
+    lock = globals().get("_meetings_lock")
+    if lock is not None:
+        with lock:
+            rows = _read_meetings_locked()
+            for row in rows:
+                if row["base"] == base:
+                    row.update(changes)
+                    _write_meetings_locked(rows)
+                    return row
+            return None
     rows = read_meetings()
     for row in rows:
         if row["base"] == base:
@@ -1603,12 +1730,46 @@ def update_meeting(base, **changes):
     return None
 
 
+def _read_meetings_locked():
+    """Read rows while the caller owns ``_meetings_lock``."""
+    try:
+        with open(MEETINGS_FILE, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("base"):
+            out.append(row)
+    return out
+
+
+def _write_meetings_locked(rows):
+    """Replace the file while the caller owns ``_meetings_lock``."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = MEETINGS_FILE.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    tmp.replace(MEETINGS_FILE)
+
+
 def delete_meetings(bases):
     """Drop the rows and the files they point at."""
     doomed = set(bases)
     if not doomed:
         return
-    _write_meetings([row for row in read_meetings() if row["base"] not in doomed])
+    lock = globals().get("_meetings_lock")
+    if lock is not None:
+        with lock:
+            rows = _read_meetings_locked()
+            _write_meetings_locked([row for row in rows if row["base"] not in doomed])
+    else:
+        _write_meetings([row for row in read_meetings() if row["base"] not in doomed])
     for base in doomed:
         for path in meeting_paths(base):
             try:

@@ -285,6 +285,22 @@ class Chain(DikteTest):
         self.run_chain(rms=[0.00001] * 60)
         self.assertFalse(os.path.exists(self.wav))
 
+    def test_discard_keeps_only_copy_when_preserve_move_fails(self):
+        from unittest import mock as _mock
+        wav = make_wav(self.path("only.wav"), speech(1.0))
+        pipe = worker.Pipeline(self.config(keep_audio=True))
+        with _mock.patch.object(worker.shutil, "move", side_effect=OSError("locked")):
+            pipe._discard(wav, {"audio_path": "", "status": "completed"})
+        self.assertTrue(os.path.exists(wav))
+
+    def test_discard_keeps_file_when_legacy_move_fails(self):
+        from unittest import mock as _mock
+        wav = make_wav(self.path("legacy.wav"), speech(1.0))
+        pipe = worker.Pipeline(self.config(keep_audio=True))
+        with _mock.patch.object(worker.shutil, "move", side_effect=OSError("locked")):
+            pipe._discard(wav, None)
+        self.assertTrue(os.path.exists(wav))
+
 
 class Busy(DikteTest):
     def test_a_second_run_while_one_is_going_is_ignored(self):

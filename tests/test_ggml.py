@@ -279,6 +279,22 @@ class InstallProgram(Local):
             ("bin-macos-arm64.tar.gz",),
         )
 
+    def test_windows_wants_the_native_whisper_zip_not_ubuntu(self):
+        self.patch_attr(sys, "platform", "win32")
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        self.assertEqual(ggml._wanted_assets(ggml.WHISPER), ("whisper-bin-x64.zip",))
+        self.assertNotIn("bin-ubuntu-x64.tar.gz",
+                         ggml._wanted_assets(ggml.LLAMA))
+
+    def test_windows_whisper_missing_zip_says_win_not_brew(self):
+        self.patch_attr(sys, "platform", "win32")
+        self.patch_attr(ggml, "_arch", lambda: "x64")
+        with fake_urlopen(self.release("whisper-something-else.zip")):
+            with self.assertRaises(ggml.LocalError) as caught:
+                ggml.install_program(ggml.WHISPER)
+        self.assertIn("whisper-bin-x64.zip", str(caught.exception))
+        self.assertNotIn("brew", str(caught.exception))
+
     def test_what_was_installed_is_remembered(self):
         path, _ = self.install("whisper-bin-ubuntu-x64.tar.gz")
         self.assertEqual(ggml.installed_program(ggml.WHISPER), path)

@@ -246,15 +246,34 @@ class Management(DikteTest):
     def test_add_provider_makes_unique_ids(self):
         conf = self.config()
         first = providers.add_provider(conf, "One", "https://a.example/v1")
-        second = providers.add_provider(conf, "Two", "")
+        second = providers.add_provider(conf, "Two", "https://b.example/v1")
         self.assertNotEqual(first, second)
         self.assertTrue(first.startswith("user/"))
         self.assertEqual(len(providers.custom_providers(conf)), 2)
-        # A blank name still gets a usable one; a blank URL stays blank.
-        third = providers.add_provider(conf, "  ", None)
-        entry = providers._custom(conf, third)
-        self.assertEqual(entry["name"], "Gateway")
-        self.assertEqual(entry["base_url"], "")
+
+    def test_add_provider_rejects_blank_url(self):
+        conf = self.config()
+        with self.assertRaises(providers.ProviderURLError):
+            providers.add_provider(conf, "Blank", "")
+        with self.assertRaises(providers.ProviderURLError):
+            providers.add_provider(conf, "Blank", None)
+
+    def test_add_provider_rejects_plain_http_remote(self):
+        conf = self.config()
+        with self.assertRaises(providers.ProviderURLError):
+            providers.add_provider(conf, "Evil", "http://my-company-server.com/v1")
+
+    def test_add_provider_allows_http_loopback(self):
+        conf = self.config()
+        for url in ("http://localhost:8000/v1", "http://127.0.0.1:8000/v1",
+                    "http://[::1]:8000/v1"):
+            pid = providers.add_provider(conf, "Local", url)
+            self.assertEqual(providers.base_url(conf, pid), url)
+
+    def test_set_base_url_rejects_plain_http_remote(self):
+        conf = self.config(providers=[gateway(None)])
+        with self.assertRaises(providers.ProviderURLError):
+            providers.set_base_url(conf, "user/abc123", "http://remote.example/v1")
 
     def test_remove_provider(self):
         entry = gateway(None)

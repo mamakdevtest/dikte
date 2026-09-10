@@ -389,7 +389,7 @@ class Pipeline(DikteTest):
                                   side_effect=local) as call:
             meeting.MeetingPipeline(self.conf)._work(cfg.read_meetings()[0])
         text, conf, prompt, timeout = call.call_args.args
-        self.assertEqual(prompt, self.conf.meeting_prompt())
+        self.assertEqual(prompt, self.conf.meeting_prompt("executive"))
         self.assertEqual(timeout, 600)
         row = cfg.read_meetings()[0]
         self.assertEqual(row["status"], "done")
@@ -770,6 +770,14 @@ class RetryHelper(DikteTest):
 
     def test_retry_unknown_base_returns_false(self):
         self.assertFalse(meeting.retry_meeting("20990101-000000", self.conf))
+
+    def test_retry_done_meeting_returns_false(self):
+        cfg.update_meeting(self.base, status="done")
+        with mock.patch.object(api, "transcribe_segments") as transcribe, \
+             mock.patch.object(api, "cleanup") as cleanup:
+            self.assertFalse(meeting.retry_meeting(self.base, self.conf))
+        transcribe.assert_not_called()
+        cleanup.assert_not_called()
 
     def test_retry_unknown_entry_dict_still_starts_from_that_dict(self):
         # retry_meeting_entry does not re-read the index; it trusts the dict.

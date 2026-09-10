@@ -1,0 +1,11 @@
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+ANTHROPIC_BASE_URL = "https://api.example.com/v1"
+ANTHROPIC_AUTH_TOKEN = "PASTE-YOUR-TOKEN-HERE"
+ANTHROPIC_DEFAULT_OPUS_MODEL = "your-default-model"
+ANTHROPIC_DEFAULT_SONNET_MODEL = "your-default-model"
+ANTHROPIC_DEFAULT_HAIKU_MODEL = "your-default-model"
+ANTHROPIC_DEFAULT_FABLE_MODEL = "your-default-model"
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"

@@ -33,7 +33,11 @@ import ggml
 from i18n import t
 
 APP_URL = "https://github.com/yusufipk/dikte"
-USER_AGENT = f"dikte/1.0 (+{APP_URL})"
+try:
+    from version import __version__ as _dikte_version
+except ImportError:
+    _dikte_version = "1.0.0"
+USER_AGENT = f"dikte/{_dikte_version} (+{APP_URL})"
 OPENAI_URL = "https://api.openai.com/v1"
 GROQ_URL = "https://api.groq.com/openai/v1"
 DEEPGRAM_URL = "https://api.deepgram.com/v1"
@@ -226,7 +230,10 @@ def explain(exc, service):
 
 
 def _request(url, data, headers, timeout=120, aborter=None):
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    except (ValueError, TypeError) as exc:
+        raise ApiError(t("Bad provider URL: {error}", error=exc)) from exc
     try:
         with _opened(req, timeout, aborter) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -636,7 +643,7 @@ def cleanup(text, api_key, model, system_prompt, reasoning="",
 
 
 def chat(messages, api_key, model, system_prompt, reasoning="",
-         base_url="", timeout=180, provider="", service=""):
+         base_url="", timeout=180, provider="", service="", aborter=None):
     """A conversation, rather than one transcript rewritten.
 
     The messages are the whole history and come back unchanged; the caller keeps
@@ -660,7 +667,10 @@ def chat(messages, api_key, model, system_prompt, reasoning="",
             json.dumps(payload).encode("utf-8"),
             _headers(provider, api_key, "application/json"),
             timeout=timeout,
+            aborter=aborter,
         )
+    except Aborted:
+        raise
     except ApiError as exc:
         raise explain(exc, service) from None
     choices = data.get("choices") or []

@@ -119,6 +119,40 @@ class Table(unittest.TestCase):
             with self.subTest(source=source[:50]):
                 translated.format(**{key: "x" for key in names})
 
+    def test_user_visible_strings_reach_t(self):
+        """Every t("...") literal in product code should have a TR entry.
+
+        Scans non-test .py files for t("literal") calls and fails only
+        when the gap grows: the count below is the ratchet. Adding a new
+        user-visible string without a Turkish translation increases the
+        count and fails; adding translations decreases it (then lower
+        the expected number in this test).
+        """
+        import ast
+        import pathlib
+        repo = pathlib.Path(__file__).resolve().parent.parent
+        missing = set()
+        for path in sorted(repo.glob("*.py")) + sorted(repo.glob("ui/**/*.py")):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except (OSError, SyntaxError):
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                name = getattr(func, "attr", None) or getattr(func, "id", None)
+                if name != "t" or not node.args:
+                    continue
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    literal = first.value
+                    if literal and literal not in i18n.TR:
+                        missing.add(f"{path.name}: {literal[:60]}")
+        self.assertLessEqual(
+            len(missing), 104,
+            f"t() literals without TR entry grew: {sorted(missing)[:10]}")
+
 
 class VoiceReliabilityParity(DikteTest):
     """Changed recovery/capture copy must not fall through to English in TR."""

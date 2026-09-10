@@ -403,6 +403,7 @@ class Dikte:
     def _build_tray(self):
         # Keep menu and actions on self: PyQt does not take ownership when they
         # are only passed to addAction(), and garbage collection eats them.
+        old_menu = getattr(self, "menu", None)
         try:
             from ui import icons as _icons
             from ui import theme as _theme
@@ -475,6 +476,11 @@ class Dikte:
         self.tray.setContextMenu(self.menu)
         self.tray.setToolTip(t("Dikte: ready"))
         self._set_icon("audio-input-microphone")
+        if old_menu is not None and old_menu is not self.menu:
+            try:
+                old_menu.deleteLater()
+            except Exception:
+                pass
 
     def _hint(self, action, hint, keys=None):
         """Show `hint` right-aligned on `action`; bind `keys` only when safe.
@@ -979,6 +985,11 @@ class Dikte:
                 print(f"dikte: could not retire activity: {exc}", file=sys.stderr)
         if current is not None:
             self._activity_widgets.pop(kind, None)
+            if not dismiss:
+                try:
+                    current.deleteLater()
+                except Exception:
+                    pass
 
     def _reflow_activities(self):
         coordinator = getattr(self, "_coordinator", None)

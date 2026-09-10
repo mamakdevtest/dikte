@@ -30,7 +30,11 @@ from i18n import t
 GITHUB_API = "https://api.github.com"
 HF_API = "https://huggingface.co/api"
 HF_FILES = "https://huggingface.co"
-USER_AGENT = "dikte/1.0 (+https://github.com/yusufipk/dikte)"
+try:
+    from version import __version__ as _dikte_version
+except ImportError:
+    _dikte_version = "1.0.0"
+USER_AGENT = f"dikte/{_dikte_version} (+https://github.com/yusufipk/dikte)"
 
 CACHE_DIR = (pathlib.Path(os.environ.get("XDG_CACHE_HOME")
                           or os.path.expanduser("~/.cache")) / "dikte")

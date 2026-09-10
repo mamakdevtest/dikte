@@ -485,10 +485,38 @@ def _persist(conf):
     conf["providers"] = custom_providers(conf)
 
 
+class ProviderURLError(ValueError):
+    """A gateway URL the app must not send credentials to."""
+
+
+def check_base_url(base_url):
+    """Validate a gateway URL. Returns the stripped URL or raises ProviderURLError.
+
+    https:// is always fine; plain http:// is only allowed for loopback
+    (localhost, 127.0.0.1, ::1) so an API key never crosses a network in clear.
+    """
+    cleaned = (base_url or "").strip()
+    if not cleaned:
+        raise ProviderURLError("Provider URL is empty.")
+    lowered = cleaned.lower()
+    if lowered.startswith("https://"):
+        return cleaned
+    if lowered.startswith("http://"):
+        authority = lowered[len("http://"):].split("/", 1)[0].split("@")[-1]
+        if authority.startswith("["):
+            host = authority.split("]", 1)[0][1:].strip()
+        else:
+            host = authority.split(":", 1)[0].strip()
+        if host in ("localhost", "127.0.0.1", "::1"):
+            return cleaned
+        raise ProviderURLError("Provider URL must use https:// (http:// is only for localhost).")
+    raise ProviderURLError("Provider URL must start with https://.")
+
+
 def add_provider(conf, name, base_url):
     """A new OpenAI-compatible gateway. Returns its registry id."""
     entry = {"id": uuid.uuid4().hex[:10], "name": name.strip() or "Gateway",
-             "base_url": (base_url or "").strip(), "enabled": True,
+             "base_url": check_base_url(base_url), "enabled": True,
              "keys": [], "active": ""}
     conf["providers"] = custom_providers(conf) + [entry]
     return f"user/{entry['id']}"
@@ -503,7 +531,7 @@ def remove_provider(conf, pid):
 def set_base_url(conf, pid, base_url):
     entry = _custom(conf, pid)
     if entry is not None:
-        entry["base_url"] = (base_url or "").strip()
+        entry["base_url"] = check_base_url(base_url)
         _persist(conf)
 
 

@@ -32,12 +32,18 @@ jobs:
             libfontconfig1 libfreetype6 libgssapi-krb5-2
 
       - name: Install PyQt6
-        run: python -m pip install --quiet PyQt6
+        run: python -m pip install --quiet "PyQt6>=6.6,<7"
 
       # Nothing else is needed: the code is standard library and PyQt6, and the
       # tests reach neither the network nor a sound device.
       - name: Run the tests
         run: python -m unittest discover --verbose
+
+      - name: Check for whitespace errors
+        run: git diff --check
+
+      - name: Scan tracked files for token-like secrets
+        run: python -m unittest tests.test_repo_hygiene -v
 
   test-windows:
     # The Windows port is first-class: same tests, same expectations.
@@ -55,7 +61,41 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Install PyQt6
-        run: python -m pip install --quiet PyQt6
+        run: python -m pip install --quiet "PyQt6>=6.6,<7"
 
       - name: Run the tests
         run: python -m unittest discover --verbose
+
+      - name: Check for whitespace errors
+        run: git diff --check
+
+      - name: Scan tracked files for token-like secrets
+        run: python -m unittest tests.test_repo_hygiene -v
+
+  test-macos:
+    # macOS is supported in code (clipboard/keyboard paths) so it gets the
+    # same import/unit/smoke gate as the other two.
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install PyQt6
+        run: python -m pip install --quiet "PyQt6>=6.6,<7"
+
+      - name: Run the tests
+        run: python -m unittest discover --verbose
+
+      - name: Check for whitespace errors
+        run: git diff --check
+
+      - name: Scan tracked files for token-like secrets
+        run: python -m unittest tests.test_repo_hygiene -v

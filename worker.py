@@ -698,6 +698,22 @@ class Pipeline(QObject):
                             error_stage="",
                             error_message="",
                         )
+                        # keep_audio=False promises deletion once transcribed:
+                        # the durable copy served retry duty, now remove it.
+                        if not bool(conf.get("keep_audio", False)):
+                            try:
+                                durable = job.get("audio_path") or ""
+                            except AttributeError:
+                                durable = ""
+                            if durable and os.path.exists(durable):
+                                try:
+                                    os.unlink(durable)
+                                except OSError:
+                                    pass
+                            try:
+                                job = voice_jobs.update_voice_job(job_id, audio_path="") or job
+                            except (OSError, voice_jobs.PersistenceError):
+                                pass
                         self.finished.emit(raw, text, warning)
                 except (OSError, voice_jobs.PersistenceError) as exc:
                     self.failed.emit(str(exc))
@@ -744,8 +760,15 @@ class Pipeline(QObject):
                     if os.path.abspath(wav_path) == os.path.abspath(durable):
                         if voice_jobs.should_keep_audio(job, bool(self.conf.get("keep_audio", False))):
                             return
-                        # Even for completed jobs, default is retain — don't delete durable here
-                        # Retention is handled by age-based pruning, not per-run delete
+                        # Completed with keep_audio=False: the UI promises the
+                        # recording is deleted once transcribed, so delete it.
+                        # Retryable/failed jobs always keep audio (should_keep_audio
+                        # already returned True above), and keep_audio=True with
+                        # retention policy is handled by age-based pruning.
+                        try:
+                            os.unlink(wav_path)
+                        except OSError:
+                            pass
                         return
                 except Exception:
                     pass
@@ -761,16 +784,17 @@ class Pipeline(QObject):
             if wav_path and durable == "" and os.path.exists(wav_path):
                 # No durable copy was made (e.g. copy failed): wav_path IS the only copy
                 if voice_jobs.should_keep_audio(job, bool(self.conf.get("keep_audio", False))):
-                    # Keep it by moving to recordings
+                    # Keep it by moving to recordings. If the move fails, the
+                    # file stays where it is — never delete the only copy.
                     try:
                         cfg.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
                         # If wav_path already under RECORDINGS_DIR, keep it
                         if cfg.RECORDINGS_DIR in pathlib.Path(wav_path).parents or pathlib.Path(wav_path).parent == cfg.RECORDINGS_DIR:
                             return
                         shutil.move(wav_path, cfg.RECORDINGS_DIR / (time.strftime("%Y%m%d-%H%M%S") + ".wav"))
-                        return
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        print(f"dikte: could not preserve recording: {exc}", file=sys.stderr)
+                    return
                 try:
                     os.unlink(wav_path)
                 except OSError:
@@ -784,8 +808,9 @@ class Pipeline(QObject):
                 cfg.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
                 shutil.move(wav_path, cfg.RECORDINGS_DIR / (time.strftime("%Y%m%d-%H%M%S") + ".wav"))
                 return
-            except OSError:
-                pass
+            except OSError as exc:
+                print(f"dikte: could not preserve recording: {exc}", file=sys.stderr)
+                return
         try:
             os.unlink(wav_path)
         except OSError:

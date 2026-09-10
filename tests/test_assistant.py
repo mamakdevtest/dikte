@@ -15,6 +15,7 @@ import unittest
 from unittest import mock
 
 import assistant
+import api
 from tests.support import DikteTest, FakeCompleted, fake_urlopen, only_these_tools
 from tests.test_cleanup import gateway
 
@@ -589,6 +590,31 @@ class AskAntigravity(DikteTest):
             with self.assertRaises(assistant.AssistantError) as caught:
                 assistant.ask("book it", conf)
         self.assertIn("300", str(caught.exception))
+
+    def test_a_stop_before_the_run_is_honoured(self):
+        conf = self.config(assistant_provider="antigravity")
+        with only_these_tools("agy"), \
+                mock.patch.object(subprocess, "run",
+                                  return_value=FakeCompleted(stdout="done\n")) as run:
+            with self.assertRaises(assistant.Cancelled):
+                assistant.ask("book it", conf, None, lambda: True)
+        run.assert_not_called()
+
+    def test_a_stop_after_the_run_is_honoured(self):
+        conf = self.config(assistant_provider="antigravity")
+        with only_these_tools("agy"), \
+                mock.patch.object(subprocess, "run",
+                                  return_value=FakeCompleted(stdout="done\n")):
+            with self.assertRaises(assistant.Cancelled):
+                assistant.ask("book it", conf, None, lambda: True)
+
+    def test_a_gateway_stop_before_the_request_is_honoured(self):
+        conf = self.config(assistant_provider="user/abc123",
+                           providers=[gateway(models={"assistant": "some/asker"})])
+        with mock.patch.object(api, "chat") as chat:
+            with self.assertRaises(assistant.Cancelled):
+                assistant.ask("when is it", conf, None, lambda: True)
+        chat.assert_not_called()
 
 
 class AskGateway(DikteTest):

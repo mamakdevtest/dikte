@@ -298,7 +298,7 @@ class WorkerDurableCheckpoints(DikteTest):
         # durable file must still exist even though keep_audio is False
         self.assertTrue(os.path.exists(job["audio_path"]))
 
-    def test_successful_processing_retains_durable_audio(self):
+    def test_successful_processing_deletes_durable_when_keep_audio_false(self):
         self.conf["keep_audio"] = False
         pipe = worker.Pipeline(self.conf)
         with mock.patch.object(api, "transcribe", return_value="hello"), \
@@ -309,7 +309,20 @@ class WorkerDurableCheckpoints(DikteTest):
              mock.patch.object(worker.time, "sleep", lambda s: None):
             pipe._work(self.wav, 1.0, self.rms, False, None)
         job = voice_jobs.read_voice_jobs()[0]
-        # Per new policy durable audio is retained even on success (pruning by age, not per-run delete)
+        # keep_audio=False promises deletion once transcribed.
+        self.assertFalse(os.path.exists(job["audio_path"]))
+
+    def test_successful_processing_retains_durable_when_keep_audio_true(self):
+        self.conf["keep_audio"] = True
+        pipe = worker.Pipeline(self.conf)
+        with mock.patch.object(api, "transcribe", return_value="hello"), \
+             mock.patch.object(api, "cleanup", return_value="Hello."), \
+             mock.patch.object(paste, "copy"), \
+             mock.patch.object(paste, "press"), \
+             mock.patch.object(paste, "read_clipboard", return_value=None), \
+             mock.patch.object(worker.time, "sleep", lambda s: None):
+            pipe._work(self.wav, 1.0, self.rms, False, None)
+        job = voice_jobs.read_voice_jobs()[0]
         self.assertTrue(os.path.exists(job["audio_path"]))
 
 

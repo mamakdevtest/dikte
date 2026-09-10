@@ -39,10 +39,16 @@ $DIR = (Resolve-Path $DIR).Path
 
 # Display metadata. Kept minimal and reliable: no remote version lookup, so the
 # recorded version is local-only and never blocks a reinstall.
+# The version reads from version.py (single source of truth), falling back
+# to 1.0.0 when the file is missing.
 $APP_GUID  = "Dikte"
 $DISPLAY_NAME = "Dikte"
 $PUBLISHER = "Mamak Studio"
 $VERSION   = "1.0.0"
+try {
+    $verLine = Select-String -Path (Join-Path $DIR "version.py") -Pattern '__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if ($verLine -and $verLine.Matches.Count -gt 0) { $VERSION = $verLine.Matches[0].Groups[1].Value }
+} catch { }
 $ICON_PATH = Join-Path $DIR "icons\dikte.ico"
 
 # Pick python: a console one for the `dikte` shim and CLI, and a windowless one

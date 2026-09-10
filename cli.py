@@ -450,6 +450,8 @@ def cmd_meetings_retry(opts):
     row = _find_meeting(opts.which)
     if row is None:
         return fail(opts, f"no such meeting: {opts.which}")
+    if row.get("status") == "done":
+        return fail(opts, "that meeting is already written up")
     status = ipc.send("status") or {}
     if status.get("meeting_base") == row["base"]:
         return fail(opts, "the application is already writing this one up")

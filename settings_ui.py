@@ -559,8 +559,8 @@ class SettingsWindow(QDialog):
         self._pending_index = -1
         self._prev_index = self.tabs.currentIndex()
         try:
-            self.tabs.currentChanged.connect(self._on_tab_change_requested)
-            self.shell.tabs.currentChanged.connect(self._on_tab_change_requested)
+            self.tabs.currentChanged.connect(
+                self._on_tab_change_requested, Qt.UniqueConnection)
         except Exception:
             pass
         # Apply persisted sidebar compact (manual preference) — auto responsive overrides at <920
@@ -2210,19 +2210,81 @@ class SettingsWindow(QDialog):
             out["overlay_corner"] = (self.corner.currentData() or "bottom-left") if hasattr(self, "corner") else "bottom-left"
             out["max_seconds"] = int(self.max_seconds.value()) if hasattr(self, "max_seconds") else 300
             out["skip_silent"] = bool(self.skip_silent.isChecked()) if hasattr(self, "skip_silent") else True
+            out["silence_db"] = int(self.silence_db.value()) if hasattr(self, "silence_db") else -38
+            out["filter_hallucinations"] = bool(self.filter_hallucinations.isChecked()) if hasattr(self, "filter_hallucinations") else True
             out["live_transcript"] = bool(self.live_transcript.isChecked()) if hasattr(self, "live_transcript") else True
+            out["result_overlay_enabled"] = bool(self.result_overlay_enabled.isChecked()) if hasattr(self, "result_overlay_enabled") else True
             out["keep_audio"] = bool(self.keep_audio.isChecked()) if hasattr(self, "keep_audio") else False
+            for pid, field in getattr(self, "_key_fields", {}).items():
+                try:
+                    out[KEY_SETTINGS[pid]] = field.text()
+                except Exception:
+                    pass
             out["transcribe_provider"] = (self.transcribe_provider.currentData() or "local") if hasattr(self, "transcribe_provider") else "local"
             out["transcribe_model"] = (self.transcribe_model.currentText().strip() if hasattr(self, "transcribe_model") else "")
+            out["transcribe_prompt"] = (self.transcribe_prompt.toPlainText() if hasattr(self, "transcribe_prompt") else "")
             out["cleanup_enabled"] = bool(self.cleanup_enabled.isChecked()) if hasattr(self, "cleanup_enabled") else True
             out["cleanup_provider"] = (self.cleanup_provider.currentData() or "local") if hasattr(self, "cleanup_provider") else "local"
-            out["transcribe_prompt"] = (self.transcribe_prompt.toPlainText().strip() if hasattr(self, "transcribe_prompt") else "")
+            out["cleanup_model"] = (self.cleanup_model.currentText().strip() if hasattr(self, "cleanup_model") else "")
+            out["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip() if hasattr(self, "cleanup_claude_model") else "")
+            out["cleanup_codex_model"] = (self.cleanup_codex_model.currentText().strip() if hasattr(self, "cleanup_codex_model") else "")
+            out["cleanup_agy_model"] = (self.cleanup_agy_model.currentText().strip() if hasattr(self, "cleanup_agy_model") else "")
+            out["cleanup_reasoning"] = (self.cleanup_reasoning.currentData() or "") if hasattr(self, "cleanup_reasoning") else ""
             try:
                 out["cleanup_custom_enabled"] = bool(self.cleanup_custom_enabled.isChecked()) if hasattr(self, "cleanup_custom_enabled") else False
             except Exception:
                 out["cleanup_custom_enabled"] = False
-            out["cleanup_prompt"] = (self.cleanup_prompt.toPlainText().strip() if hasattr(self, "cleanup_prompt") else "")
+            out["cleanup_prompt"] = (self.cleanup_prompt.toPlainText() if hasattr(self, "cleanup_prompt") else "")
+            out["file_cleanup_prompt"] = (self.file_cleanup_prompt.toPlainText() if hasattr(self, "file_cleanup_prompt") else "")
             out["assistant_provider"] = (self.assistant_provider.currentData() or "claude") if hasattr(self, "assistant_provider") else "claude"
+            out["assistant_model"] = (self.assistant_model.currentText().strip() if hasattr(self, "assistant_model") else "")
+            out["assistant_permission_mode"] = (self.assistant_permission.currentData() or "auto") if hasattr(self, "assistant_permission") else "auto"
+            out["assistant_codex_model"] = (self.assistant_codex_model.currentText().strip() if hasattr(self, "assistant_codex_model") else "")
+            out["assistant_agy_model"] = (self.assistant_agy_model.currentText().strip() if hasattr(self, "assistant_agy_model") else "")
+            out["assistant_gateway_model"] = (self.assistant_gateway_model.currentText().strip() if hasattr(self, "assistant_gateway_model") else "")
+            out["assistant_codex_sandbox"] = (self.assistant_codex_sandbox.currentData() or "workspace-write") if hasattr(self, "assistant_codex_sandbox") else "workspace-write"
+            out["assistant_reasoning"] = (self.assistant_reasoning.currentData() or "") if hasattr(self, "assistant_reasoning") else ""
+            out["assistant_dir"] = (self.assistant_dir.text() if hasattr(self, "assistant_dir") else "")
+            out["assistant_timeout"] = int(self.assistant_timeout.value()) if hasattr(self, "assistant_timeout") else 240
+            out["assistant_session_minutes"] = int(self.assistant_session_minutes.value()) if hasattr(self, "assistant_session_minutes") else 30
+            out["assistant_paste"] = bool(self.assistant_paste.isChecked()) if hasattr(self, "assistant_paste") else False
+            out["assistant_cleanup"] = bool(self.assistant_cleanup.isChecked()) if hasattr(self, "assistant_cleanup") else False
+            out["assistant_prompt"] = (self.assistant_prompt.toPlainText() if hasattr(self, "assistant_prompt") else "")
+            out["meeting_mic_target"] = (self.meeting_mic.currentData() or "") if hasattr(self, "meeting_mic") else ""
+            out["meeting_system_target"] = (self.meeting_system.currentData() or "") if hasattr(self, "meeting_system") else ""
+            out["meeting_self_name"] = (self.meeting_self_name.text() if hasattr(self, "meeting_self_name") else "")
+            out["meeting_other_name"] = (self.meeting_other_name.text() if hasattr(self, "meeting_other_name") else "")
+            out["meeting_participants"] = (self.meeting_participants.toPlainText() if hasattr(self, "meeting_participants") else "")
+            out["meeting_provider"] = (self.meeting_provider.currentData() or "local") if hasattr(self, "meeting_provider") else "local"
+            out["meeting_model"] = (self.meeting_model.currentText().strip() if hasattr(self, "meeting_model") else "")
+            out["meeting_reasoning"] = (self.meeting_reasoning.currentData() or "") if hasattr(self, "meeting_reasoning") else ""
+            out["meeting_language"] = (self.meeting_language.currentData() or "auto") if hasattr(self, "meeting_language") else "auto"
+            out["meeting_mine_language"] = (self.meeting_mine_language.currentData() or "auto") if hasattr(self, "meeting_mine_language") else "auto"
+            out["meeting_theirs_language"] = (self.meeting_theirs_language.currentData() or "auto") if hasattr(self, "meeting_theirs_language") else "auto"
+            out["meeting_cleanup"] = bool(self.meeting_cleanup.isChecked()) if hasattr(self, "meeting_cleanup") else True
+            out["meeting_max_seconds"] = int(self.meeting_max_minutes.value()) * 60 if hasattr(self, "meeting_max_minutes") else 3600
+            out["meeting_keep_audio"] = bool(self.meeting_keep_audio.isChecked()) if hasattr(self, "meeting_keep_audio") else True
+            out["meeting_audio_retention_days"] = int(self.meeting_retention.value()) if hasattr(self, "meeting_retention") else 30
+            out["meeting_prompt"] = (self.meeting_prompt.toPlainText() if hasattr(self, "meeting_prompt") else "")
+            out["meeting_style"] = ("auto" if (hasattr(self, "minutes_auto") and self.minutes_auto.isChecked())
+                                    else ((self.minutes_style.currentData() or "auto") if hasattr(self, "minutes_style") else "auto"))
+            out["file_timestamps"] = bool(self.file_timestamps.isChecked()) if hasattr(self, "file_timestamps") else True
+            out["file_cleanup"] = bool(self.file_cleanup.isChecked()) if hasattr(self, "file_cleanup") else False
+            out["local_model"] = (self.local_whisper.current() if hasattr(self, "local_whisper") else "")
+            out["local_gpu"] = bool(self.local_gpu.isChecked()) if hasattr(self, "local_gpu") else True
+            out["local_preload"] = bool(self.local_preload.isChecked()) if hasattr(self, "local_preload") else False
+            out["local_threads"] = int(self.local_threads.value()) if hasattr(self, "local_threads") else 4
+            out["local_llm_model"] = (self.local_llm.current_model() if hasattr(self, "local_llm") else "")
+            out["local_llm_repo"] = (self.local_llm.current_repo() if hasattr(self, "local_llm") else "")
+            out["local_llm_gpu"] = bool(self.local_llm_gpu.isChecked()) if hasattr(self, "local_llm_gpu") else True
+            out["local_llm_preload"] = bool(self.local_llm_preload.isChecked()) if hasattr(self, "local_llm_preload") else False
+            out["local_llm_reasoning"] = (self.local_llm_reasoning.currentData() or "") if hasattr(self, "local_llm_reasoning") else ""
+            for which, (box, _status, _missing) in getattr(self, "_shortcut_rows", {}).items():
+                try:
+                    out[hotkey.SHORTCUTS[which].setting] = box.currentText()
+                except Exception:
+                    pass
+            out["evdev_hotkey"] = bool(self.evdev_enabled.isChecked()) if hasattr(self, "evdev_enabled") else False
             out["meeting_provider"] = (self.meeting_provider.currentData() or "local") if hasattr(self, "meeting_provider") else "local"
             out["ai_edit_level"] = 3
             if hasattr(self, "ai_edit_spin"):
@@ -2398,6 +2460,24 @@ class SettingsWindow(QDialog):
         """A colour was picked in Settings: preview it everywhere, now."""
         self._theme = _theme.apply(key)
         self._after_theme_change()
+
+    def preview_overlay_corner(self, corner):
+        """Live overlay preview without touching conf (Save/Discard owns it)."""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            import overlay as _ov
+            app = QApplication.instance()
+            if app is not None:
+                for w in app.topLevelWidgets():
+                    if isinstance(w, _ov.Overlay):
+                        w.corner = corner
+                        if getattr(w, "showing", False):
+                            try:
+                                w._reposition()
+                            except Exception:
+                                pass
+        except Exception:
+            pass
 
     def _after_theme_change(self):
         _theme.apply(self._theme)
