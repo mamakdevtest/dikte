@@ -30,11 +30,11 @@ def gateway(conf, name="Gateway", base_url="https://gw.example/v1", keys=()):
 
 
 class Definitions(DikteTest):
-    def test_a_fresh_config_offers_exactly_the_six(self):
+    def test_a_fresh_config_offers_exactly_the_seven(self):
         table = providers.definitions(self.config())
         self.assertEqual(set(table),
                          {"local", "local-llm", "deepgram", "claude", "codex",
-                          "antigravity"})
+                          "antigravity", "opencode-go"})
         for who in table.values():
             self.assertFalse(who.retired)
 
@@ -55,6 +55,11 @@ class Definitions(DikteTest):
         self.assertEqual(table["claude"].transport, "cli")
         self.assertEqual(table["antigravity"].transport, "cli")
         self.assertEqual(table["deepgram"].transport, "http")
+        self.assertEqual(table["opencode-go"].transport, "http")
+        self.assertEqual(table["opencode-go"].kind, "opencode-go")
+        self.assertEqual(table["opencode-go"].capabilities, (providers.TEXT,))
+        self.assertEqual(table["opencode-go"].base_url,
+                         providers.OPENCODE_GO_BASE_URL)
 
     def test_custom_providers_appear_with_user_ids(self):
         conf = self.config(providers=[gateway(conf=None, name="My gate")])
@@ -193,6 +198,24 @@ class CredentialResolution(DikteTest):
         conf = self.config()
         self.assertEqual(providers.credential(conf, "claude"), "")
         self.assertEqual(providers.credential(conf, "local"), "")
+
+    def test_opencode_go_reads_the_flat_setting(self):
+        conf = self.config(opencode_go_api_key="sk-go-flat")
+        self.assertEqual(providers.credential(conf, "opencode-go"), "sk-go-flat")
+
+    def test_opencode_go_falls_back_to_the_environment(self):
+        with mock.patch.dict("os.environ", {"OPENCODE_GO_API_KEY": "sk-go-env"}):
+            conf = self.config()
+            self.assertEqual(providers.credential(conf, "opencode-go"), "sk-go-env")
+
+    def test_opencode_go_session_id_is_stable_per_provider(self):
+        conf = self.config()
+        first = providers.opencode_go_session_id(conf)
+        second = providers.opencode_go_session_id(conf)
+        self.assertTrue(first)
+        self.assertEqual(first, second)
+        other = self.config()
+        self.assertNotEqual(providers.opencode_go_session_id(other), "")
 
     def test_custom_active_credential(self):
         entry = gateway(None, keys=[("k1", "One", "s1"),

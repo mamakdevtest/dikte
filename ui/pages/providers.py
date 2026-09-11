@@ -256,6 +256,22 @@ def build(window):
              t("Model id for this provider."),
              window.cleanup_agy_model_row)
 
+    window.opencode_go_enabled = QCheckBox()
+    _setting(orr, orr_form, t("Use OpenCode Go for cleanup"),
+             t("Sends Go's routing session id and model-family endpoint; "
+               "off leaves cleanup on its other provider."),
+             window.opencode_go_enabled)
+    window.opencode_go_model = QComboBox()
+    window.opencode_go_model.setEditable(True)
+    window.refresh_opencode_go_models = btn(t("Fetch model list"), "secondary", "sm")
+    window.refresh_opencode_go_models.clicked.connect(
+        window._load_opencode_go_models)
+    window.opencode_go_model_row = window._row(window.opencode_go_model,
+                                               window.refresh_opencode_go_models)
+    _setting(orr, orr_form, t("OpenCode Go model"),
+             t("Go model id; endpoint path follows the family."),
+             window.opencode_go_model_row)
+
     window.cleanup_reasoning = _expanding(QComboBox(), 240)
     for label, value in REASONING_LEVELS:
         window.cleanup_reasoning.addItem(t(label), value)

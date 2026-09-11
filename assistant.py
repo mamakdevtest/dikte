@@ -37,7 +37,7 @@ import providers
 from i18n import t
 
 SESSION_FILE = cfg.DATA_DIR / "assistant.json"
-PROVIDERS = ("claude", "codex", "antigravity")
+PROVIDERS = ("claude", "codex", "antigravity", "opencode-go")
 
 # How many messages of a gateway conversation are carried forward. The CLIs
 # keep their own history and need no such number; here every turn is resent
@@ -130,6 +130,9 @@ def display_name(conf):
         # An entry that has gone missing is still named, not dressed up as
         # somebody else: the ask is about to fail on it anyway.
         return who.name if who else name
+    if name == "opencode-go":
+        who = providers.provider(conf, name)
+        return who.name if who else "OpenCode Go"
     return {"claude": "Claude", "codex": "Codex",
             "antigravity": "Antigravity"}[name]
 
@@ -143,6 +146,8 @@ def model(conf):
         return conf["assistant_codex_model"].strip() or "codex"
     if name == "antigravity":
         return conf["assistant_agy_model"].strip() or "antigravity"
+    if name == "opencode-go":
+        return (conf["opencode_go_model"] or "").strip() or "kimi-k2.7-code"
     if name.startswith("user/"):
         return providers.custom_model(conf, name, "assistant")
     return conf["assistant_model"]
@@ -275,6 +280,8 @@ def ask(prompt, conf, on_stage=None, should_stop=None):
     name = provider(conf)
     if name.startswith("user/"):
         return _ask_plain_http(name, prompt, conf, on_stage, should_stop)
+    if name == "opencode-go":
+        return _ask_opencode_go(prompt, conf, on_stage, should_stop)
 
     binary = executable(name)
     if not providers.resolve_binary(binary, conf):
@@ -545,6 +552,67 @@ def _ask_plain_http(name, prompt, conf, on_stage, should_stop=None):
     except api.ApiError as exc:
         raise AssistantError(str(exc)) from exc
     write_session(name,
+                  messages=messages + [{"role": "assistant", "content": answer}])
+    return answer, ""
+
+
+def _ask_opencode_go(prompt, conf, on_stage, should_stop=None):
+    """OpenCode Go over HTTP, with the routing Go demands.
+
+    Same shape as a plain gateway — no tools, no files, the conversation is
+    ours to keep — plus Go's own rules: the stable session header on every
+    request and the per-family endpoint path. The compat checkbox owns
+    whether this road is offered at all; here the request just carries it.
+    """
+    if on_stage:
+        on_stage(t("Thinking…"))
+    if should_stop is not None:
+        try:
+            if should_stop():
+                raise Cancelled()
+        except Cancelled:
+            raise
+        except Exception:
+            pass
+    who = providers.provider(conf, "opencode-go")
+    if who is None:
+        raise AssistantError(t("Unknown provider."))
+    chosen = (conf["opencode_go_model"] or "").strip() or "kimi-k2.7-code"
+    history = read_messages("opencode-go",
+                            conf["assistant_session_minutes"] * 60)
+    messages = history + [{"role": "user", "content": prompt}]
+    aborter = None
+    if should_stop is not None:
+        aborter = api.Aborter()
+
+        def _watch_abort():
+            while True:
+                try:
+                    if should_stop():
+                        aborter.abort()
+                        return
+                except Exception:
+                    return
+                if aborter.aborted:
+                    return
+                threading.Event().wait(0.2)
+
+        threading.Thread(target=_watch_abort, daemon=True).start()
+    try:
+        answer = api.chat(
+            messages, providers.credential(conf, "opencode-go"), chosen,
+            conf.assistant_prompt(), reasoning=conf["assistant_reasoning"],
+            base_url=providers.base_url(conf, "opencode-go"),
+            timeout=conf["assistant_timeout"],
+            provider="opencode-go", service=who.name,
+            aborter=aborter,
+            session_id=providers.opencode_go_session_id(conf),
+        )
+    except api.Aborted as exc:
+        raise Cancelled() from exc
+    except api.ApiError as exc:
+        raise AssistantError(str(exc)) from exc
+    write_session("opencode-go",
                   messages=messages + [{"role": "assistant", "content": answer}])
     return answer, ""
 

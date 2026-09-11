@@ -201,7 +201,13 @@ def apply(theme=None):
     _load_fonts()
     app = QApplication.instance()
     if app is not None:
-        app.setStyleSheet(stylesheet(_current))
+        sheet = stylesheet(_current)
+        # An unchanged sheet is not put back on: Qt re-polishes every widget in
+        # the process for it, which is most of a second once a window is up,
+        # and a widget built afterwards is handed the sheet the application
+        # already holds anyway. Only a real change is worth a setStyleSheet.
+        if app.styleSheet() != sheet:
+            app.setStyleSheet(sheet)
     return _current
 
 

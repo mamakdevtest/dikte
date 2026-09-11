@@ -1,10 +1,14 @@
 """Activity-stack contracts that must survive independent overlay lifecycles."""
 
 import unittest
+from unittest import mock
 
+from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import QApplication
 
+import dikte
 import overlay as overlay_module
+from tests.support import DikteTest
 from ui.live_popup import LivePopup
 from ui.overlay_coordinator import Activity, OverlayCoordinator
 from ui.result_overlay import ResultOverlay
@@ -172,6 +176,46 @@ class ManagedDetailCards(unittest.TestCase):
         detail.set_expanded(True)
 
         self.assert_contiguous(coordinator, detail)
+
+
+class RetiredViewStaysUsable(DikteTest):
+    """A retired activity's view is put away, not deleted.
+
+    `dikte restart` dismisses the views that are still current before it
+    replaces the process. A view deleted when its activity ended left that name
+    pointing at a dead object, so the restart raised on the way, the exec never
+    happened, and the old code kept running with nothing said about why.
+    """
+
+    def test_a_restart_after_a_finished_dictation_still_goes_through(self):
+        shell = object.__new__(dikte.Dikte)
+        shell.state = dikte.IDLE
+        shell.ask_state = dikte.IDLE
+        shell.meeting_state = dikte.M_IDLE
+        shell.evdev = shell.tray = mock.Mock()
+        shell.recorder = shell.meeting_ticker = shell.meeting_recorder = mock.Mock()
+        shell._coordinator = None
+        shell._activity_ids = {}
+        shell.result_overlay = None
+        finished = overlay_module.Overlay(interactive_live=True)
+        self.addCleanup(finished.close)
+        self.addCleanup(finished.deleteLater)
+        shell.overlay = finished
+        shell.ask_overlay = mock.Mock()
+        shell.meeting_overlay = mock.Mock()
+        shell._activity_widgets = {dikte.DICTATION: finished}
+
+        dikte.Dikte._retire_activity(shell, dikte.DICTATION, finished)
+        # No loop turns in a test: a deletion queued by the old code is run by
+        # hand, so this test still fails if retiring deletes the view.
+        QApplication.sendPostedEvents(finished, QEvent.Type.DeferredDelete)
+
+        with mock.patch.object(dikte.ggml, "stop_all"):
+            dikte.Dikte.shutdown(shell)
+
+        finished.dismiss()                    # the view is still usable
+        shell.ask_overlay.dismiss.assert_called_once()
+        shell.tray.hide.assert_called_once()
 
 
 if __name__ == "__main__":

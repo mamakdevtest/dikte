@@ -16,6 +16,7 @@ from unittest import mock
 
 import assistant
 import api
+import providers
 from tests.support import DikteTest, FakeCompleted, fake_urlopen, only_these_tools
 from tests.test_cleanup import gateway
 
@@ -78,6 +79,9 @@ class Provider(DikteTest):
         self.assertEqual(
             assistant.display_name(self.config(assistant_provider="antigravity")),
             "Antigravity")
+        self.assertEqual(
+            assistant.display_name(self.config(assistant_provider="opencode-go")),
+            "OpenCode Go")
         conf = self.config(assistant_provider="user/abc123",
                            providers=[gateway(name="My gate")])
         self.assertEqual(assistant.display_name(conf), "My gate")
@@ -92,9 +96,68 @@ class Provider(DikteTest):
             assistant_provider="codex", assistant_codex_model="gpt-5")), "gpt-5")
         self.assertEqual(assistant.model(self.config(
             assistant_provider="antigravity")), "gemini-3.1-pro-high")
+        self.assertEqual(assistant.model(self.config(
+            assistant_provider="opencode-go")), "kimi-k2.7-code")
+        self.assertEqual(assistant.model(self.config(
+            assistant_provider="opencode-go",
+            opencode_go_model="mimo-v2.5")), "mimo-v2.5")
         conf = self.config(assistant_provider="user/abc123",
                            providers=[gateway(models={"assistant": "some/asker"})])
         self.assertEqual(assistant.model(conf), "some/asker")
+
+
+class AskOpenCodeGo(DikteTest):
+    """Go over HTTP: session header, family path, own thread, own model."""
+
+    def conf_with(self, **overrides):
+        values = dict(assistant_provider="opencode-go",
+                      opencode_go_api_key="sk-go-test",
+                      opencode_go_model="kimi-k2.7-code")
+        values.update(overrides)
+        return self.config(**values)
+
+    def test_a_question_and_an_answer(self):
+        with fake_urlopen({"choices": [{"message": {"content": "on Thursday"}}]}):
+            answer, warning = assistant.ask("when is it", self.conf_with())
+        self.assertEqual(answer, "on Thursday")
+        self.assertEqual(warning, "")
+
+    def test_the_request_carries_session_and_family_path(self):
+        with fake_urlopen({"choices": [{"message": {"content": "hi"}}]}) as calls:
+            assistant.ask("hi", self.conf_with(
+                opencode_go_model="muse-spark-1.3-contributor"))
+        self.assertEqual(calls[0].full_url,
+                         "https://opencode.ai/zen/go/v1/responses")
+        self.assertTrue(calls[0].get_header("X-opencode-session"))
+        sent = json.loads(calls[0].data.decode("utf-8"))
+        self.assertEqual(sent["model"], "muse-spark-1.3-contributor")
+
+    def test_session_id_is_stable_across_requests(self):
+        conf = self.conf_with()
+        with fake_urlopen({"choices": [{"message": {"content": "a"}}]}):
+            assistant.ask("one", conf)
+        with fake_urlopen({"choices": [{"message": {"content": "b"}}]}) as calls:
+            assistant.ask("two", conf)
+        first = providers.opencode_go_session_id(conf)
+        self.assertTrue(first)
+        self.assertEqual(calls[0].get_header("X-opencode-session"), first)
+        stored = assistant.read_messages("opencode-go", 1800)
+        self.assertEqual([row["content"] for row in stored][-2:],
+                         ["two", "b"])
+
+    def test_a_stop_before_the_request_is_honoured(self):
+        with fake_urlopen({"choices": [{"message": {"content": "hi"}}]}):
+            with self.assertRaises(assistant.Cancelled):
+                assistant.ask("hi", self.conf_with(), None, lambda: True)
+
+    def test_no_key_is_an_assistant_failure(self):
+        conf = self.conf_with(opencode_go_api_key="")
+        with mock.patch.dict("os.environ", {}, clear=False):
+            import os as _os
+            _os.environ.pop("OPENCODE_GO_API_KEY", None)
+            with self.assertRaises(assistant.AssistantError) as caught:
+                assistant.ask("hi", conf)
+        self.assertIn("OpenCode Go", str(caught.exception))
 
 
 class Effort(unittest.TestCase):

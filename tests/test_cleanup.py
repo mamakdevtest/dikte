@@ -162,6 +162,49 @@ class Gateway(DikteTest):
         self.assertIn("Settings", str(caught.exception))
 
 
+class OpenCodeGo(DikteTest):
+    """Go as a cleanup road: key, session, family path, curated default."""
+
+    def conf_with(self, **overrides):
+        values = dict(cleanup_provider="opencode-go",
+                      opencode_go_api_key="sk-go-test",
+                      opencode_go_model="kimi-k2.7-code")
+        values.update(overrides)
+        return self.config(**values)
+
+    def test_it_is_one_request_with_session_and_family_path(self):
+        conf = self.conf_with(opencode_go_model="muse-spark-1.3-contributor")
+        with mock.patch.object(api, "cleanup",
+                               return_value="Done.") as call:
+            self.assertEqual(cleanup.run("uh, done", conf, "the rules"), "Done.")
+        text, key, model, prompt = call.call_args.args
+        self.assertEqual((text, key, model, prompt),
+                         ("uh, done", "sk-go-test",
+                          "muse-spark-1.3-contributor", "the rules"))
+        self.assertEqual(call.call_args.kwargs["provider"], "opencode-go")
+        self.assertEqual(call.call_args.kwargs["service"], "OpenCode Go")
+        self.assertTrue(call.call_args.kwargs["session_id"])
+        self.assertEqual(call.call_args.kwargs["base_url"],
+                         "https://opencode.ai/zen/go/v1")
+
+    def test_session_id_is_stable_across_cleanups(self):
+        conf = self.conf_with()
+        with mock.patch.object(api, "cleanup",
+                               return_value="Done."):
+            cleanup.run("one", conf, "the rules")
+        with mock.patch.object(api, "cleanup",
+                               return_value="Done.") as call:
+            cleanup.run("two", conf, "the rules")
+        self.assertEqual(call.call_args.kwargs["session_id"],
+                         providers.opencode_go_session_id(conf))
+
+    def test_the_model_reported_in_the_history_is_the_go_choice(self):
+        self.assertEqual(cleanup.model(self.conf_with()), "kimi-k2.7-code")
+        self.assertEqual(
+            cleanup.model(self.config(cleanup_provider="opencode-go")),
+            "kimi-k2.7-code")
+
+
 class ClaudeCode(DikteTest):
     def setUp(self):
         super().setUp()

@@ -443,8 +443,13 @@ class MeetingPipeline(QObject):
             return cleanup._local(text, conf, prompt, 600, aborter=self._aborter)
         who = providers.provider(conf, provider)
         if who is not None and who.transport == "http":
-            model = (providers.custom_model(conf, provider, "minutes")
-                     if who.custom else conf["meeting_model"])
+            if who.custom:
+                model = providers.custom_model(conf, provider, "minutes")
+            elif provider == "opencode-go":
+                model = ((conf["opencode_go_model"] or "").strip()
+                         or "kimi-k2.7-code")
+            else:
+                model = conf["meeting_model"]
             if not model:
                 return ""
             return api.cleanup(
@@ -452,6 +457,8 @@ class MeetingPipeline(QObject):
                 reasoning=conf["meeting_reasoning"],
                 base_url=providers.base_url(conf, provider), timeout=600,
                 provider=provider, service=who.name, aborter=self._aborter,
+                session_id=(providers.opencode_go_session_id(conf)
+                            if provider == "opencode-go" else None),
             )
         raise api.ApiError(t("Unknown provider."))
 
@@ -480,8 +487,13 @@ class MeetingPipeline(QObject):
                                    aborter=self._aborter), style)
         who = providers.provider(conf, provider)
         if who is not None and who.transport == "http":
-            model = (providers.custom_model(conf, provider, "minutes")
-                     if who.custom else conf["meeting_model"])
+            if who.custom:
+                model = providers.custom_model(conf, provider, "minutes")
+            elif provider == "opencode-go":
+                model = ((conf["opencode_go_model"] or "").strip()
+                         or "kimi-k2.7-code")
+            else:
+                model = conf["meeting_model"]
             if not model:
                 raise api.ApiError(t(
                     "{service} has no minutes model chosen. Pick one in "
@@ -491,6 +503,8 @@ class MeetingPipeline(QObject):
                 reasoning=conf["meeting_reasoning"],
                 base_url=providers.base_url(conf, provider), timeout=600,
                 provider=provider, service=who.name, aborter=self._aborter,
+                session_id=(providers.opencode_go_session_id(conf)
+                            if provider == "opencode-go" else None),
             )
             return text, style
         raise api.ApiError(t("Unknown provider."))
@@ -523,6 +537,9 @@ class MeetingPipeline(QObject):
         provider = self.conf["meeting_provider"]
         if provider == "local":
             return self.conf["local_llm_model"]
+        if provider == "opencode-go":
+            return ((self.conf["opencode_go_model"] or "").strip()
+                    or "kimi-k2.7-code")
         who = providers.provider(self.conf, provider)
         if who is not None and who.custom:
             return providers.custom_model(self.conf, provider, "minutes")

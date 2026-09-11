@@ -16,7 +16,7 @@ import assistant
 import config as cfg
 import paste
 import worker
-from tests.support import DikteTest, make_wav, speech
+from tests.support import DikteTest, make_wav, pcm, speech
 from tests.test_cleanup import gateway
 
 
@@ -37,7 +37,8 @@ class Chain(DikteTest):
                   transcript="uh, book it for Thursday",
                   cleaned="Book it for Thursday.",
                   cleanup_error=None, answer=("Booked.", ""), rms=None,
-                  clipboard=b"what was there before", paste_error=None):
+                  clipboard=b"what was there before", paste_error=None,
+                  wav=None):
         pipeline = worker.Pipeline(self.conf)
         done, failures, stages, cancels = [], [], [], []
         pipeline.finished.connect(lambda *args: done.append(args))
@@ -64,7 +65,7 @@ class Chain(DikteTest):
             calls = {"transcribe": tr, "cleanup": cleanup, "ask": ask_call,
                      "copy": copy, "copy_bytes": copy_bytes, "press": press,
                      "read_clipboard": read_clipboard}
-            pipeline._work(self.wav, duration,
+            pipeline._work(wav or self.wav, duration,
                            self.rms if rms is None else rms, ask, paste_override)
         return {"done": done, "failures": failures, "stages": stages,
                 "cancelled": cancels, **calls}
@@ -137,6 +138,14 @@ class Chain(DikteTest):
         self.conf["skip_silent"] = False
         run = self.run_chain(rms=[0.00001] * 60)
         run["transcribe"].assert_called_once()
+
+    def test_a_railed_recording_is_not_room_tone(self):
+        """The level cannot move because the input is pinned, not because
+        nobody spoke — and the words are still in there to be read."""
+        railed = make_wav(self.path("railed.wav"), pcm([32767, -32768] * 16000))
+        run = self.run_chain(rms=[0.25] * 60, wav=railed)
+        run["transcribe"].assert_called_once()
+        self.assertEqual(run["failures"], [])
 
     def test_a_stock_phrase_from_a_short_clip_is_thrown_away(self):
         run = self.run_chain(duration=2.0, transcript="Altyazı M.K.")
@@ -300,6 +309,51 @@ class Chain(DikteTest):
         with _mock.patch.object(worker.shutil, "move", side_effect=OSError("locked")):
             pipe._discard(wav, None)
         self.assertTrue(os.path.exists(wav))
+
+
+class LivePreviewEvidence(DikteTest):
+    """What the preview already heard outranks the silence check."""
+
+    def setUp(self):
+        super().setUp()
+        self.conf = self.config(providers=[gateway()],
+                                cleanup_provider="user/abc123")
+        self.wav = make_wav(self.path("clip.wav"), speech(2.0))
+
+    def run_it(self, speech_observed, transcript="orada mısın", duration=2.0):
+        """One run down the road a real dictation takes, with room-tone levels."""
+        pipeline = worker.Pipeline(self.conf)
+        with contextlib.redirect_stderr(io.StringIO()), \
+                mock.patch.object(api, "transcribe",
+                                  return_value=transcript) as tr, \
+                mock.patch.object(api, "cleanup",
+                                  mock.Mock(side_effect=lambda text, *a, **k: text)), \
+                mock.patch.object(paste, "copy") as copy, \
+                mock.patch.object(paste, "copy_bytes"), \
+                mock.patch.object(paste, "press"), \
+                mock.patch.object(paste, "read_clipboard", return_value=b""), \
+                mock.patch.object(worker.time, "sleep", lambda seconds: None):
+            pipeline.run(self.wav, duration, [0.00001] * 60,
+                         speech_observed=speech_observed)
+            pipeline._thread.join(timeout=10)
+        return tr, copy
+
+    def test_room_tone_the_preview_never_heard_a_word_of_is_still_dropped(self):
+        tr, copy = self.run_it(False)
+        tr.assert_not_called()
+        copy.assert_not_called()
+
+    def test_silence_levels_do_not_overrule_words_already_on_screen(self):
+        tr, copy = self.run_it(True)
+        tr.assert_called_once()
+        copy.assert_called_once_with("orada mısın")
+
+    def test_preview_evidence_cannot_deliver_a_stock_phrase(self):
+        """A long clip is normally past the phrase filter; proof by preview
+        words does not make an invented line worth pasting."""
+        tr, copy = self.run_it(True, transcript="Altyazı M.K.", duration=10.0)
+        tr.assert_called_once()
+        copy.assert_not_called()
 
 
 class Busy(DikteTest):

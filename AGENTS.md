@@ -49,6 +49,11 @@ Live source always wins over documentation, including this file.
 python -m unittest discover --verbose
 ```
 
+Iterating is the fast half: `python tools/quick_tests.py` (~14 s, everything but
+`tests.test_ui`), or pass the modules you touched
+(`python tools/quick_tests.py tests.test_worker`). The settings-window round
+trips are 68 of the full suite's 82 seconds, so run them last, not first.
+
 Offscreen Qt is pinned in `tests/__init__.py`; fixtures live in
 `tests/support.py`. Deterministic tests only — see the `dikte-testing`
 skill before writing tests. After changes: targeted modules → full suite →

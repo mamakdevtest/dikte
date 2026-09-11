@@ -93,6 +93,9 @@ CHANGED = {
     "cleanup_codex_model": "gpt-5",
     "cleanup_agy_model": "gemini-3.5-flash-low",
     "cleanup_reasoning": "high",
+    "opencode_go_api_key": "sk-go-test",
+    "opencode_go_enabled": True,
+    "opencode_go_model": "mimo-v2.5",
     "local_model": "ggml-small.bin",
     "local_gpu": False,
     "local_preload": False,
@@ -212,9 +215,10 @@ class Settings(DikteTest):
         boxes = {"gateway": window.cleanup_model_row,
                  "claude": window.cleanup_claude_model_row,
                  "codex": window.cleanup_codex_model_row,
-                 "antigravity": window.cleanup_agy_model_row}
+                 "antigravity": window.cleanup_agy_model_row,
+                 "opencode-go": window.opencode_go_model_row}
         values = {"gateway": pid, "claude": "claude", "codex": "codex",
-                  "antigravity": "antigravity"}
+                  "antigravity": "antigravity", "opencode-go": "opencode-go"}
         for provider, box in boxes.items():
             with self.subTest(provider=provider):
                 window._select_data(window.cleanup_provider, values[provider])
@@ -227,11 +231,44 @@ class Settings(DikteTest):
         window = self.window(cfg.Config())
         offered = [window.assistant_provider.itemData(i)
                    for i in range(window.assistant_provider.count())]
-        self.assertEqual(offered, ["claude", "codex", "antigravity"])
+        self.assertEqual(offered, ["opencode-go", "claude", "codex",
+                                  "antigravity"])
         window._select_data(window.assistant_provider, "antigravity")
         self.assertFalse(window.agy_box.isHidden())
         self.assertTrue(window.claude_box.isHidden())
         self.assertTrue(window.gateway_box.isHidden())
+
+    def test_opencode_go_boxes_toggle_with_the_agent_choice(self):
+        window = self.window(cfg.Config())
+        window._select_data(window.assistant_provider, "opencode-go")
+        self.assertFalse(window.opencode_go_box.isHidden())
+        self.assertTrue(window.claude_box.isHidden())
+        self.assertTrue(window.gateway_box.isHidden())
+        window._select_data(window.assistant_provider, "claude")
+        self.assertTrue(window.opencode_go_box.isHidden())
+        self.assertFalse(window.claude_box.isHidden())
+
+    def test_opencode_go_fetch_fills_both_go_boxes(self):
+        window = self.window(cfg.Config())
+        window.opencode_go_model.setCurrentText("kept-model")
+        window._on_opencode_go_models_loaded(["kimi-k2.7-code", "mimo-v2.5"], "")
+        listed = [window.opencode_go_model.itemText(i)
+                  for i in range(window.opencode_go_model.count())]
+        self.assertEqual(listed, ["kimi-k2.7-code", "mimo-v2.5"])
+        self.assertEqual(window.opencode_go_model.currentText(), "kept-model")
+        self.assertEqual(window.opencode_go_model_agent.count(), 2)
+
+    def test_opencode_go_checkboxes_drive_the_dirty_guard(self):
+        window = self.window(cfg.Config())
+        base = dict(window._snapshot_settings())
+        self.assertFalse(base["opencode_go_enabled"])
+        window.opencode_go_enabled.setChecked(True)
+        self.assertTrue(window._snapshot_settings()["opencode_go_enabled"])
+        window.opencode_go_enabled_agent.setChecked(True)
+        window.opencode_go_model_agent.setCurrentText("mimo-v2.5")
+        snap = window._snapshot_settings()
+        self.assertTrue(snap["opencode_go_enabled"])
+        self.assertEqual(snap["opencode_go_model_agent"], "mimo-v2.5")
 
     def test_antigravity_models_fill_both_of_its_boxes(self):
         """One catalog, fetched once, for the cleanup row and the agent's."""
@@ -483,19 +520,20 @@ class Settings(DikteTest):
             self.assertNotIn("groq", offered)
 
     def test_the_cleanup_box_offers_everyone_cleanup_py_dispatches_to(self):
-        """The local model, the three CLIs, and the user's own gateways;
+        """The local model, the three CLIs, Go, and the user's own gateways;
         nothing else — the retired hosted ones are gone from the registry."""
         window = self.window(cfg.Config())
         offered = [window.cleanup_provider.itemData(i)
                    for i in range(window.cleanup_provider.count())]
-        self.assertEqual(offered, ["local", "claude", "codex", "antigravity"])
+        self.assertEqual(offered, ["local", "opencode-go", "claude", "codex",
+                                  "antigravity"])
         conf = cfg.Config()
         pid = providers.add_provider(conf, "Mine", "https://example.com/v1")
         window = self.window(conf)
         offered = [window.cleanup_provider.itemData(i)
                    for i in range(window.cleanup_provider.count())]
-        self.assertEqual(offered, ["local", "claude", "codex", "antigravity",
-                                   pid])
+        self.assertEqual(offered, ["local", "opencode-go", "claude", "codex",
+                                  "antigravity", pid])
 
     def test_antigravity_hides_the_thinking_row(self):
         """Its model slugs carry the effort in the name, so a separate choice

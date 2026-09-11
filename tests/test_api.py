@@ -36,6 +36,22 @@ GATEWAY = api.Target("user/abc123", "My gateway", "sk-gw-test",
 DEEPGRAM = api.Target("deepgram", "Deepgram", "dg-test", api.DEEPGRAM_URL, "nova-3")
 
 
+class EmptyResponses(DikteTest):
+    """What a person is told when the answer is not JSON."""
+
+    def test_an_empty_body_says_so_instead_of_quoting_the_decoder(self):
+        with fake_urlopen(raw_body("")):
+            with self.assertRaises(api.ApiError) as caught:
+                api._get_json("http://localhost:20128/v1/models", {})
+        self.assertIn("Empty response", str(caught.exception))
+
+    def test_a_body_that_is_not_json_still_reports_the_decoder(self):
+        with fake_urlopen(raw_body("<html>nope")):
+            with self.assertRaises(api.ApiError) as caught:
+                api._get_json("http://localhost:20128/v1/models", {})
+        self.assertIn("Could not parse", str(caught.exception))
+
+
 class TimestampModel(unittest.TestCase):
     def test_only_whisper_returns_segment_times(self):
         self.assertEqual(api.timestamp_model("openai"), "whisper-1")
@@ -163,6 +179,20 @@ class Headers(unittest.TestCase):
             with self.subTest(provider=provider):
                 self.assertNotIn("HTTP-Referer", api._headers(provider, "sk-test"))
                 self.assertNotIn("X-Title", api._headers(provider, "sk-test"))
+
+    def test_opencode_go_carries_routing_headers(self):
+        """Go rejects requests without a stable session id (HTTP 400), so the
+        routing headers ride on every Go request, same session each time."""
+        first = api._headers("opencode-go", "sk-go", session_id="sess-1")
+        self.assertEqual(first["x-opencode-session"], "sess-1")
+        self.assertEqual(first["User-Agent"], api.USER_AGENT)
+        self.assertEqual(first["Authorization"], "Bearer sk-go")
+
+    def test_other_providers_get_no_session_header(self):
+        self.assertNotIn("x-opencode-session",
+                         api._headers("openai", "sk-test", session_id="sess-1"))
+        self.assertNotIn("x-opencode-session",
+                         api._headers("user/abc123", "sk-test", session_id="sess-1"))
 
     def test_a_content_type_is_added_when_there_is_a_body(self):
         headers = api._headers("openai", "k", "application/json")
@@ -606,6 +636,76 @@ class Chat(DikteTest):
             with self.assertRaises(api.ApiError):
                 api.chat([{"role": "user", "content": "hi"}], "k", "m", "p",
                          base_url="https://gw.example/v1")
+
+
+class OpenCodeGoEndpoints(DikteTest):
+    """Go serves each model family on its own path, not /chat/completions."""
+
+    def test_chat_models_hit_chat_completions(self):
+        with fake_urlopen(chat_reply("hi")) as calls:
+            api.chat([{"role": "user", "content": "hi"}], "sk-go",
+                     "kimi-k2.7-code", "p",
+                     base_url="https://opencode.ai/zen/go/v1",
+                     provider="opencode-go", service="OpenCode Go",
+                     session_id="sess-1")
+        self.assertEqual(
+            calls[0].full_url,
+            "https://opencode.ai/zen/go/v1/chat/completions")
+        self.assertEqual(calls[0].get_header("X-opencode-session"), "sess-1")
+        self.assertEqual(sent_json(calls[0])["model"], "kimi-k2.7-code")
+
+    def test_responses_models_hit_responses(self):
+        with fake_urlopen(chat_reply("hi")) as calls:
+            api.chat([{"role": "user", "content": "hi"}], "sk-go",
+                     "muse-spark-1.3-contributor", "p",
+                     base_url="https://opencode.ai/zen/go/v1",
+                     provider="opencode-go", service="OpenCode Go",
+                     session_id="sess-1")
+        self.assertEqual(
+            calls[0].full_url,
+            "https://opencode.ai/zen/go/v1/responses")
+
+    def test_messages_models_hit_messages(self):
+        with fake_urlopen(chat_reply("hi")) as calls:
+            api.chat([{"role": "user", "content": "hi"}], "sk-go",
+                     "minimax-m2.7", "p",
+                     base_url="https://opencode.ai/zen/go/v1",
+                     provider="opencode-go", service="OpenCode Go",
+                     session_id="sess-1")
+        self.assertEqual(
+            calls[0].full_url,
+            "https://opencode.ai/zen/go/v1/messages")
+
+    def test_unknown_go_model_defaults_to_chat_completions(self):
+        with fake_urlopen(chat_reply("hi")) as calls:
+            api.chat([{"role": "user", "content": "hi"}], "sk-go",
+                     "future-model-x", "p",
+                     base_url="https://opencode.ai/zen/go/v1",
+                     provider="opencode-go", service="OpenCode Go",
+                     session_id="sess-1")
+        self.assertEqual(
+            calls[0].full_url,
+            "https://opencode.ai/zen/go/v1/chat/completions")
+
+    def test_missing_session_id_is_a_loud_error(self):
+        with self.assertRaises(api.ApiError) as caught:
+            api.chat([{"role": "user", "content": "hi"}], "sk-go",
+                     "kimi-k2.7-code", "p",
+                     base_url="https://opencode.ai/zen/go/v1",
+                     provider="opencode-go", service="OpenCode Go")
+        self.assertIn("session", str(caught.exception).lower())
+
+    def test_cleanup_routes_through_the_same_paths(self):
+        with fake_urlopen(chat_reply("Hello.")) as calls:
+            api.cleanup("uh, hello", "sk-go", "muse-spark-1.3-contributor",
+                        "you clean up text",
+                        base_url="https://opencode.ai/zen/go/v1",
+                        provider="opencode-go", service="OpenCode Go",
+                        session_id="sess-9")
+        self.assertEqual(
+            calls[0].full_url,
+            "https://opencode.ai/zen/go/v1/responses")
+        self.assertEqual(calls[0].get_header("X-opencode-session"), "sess-9")
 
 
 class ModelLists(DikteTest):

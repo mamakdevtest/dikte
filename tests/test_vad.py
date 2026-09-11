@@ -78,6 +78,28 @@ class IsSilent(unittest.TestCase):
         self.assertTrue(vad.is_silent(stats))
         self.assertLess(stats["voiced_seconds"], 0.3)
 
+    def test_a_short_word_counts_despite_the_default_floor(self):
+        """One syllable (~0.19s in one run) is speech, not silence."""
+        stats = vad.analyse(levels(loud_chunks=3), CHUNK)
+        self.assertLess(stats["voiced_seconds"], 0.3)
+        self.assertGreaterEqual(stats["voiced_run_seconds"], 0.15)
+        self.assertFalse(vad.is_silent(stats))
+
+    def test_a_word_buried_in_a_short_clip_counts(self):
+        """The loud end is the max chunk, so a word survives even when it is
+        most of the clip and the percentile would have buried it."""
+        stats = vad.analyse(levels(quiet_chunks=57, loud_chunks=3), CHUNK)
+        self.assertFalse(vad.is_silent(stats))
+
+    def test_scattered_spikes_are_not_a_word(self):
+        """Same total voice, no unbroken run: fan noise stays silent."""
+        stats = vad.analyse(
+            [0.2 if index % 10 == 0 else 0.0005 for index in range(60)],
+            CHUNK)
+        self.assertGreaterEqual(stats["voiced_seconds"], 0.3)
+        self.assertLess(stats["voiced_run_seconds"], 0.15)
+        self.assertTrue(vad.is_silent(stats))
+
     def test_steady_hiss_near_the_floor(self):
         # Loud enough to clear the absolute floor, but the level never moves,
         # which is a fan rather than a voice.
@@ -101,14 +123,17 @@ class IsSilent(unittest.TestCase):
         self.assertFalse(vad.is_silent(stats))
 
     def test_flat_dynamics_do_reject_one_sitting_near_the_floor(self):
-        stats = {"speech_db": -50.0, "noise_db": -54.0,
-                 "dynamic_db": 4.0, "voiced_seconds": 1.0}
+        stats = vad.analyse([0.004] * 55 + [0.006] * 5, CHUNK)
+        self.assertGreater(stats["speech_db"], -55.0)
+        self.assertLess(stats["dynamic_db"], 6.0)
         self.assertTrue(vad.is_silent(stats))
 
     def test_the_thresholds_are_honoured(self):
         stats = vad.analyse(levels(), CHUNK)
         self.assertTrue(vad.is_silent(stats, silence_db=-1.0))
-        self.assertTrue(vad.is_silent(stats, min_voiced_seconds=999.0))
+        self.assertTrue(vad.is_silent(
+            vad.analyse(levels(loud_chunks=2), CHUNK),
+            min_voiced_seconds=999.0))
 
 
 class Hallucinations(DikteTest):

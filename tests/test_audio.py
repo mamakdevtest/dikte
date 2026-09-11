@@ -24,6 +24,7 @@ import audio
 from tests.support import (
     DikteTest,
     FakeCompleted,
+    make_wav,
     only_these_tools,
     pcm,
     silence,
@@ -79,6 +80,26 @@ class ChunkLevels(unittest.TestCase):
         peak, rms = audio.chunk_levels(pcm([-32768] * 100))
         self.assertEqual(peak, 1.0)
         self.assertEqual(rms, 1.0)
+
+
+class Saturated(DikteTest):
+    """A railed input is not room tone, however flat it looks."""
+
+    def test_an_overdriven_recording_is_saturated(self):
+        path = make_wav(self.path("rail.wav"), pcm([32767, -32768] * 16000))
+        self.assertTrue(audio.saturated(path))
+
+    def test_room_tone_is_not(self):
+        path = make_wav(self.path("quiet.wav"), silence(2.0))
+        self.assertFalse(audio.saturated(path))
+
+    def test_a_few_taps_are_not_an_overdriven_input(self):
+        taps = b"".join(pcm([-32768] * 20) + silence(0.4) for _ in range(4))
+        self.assertFalse(audio.saturated(
+            make_wav(self.path("taps.wav"), silence(0.5) + taps)))
+
+    def test_an_audio_file_that_is_not_there(self):
+        self.assertFalse(audio.saturated(self.path("missing.wav")))
 
 
 class StereoLevels(unittest.TestCase):

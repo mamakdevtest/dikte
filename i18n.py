@@ -168,6 +168,7 @@ TR = {
     "The cleanup model returned an empty reply.": "Temizleme modeli boş yanıt döndü.",
     "Could not connect: {reason}": "Bağlantı kurulamadı: {reason}",
     "Could not parse the response: {error}": "Yanıt çözümlenemedi: {error}",
+    "Empty response from the provider.": "Sağlayıcıdan boş yanıt geldi.",
 
     "Dikte": "Dikte",
     "Dashboard": "Kontrol Paneli",
@@ -806,6 +807,33 @@ TR = {
 
     # --- the provider registry ---------------------------------------------
     "Antigravity": "Antigravity",
+    "OpenCode Go": "OpenCode Go",
+    "Use OpenCode Go for cleanup": "Temizlik için OpenCode Go kullan",
+    "Use OpenCode Go for this agent": "Bu ajan için OpenCode Go kullan",
+    "Use OpenCode Go for minutes": "Tutanak için OpenCode Go kullan",
+    "OpenCode Go model": "OpenCode Go modeli",
+    "Go model id; endpoint path follows the family.":
+        "Go model kimliği; uç nokta yolu aileye göre seçilir.",
+    "Sends Go's routing session id and model-family endpoint; "
+    "off leaves cleanup on its other provider.":
+        "Go'nun yönlendirme oturum kimliğini ve model ailesi uç noktasını "
+        "gönderir; kapalıyken temizlik diğer sağlayıcıda kalır.",
+    "Sends Go's routing session id and model-family endpoint; "
+    "off leaves this agent on its other provider.":
+        "Go'nun yönlendirme oturum kimliğini ve model ailesi uç noktasını "
+        "gönderir; kapalıyken bu ajan diğer sağlayıcıda kalır.",
+    "Sends Go's routing session id and model-family endpoint; "
+    "off leaves minutes on the provider above.":
+        "Go'nun yönlendirme oturum kimliğini ve model ailesi uç noktasını "
+        "gönderir; kapalıyken tutanak yukarıdaki sağlayıcıda kalır.",
+    "Needs the OpenCode Go key in Settings → Providers; no commands run, "
+    "no files open.":
+        "Ayarlar → Sağlayıcılar altında OpenCode Go anahtarı gerekir; "
+        "komut çalıştırmaz, dosya açmaz.",
+    "{service} needs a session id to route the request. "
+    "Turn OpenCode Go compatibility off and on again in Settings.":
+        "{service} isteği yönlendirmek için oturum kimliği istiyor. "
+        "Ayarlar'da OpenCode Go uyumluluğunu kapatıp yeniden aç.",
     "Providers": "Sağlayıcılar",
     "Add provider": "Sağlayıcı ekle",
     "My gateway": "Ağ geçidim",

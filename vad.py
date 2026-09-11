@@ -42,46 +42,82 @@ def _percentile(values, fraction):
     return values[index]
 
 
-def analyse(rms_values, chunk_seconds, margin_db=10.0):
-    """Turn per-chunk RMS levels into the numbers the decision needs."""
+def analyse(rms_values, chunk_seconds, margin_db=10.0, peak_values=None):
+    """Turn per-chunk RMS levels into the numbers the decision needs.
+
+    Speech is the loudest chunk, the floor the quiet end: a word counts
+    even when it is most of a short clip, instead of being averaged away
+    by the percentile that used to stand in for it.
+    """
     if not rms_values:
         return {"noise_db": -120.0, "speech_db": -120.0,
-                "dynamic_db": 0.0, "voiced_seconds": 0.0}
+                "dynamic_db": 0.0, "voiced_seconds": 0.0,
+                "voiced_run_seconds": 0.0, "peak_db": -120.0}
 
     ordered = sorted(rms_values)
     noise = _percentile(ordered, 0.10)
-    speech = _percentile(ordered, 0.90)
+    speech = max(rms_values)
     noise_db, speech_db = to_db(noise), to_db(speech)
 
     # Anything this far above the recording's own floor counts as voice.
     gate_db = noise_db + margin_db
-    voiced = sum(1 for value in rms_values if to_db(value) >= gate_db)
+    voiced_flags = [to_db(value) >= gate_db for value in rms_values]
+    voiced = sum(voiced_flags)
+
+    # The longest unbroken run above the gate: a single word is one run,
+    # scattered fan-noise spikes are not.
+    longest = current = 0
+    for flag in voiced_flags:
+        if flag:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+
+    if peak_values:
+        peak_db = to_db(max(peak_values))
+    else:
+        peak_db = -120.0
 
     return {
         "noise_db": noise_db,
         "speech_db": speech_db,
         "dynamic_db": speech_db - noise_db,
         "voiced_seconds": voiced * chunk_seconds,
+        "voiced_run_seconds": longest * chunk_seconds,
+        "peak_db": peak_db,
     }
 
 
 def is_silent(stats, silence_db=-55.0, margin_db=10.0, min_voiced_seconds=0.3):
     """True when the recording holds no speech worth sending to the API.
 
-    Three independent reasons, any one of which is enough:
-      * the loud end of the recording is below the absolute floor
-      * nothing rose far enough above the noise floor for long enough
-      * the level never moved, meaning steady hiss, hum or fan noise
+    The loud end below the absolute floor is still an instant no. Past that,
+    speech is a sustained run above the recording's own noise floor — a word
+    is one unbroken run, scattered spikes are not — with a loud-peak escape
+    hatch for plosive-heavy speech whose RMS never climbs far.
     """
     if stats["speech_db"] < silence_db:
         return True
-    if stats["voiced_seconds"] < min_voiced_seconds:
-        return True
+    run = stats.get("voiced_run_seconds",
+                    stats.get("voiced_seconds", 0.0))
+    # A single unbroken run is a word even when short: one syllable is
+    # ~0.15s, and rejecting it means "I said hey!" comes back as silence.
+    # Scattered spikes totalling long are the opposite — fan noise — and
+    # only count when they also form a run.
+    if run >= 0.15:
+        return False
+    # Loud peaks with no sustained run: a sharp "hey!" over a noisy floor.
+    # The bar is high on purpose — this must not invite fan noise in.
+    peak_db = stats.get("peak_db", -120.0)
+    if peak_db >= silence_db + 18 and run >= 0.12:
+        return False
     # Only distrust flat dynamics near the floor; a loud, evenly-spoken
     # sentence legitimately has a narrow range.
     if stats["speech_db"] < silence_db + 12 and stats["dynamic_db"] < margin_db * 0.6:
         return True
-    return False
+    # The tail: scattered voice with no run is fan noise, not a sentence.
+    return run < min_voiced_seconds
 
 
 def _normalise(text):
@@ -89,6 +125,17 @@ def _normalise(text):
     folded = "".join(c for c in folded if not unicodedata.combining(c))
     folded = folded.replace("ı", "i").replace("ş", "s").replace("ğ", "g")
     return _SPACES.sub(" ", _PUNCTUATION.sub("", folded)).strip()
+
+
+def stock_phrase(text):
+    """True when an answer is one of the lines models invent for silence.
+
+    `looks_like_hallucination` without the length cap: the live preview's words
+    are read as evidence that a recording holds speech, and the windows it
+    probes are longer than the cap a discard decision may use, so the phrase
+    itself has to be asked about rather than the clip it came from.
+    """
+    return looks_like_hallucination(text, 0.0)
 
 
 def looks_like_hallucination(text, duration_seconds, max_duration=6.0):

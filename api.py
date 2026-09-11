@@ -229,6 +229,22 @@ def explain(exc, service):
     return ApiError(f"{service}: {exc}", exc.status)
 
 
+def _parse(body):
+    """The JSON in a body, or an error that says what came back instead.
+
+    An empty body is a gateway that answered without saying anything — a
+    restart in progress, a route with nothing behind it — and the JSON
+    decoder's own words ("Expecting value: line 1 column 1") describe that to
+    nobody.
+    """
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        if not body.strip():
+            raise ApiError(t("Empty response from the provider.")) from exc
+        raise ApiError(t("Could not parse the response: {error}", error=exc)) from exc
+
+
 def _request(url, data, headers, timeout=120, aborter=None):
     try:
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
@@ -236,7 +252,7 @@ def _request(url, data, headers, timeout=120, aborter=None):
         raise ApiError(t("Bad provider URL: {error}", error=exc)) from exc
     try:
         with _opened(req, timeout, aborter) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            body = resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")
         raise ApiError(f"HTTP {exc.code}: {_extract_error(body)}", exc.code) from exc
@@ -247,8 +263,7 @@ def _request(url, data, headers, timeout=120, aborter=None):
             raise Aborted from None
         raise ApiError(t("Could not connect: {reason}",
                          reason=getattr(exc, "reason", exc))) from exc
-    except json.JSONDecodeError as exc:
-        raise ApiError(t("Could not parse the response: {error}", error=exc)) from exc
+    return _parse(body)
 
 
 def _extract_error(body):
@@ -289,7 +304,7 @@ def _multipart(fields, file_field, file_path):
     return bytes(out), f"multipart/form-data; boundary={boundary}"
 
 
-def _headers(provider, api_key, content_type=None):
+def _headers(provider, api_key, content_type=None, session_id=None):
     headers = {"User-Agent": USER_AGENT}
     # A server on this machine has nothing to authorise, and sending it a
     # bearer token would only be a made-up one. Deepgram asks for `Token`, not
@@ -298,9 +313,36 @@ def _headers(provider, api_key, content_type=None):
         headers["Authorization"] = f"Token {api_key}"
     elif api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    if provider == "opencode-go" and session_id:
+        # Go routes and caches on a stable per-conversation id; without it
+        # the request dies with HTTP 400 ("missing x-opencode-session").
+        headers["x-opencode-session"] = session_id
     if content_type:
         headers["Content-Type"] = content_type
     return headers
+
+
+# OpenCode Go serves each model family on its own path. Anything unlisted
+# here (a model Go added after this version) falls back to /chat/completions.
+OPENCODE_GO_RESPONSES_MODELS = frozenset({
+    "grok-4.6", "gpt-5.6-luna",
+    "muse-spark-1.3-contributor", "muse-spark-1.2-contributor",
+})
+OPENCODE_GO_MESSAGES_MODELS = frozenset({
+    "minimax-m3", "minimax-m2.7", "minimax-m2.5",
+    "qwen3.8-max", "qwen3.8-flash",
+    "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+})
+
+
+def opencode_go_path(model):
+    """The Go endpoint path for a model id, without the base URL."""
+    name = (model or "").strip().lower()
+    if name in OPENCODE_GO_RESPONSES_MODELS:
+        return "/responses"
+    if name in OPENCODE_GO_MESSAGES_MODELS:
+        return "/messages"
+    return "/chat/completions"
 
 def serving(server):
     """The base URL of a local server, started if it is not up yet.
@@ -602,10 +644,14 @@ def local_ceiling(text):
 
 def cleanup(text, api_key, model, system_prompt, reasoning="",
             base_url="", timeout=180, provider="", service="",
-            aborter=None):
+            aborter=None, session_id=None):
     if not api_key and provider != "local-llm":
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
                          service=service))
+    if provider == "opencode-go" and not (session_id or "").strip():
+        raise ApiError(t("{service} needs a session id to route the request. "
+                         "Turn OpenCode Go compatibility off and on again in "
+                         "Settings.", service=service))
     payload = {
         "model": model,
         "temperature": 0,
@@ -617,11 +663,16 @@ def cleanup(text, api_key, model, system_prompt, reasoning="",
     if provider == "local-llm":
         payload["max_tokens"] = local_ceiling(text)
     _thinking(payload, provider, reasoning)
+    if provider == "opencode-go":
+        path = opencode_go_path(model)
+    else:
+        path = "/chat/completions"
     try:
         data = _request(
-            f"{base_url.rstrip('/')}/chat/completions",
+            f"{base_url.rstrip('/')}{path}",
             json.dumps(payload).encode("utf-8"),
-            _headers(provider, api_key, "application/json"),
+            _headers(provider, api_key, "application/json",
+                     session_id=session_id),
             timeout=timeout, aborter=aborter,
         )
     except ApiError as exc:
@@ -643,29 +694,41 @@ def cleanup(text, api_key, model, system_prompt, reasoning="",
 
 
 def chat(messages, api_key, model, system_prompt, reasoning="",
-         base_url="", timeout=180, provider="", service="", aborter=None):
+         base_url="", timeout=180, provider="", service="", aborter=None,
+         session_id=None):
     """A conversation, rather than one transcript rewritten.
 
     The messages are the whole history and come back unchanged; the caller keeps
     them, because there is no session on the other end to resume. The request
     reaches anything that answers OpenAI's /chat/completions, which is how a
     user-added gateway joins in: another base URL and service name, nothing
-    else.
+    else. OpenCode Go is the exception: each model family lives on its own
+    path (/chat/completions, /responses, /messages) and every request must
+    carry the stable session id Go routes on.
     """
     if not api_key:
         raise ApiError(t("{service} API key is empty. Add it in Settings.",
                          service=service))
+    if provider == "opencode-go" and not (session_id or "").strip():
+        raise ApiError(t("{service} needs a session id to route the request. "
+                         "Turn OpenCode Go compatibility off and on again in "
+                         "Settings.", service=service))
     payload = {
         "model": model,
         "messages": [{"role": "system", "content": system_prompt}] + list(messages),
     }
     if reasoning:
         payload["reasoning"] = {"effort": reasoning, "exclude": True}
+    if provider == "opencode-go":
+        path = opencode_go_path(model)
+    else:
+        path = "/chat/completions"
     try:
         data = _request(
-            f"{base_url.rstrip('/')}/chat/completions",
+            f"{base_url.rstrip('/')}{path}",
             json.dumps(payload).encode("utf-8"),
-            _headers(provider, api_key, "application/json"),
+            _headers(provider, api_key, "application/json",
+                     session_id=session_id),
             timeout=timeout,
             aborter=aborter,
         )
@@ -686,14 +749,13 @@ def _get_json(url, headers, timeout=20):
     req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            body = resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")
         raise ApiError(f"HTTP {exc.code}: {_extract_error(body)}", exc.code) from exc
     except urllib.error.URLError as exc:
         raise ApiError(t("Could not connect: {reason}", reason=exc.reason)) from exc
-    except json.JSONDecodeError as exc:
-        raise ApiError(t("Could not parse the response: {error}", error=exc)) from exc
+    return _parse(body)
 
 
 def openai_models(api_key, base_url=OPENAI_URL, service="OpenAI", audio=True):

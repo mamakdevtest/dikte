@@ -35,6 +35,43 @@ class NonsharedCapture(DikteTest):
         shell.overlay.show_recording.assert_not_called()
 
 
+class LivePreviewEvidence(DikteTest):
+    """The recording is handed over with what the preview already heard.
+
+    `live.end()` forgets the words, so a run that asks afterwards is handed
+    nothing and the silence check gets the last word on a recording the preview
+    had already transcribed.
+    """
+
+    def shell_at_the_end_of_a_dictation(self):
+        shell = object.__new__(dikte.Dikte)
+        order = []
+        shell.paste_override = {}
+        shell.recorder_owner = dikte.DICTATION
+        shell.pipeline = mock.Mock()
+        shell.ask_pipeline = mock.Mock()
+        shell.live = mock.Mock()
+        shell.live.heard.side_effect = lambda: (order.append("heard"), "merhaba")[1]
+        shell.live.end.side_effect = lambda: order.append("end")
+        return shell, order
+
+    def test_the_words_are_read_before_the_session_forgets_them(self):
+        shell, order = self.shell_at_the_end_of_a_dictation()
+
+        dikte.Dikte._on_recorded(shell, "clip.wav", 2.0, [0.2] * 20)
+
+        self.assertEqual(order, ["heard", "end"])
+        self.assertTrue(shell.pipeline.run.call_args.kwargs["speech_observed"])
+
+    def test_a_recording_the_preview_never_heard_is_handed_over_as_unheard(self):
+        shell, _order = self.shell_at_the_end_of_a_dictation()
+        shell.live.heard.side_effect = lambda: ""
+
+        dikte.Dikte._on_recorded(shell, "clip.wav", 2.0, [0.2] * 20)
+
+        self.assertFalse(shell.pipeline.run.call_args.kwargs["speech_observed"])
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()

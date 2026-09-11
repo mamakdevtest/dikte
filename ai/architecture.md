@@ -31,14 +31,14 @@ repeatability beat quick patches.
 | `cli.py` | Terminal UI; every verb has a `cmd_*`; argument parser and dispatch | `build_parser`, `run`, `launch_gui`, `out/note/fail` |
 | `config.py` | JSON settings + history/meetings store; atomic save; platform dirs; legacy migration | `Config`, `_directories`, defaults |
 | `settings_ui.py` | Qt settings dialog (`QDialog`); local-model box; provider dialogs | `SettingsWindow`, `LocalModelBox`, `ProviderDialog` |
-| `worker.py` | Dictation chain transcribe→cleanup→clipboard→paste in a daemon thread | `Pipeline` (QObject signals: stage/finished/failed/cancelled) |
+| `worker.py` | Dictation chain transcribe→cleanup→clipboard→paste in a daemon thread; words the live preview already read out override the silence gate | `Pipeline` (QObject signals: stage/finished/failed/cancelled) |
 | `ggml.py` | whisper.cpp / llama.cpp download + run as local servers | `Server` (lazy process, locks), `download`, `program_path`, `LocalError` |
 | `api.py` | HTTP layer for transcription/cleanup/chat/model lists; tracked connections | `transcribe`, `cleanup`, `chat`, `openai_models`, `ApiError`, `Aborter`, `_Sockets` |
 | `providers.py` | Provider registry: built-ins + user gateways; credentials; model catalogs | `Provider`, `definitions`, `credential`, `fetch_models`, `test_provider`, `mask` |
 | `cleanup.py` | Cleanup dispatch: local llama.cpp vs CLI agent vs user gateway | `run`, `_dispatch`, `_local` |
 | `assistant.py` | Agent handoff (`ask`): claude/codex/antigravity/plain-HTTP backends | `ask`, `_ask_claude`, `_ask_codex`, `_ask_antigravity`, `_ask_plain_http` |
 | `meeting.py` | Two-channel meeting transcription and document building | `MeetingPipeline`, `merge_turns`, `build_document` |
-| `audio.py` | Recording backends per platform; device listing; level chunks | `Recorder`, `MeetingRecorder`, `recording_command`, `sound` |
+| `audio.py` | Recording backends per platform; device listing; level chunks; a railed input is overdriven, not silent | `Recorder`, `MeetingRecorder`, `recording_command`, `sound`, `saturated` |
 | `vad.py` | Speech gate: is this recording worth an API call | `analyse`, `is_silent`, `looks_like_hallucination` |
 | `filetranscribe.py` | File transcription + SRT export; chunked long files | `FileTranscriber`, `to_srt`, `split_wav` |
 | `hotkey.py` | Global shortcuts: evdev (Linux), RegisterHotKey (Windows), Carbon (macOS), KDE/GNOME installers | `EvdevHotkey`, `WindowsHotkey`, `CarbonHotkey`, `listener` |

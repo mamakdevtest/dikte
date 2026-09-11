@@ -15,6 +15,7 @@ import threading
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import api
+import vad
 
 RATE = 16000
 SAMPLE_WIDTH = 2
@@ -43,6 +44,12 @@ class LiveTranscriber(QObject):
         self._lock = threading.Lock()
         self._pending = bytearray()
         self._text = ""
+        # Which recording the text belongs to. A probe answers seconds after it
+        # was sent, so an answer can land in a session that has already ended —
+        # and `heard()` is evidence the pipeline acts on, not just words on
+        # screen. Every answer carries the generation it was heard in and is
+        # dropped when that no longer matches.
+        self._generation = 0
         self._language = ""
         self._prompt = ""
         self._stop = threading.Event()
@@ -51,6 +58,7 @@ class LiveTranscriber(QObject):
     def begin(self, language="", prompt=""):
         """Start a session: empty text, and a worker if none is running."""
         with self._lock:
+            self._generation += 1
             self._pending = bytearray()
             self._text = ""
         self._language = language or ""
@@ -61,9 +69,22 @@ class LiveTranscriber(QObject):
             self._thread = threading.Thread(target=self._work, daemon=True)
             self._thread.start()
 
+    def heard(self):
+        """The words this session has already read out of the microphone.
+
+        Read before `end()` forgets them: words the preview has already picked
+        up are proof that the audio the pipeline is about to judge holds
+        speech, heard from the same PCM and with the same provider — evidence
+        no level statistic can match, and the reason the silence check does not
+        get the last word on a recording the preview has transcribed.
+        """
+        with self._lock:
+            return self._text.strip()
+
     def end(self):
         """Forget everything: the pipeline owns the recording from here."""
         with self._lock:
+            self._generation += 1
             self._pending = bytearray()
             self._text = ""
 
@@ -80,8 +101,14 @@ class LiveTranscriber(QObject):
 
     def _work(self):
         carry = b""
+        generation = None
         while not self._stop.wait(INTERVAL_SECONDS):
             with self._lock:
+                if generation != self._generation:
+                    # Whatever was carried over was spoken into the session
+                    # that just ended; it is not this recording's audio.
+                    carry = b""
+                    generation = self._generation
                 pending = carry + bytes(self._pending)
                 self._pending = bytearray()
             if len(pending) < MIN_CHUNK_BYTES:
@@ -91,10 +118,20 @@ class LiveTranscriber(QObject):
             text = self._probe(pending)
             if not text:
                 continue
+            # A model handed near-silence invents a sentence, and Whisper's
+            # inventions are recognisable. On the card that is one thing; as
+            # the evidence `heard()` is read for — proof this recording holds
+            # speech — it is not, so a stock phrase is never kept as words.
+            if vad.stock_phrase(text):
+                continue
             with self._lock:
+                if generation != self._generation:
+                    continue  # heard in a session that has since ended
                 self._text = f"{self._text} {text}".strip()
                 combined = self._text
-            self.partial.emit(combined)
+                # Emitted under the lock so the session cannot end between the
+                # check above and the line reaching the card.
+                self.partial.emit(combined)
 
     def _probe(self, pcm):
         fd, path = tempfile.mkstemp(prefix="dikte-live-", suffix=".wav")

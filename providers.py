@@ -49,17 +49,38 @@ Provider = collections.namedtuple(
 # kind              transport   credential
 # openai-compatible http        API key, Authorization: Bearer
 # deepgram          http        API key, Token
+# opencode-go       http        API key, Bearer + x-opencode-session routing
 # local-whisper     local       none
 # local-llama       local       none
 # claude-cli        CLI         account/session
 # codex-cli         CLI         account/session
 # agy-cli           CLI         account/session
 
+OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
+
+# The Go models the docs name per endpoint family. Anything unlisted still
+# routes — api.opencode_go_path falls back to /chat/completions — so this
+# list only feeds the settings boxes, never a gate.
+OPENCODE_GO_MODELS = (
+    "kimi-k2.7-code", "kimi-k2.6",
+    "glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-5.1",
+    "mimo-v2.5", "mimo-v2.5-pro",
+    "minimax-m2.7", "minimax-m3",
+    "muse-spark-1.3-contributor", "muse-spark-1.2-contributor",
+    "qwen3.8-max", "qwen3.8-flash",
+    "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+    "deepseek-v4.1-flash", "deepseek-v4-pro", "deepseek-v4-flash",
+    "grok-4.6", "gpt-5.6-luna",
+    "hy4-preview", "hy3", "longcat-2.0", "kimi-k3",
+)
+
 _BUILT_INS = [
     ("local", t("Local whisper"), "local-whisper", "", (TRANSCRIPTION,)),
     ("local-llm", t("Local llama"), "local-llama", "", (TEXT,)),
     ("deepgram", "Deepgram", "deepgram",
      "https://api.deepgram.com/v1", (TRANSCRIPTION,)),
+    ("opencode-go", "OpenCode Go", "opencode-go",
+     OPENCODE_GO_BASE_URL, (TEXT,)),
     ("claude", "Claude Code", "claude-cli", "", (TEXT,)),
     ("codex", "Codex", "codex-cli", "", (TEXT,)),
     ("antigravity", "Antigravity", "agy-cli", "", (TEXT,)),
@@ -94,7 +115,35 @@ _LEGACY = {
     "openai": ("openai_api_key", "openai_base_url"),
     "groq": ("groq_api_key", "groq_base_url"),
     "deepgram": ("deepgram_api_key", "deepgram_base_url"),
+    "opencode-go": ("opencode_go_api_key", "opencode_go_base_url"),
 }
+
+
+def opencode_go_session_id(conf):
+    """The stable routing id Go requires on every request.
+
+    One id per provider name, minted once and persisted: Go optimises
+    routing and prompt caching on it, so it must survive restarts rather
+    than change per request. Turning the compatibility checkbox off clears
+    it; turning it back on mints a fresh one.
+    """
+    stored = (conf.get("opencode_go_session_id") or "").strip()
+    if stored:
+        return stored
+    fresh = f"dikte-{uuid.uuid4().hex[:12]}"
+    try:
+        conf["opencode_go_session_id"] = fresh
+    except (AttributeError, TypeError):
+        pass
+    return fresh
+
+
+def reset_opencode_go_session_id(conf):
+    """Forget the routing id, so the next read mints a fresh one."""
+    try:
+        conf["opencode_go_session_id"] = ""
+    except (AttributeError, TypeError):
+        pass
 
 # Where a CLI provider's executable is. `agy` rather than something longer:
 # that is the name the Antigravity installer puts on the PATH.
@@ -626,6 +675,15 @@ def fetch_models(conf, pid, capability=TEXT, timeout=20):
         # own entries alike — answers the same /models with the same shapes.
         return api.openai_models(key, base_url(conf, pid), who.name,
                                  audio=(capability == TRANSCRIPTION))
+    if who.kind == "opencode-go":
+        # The Go catalog answers /models like any OpenAI-shaped endpoint; the
+        # curated list seeds the box so it is useful before the first fetch.
+        try:
+            fetched = api.openai_models(key, base_url(conf, pid), who.name,
+                                        audio=False)
+        except api.ApiError:
+            fetched = []
+        return normalize_models(list(OPENCODE_GO_MODELS) + fetched, "")
     if who.kind == "deepgram":
         return api.deepgram_models()
     if who.kind == "agy-cli":
@@ -859,6 +917,13 @@ def test_provider(conf, pid, timeout=30):
         return api.deepgram_key_status(credential(conf, pid),
                                        base_url(conf, pid))
     if who.kind == "openai-compatible":
+        key = credential(conf, pid)
+        if not key:
+            raise api.ApiError(t("{service} API key is empty. Add it in "
+                                 "Settings.", service=who.name))
+        api.openai_models(key, base_url(conf, pid), who.name)
+        return t("Key works.")
+    if who.kind == "opencode-go":
         key = credential(conf, pid)
         if not key:
             raise api.ApiError(t("{service} API key is empty. Add it in "

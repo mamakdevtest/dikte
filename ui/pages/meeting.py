@@ -210,6 +210,11 @@ def build(window):
     _setting(models, models_form, t("Model"),
              t("Gateway model id for the minutes."),
              window.meeting_model_row)
+    window.opencode_go_enabled_meeting = QCheckBox()
+    _setting(models, models_form, t("Use OpenCode Go for minutes"),
+             t("Sends Go's routing session id and model-family endpoint; "
+               "off leaves minutes on the provider above."),
+             window.opencode_go_enabled_meeting)
     window.meeting_models_label = QLabel("")
     window.meeting_models_label.setWordWrap(True)
     _note(models, models_form, window.meeting_models_label)

@@ -30,6 +30,7 @@ atexit.register(shutil.rmtree, _SANDBOX, True)
 # environment is a config that references it, which the load migration would
 # turn into a user gateway and hand from test to test.
 for _var in ("OPENAI_API_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY",
+             "OPENCODE_GO_API_KEY",
              "OPENROUTER_API_KEY", "LLMAPI_API_KEY", "LLM_API_KEY"):
     os.environ.pop(_var, None)
 

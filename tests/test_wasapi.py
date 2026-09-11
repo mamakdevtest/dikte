@@ -339,7 +339,9 @@ class DictationWasapi(OnWindows, DikteTest):
         path = os.path.join(self.root, "dictation.wav")
         self.recorder.start("", max_seconds=60)
         self.assertTrue(self.recorder.active)
-        self.assertTrue(self.wait_for(lambda: len(self.events["level"]) >= 1))
+        # Four chunks clear the floor below which stop() calls a run too short:
+        # stopping on the first level event raced the pump and wrote nothing.
+        self.assertTrue(self.wait_for(lambda: len(self.events["level"]) >= 4))
         self.recorder.stop()
         self.assertEqual(self.events["failed"], [])
         self.assertEqual(len(self.events["stopped"]), 1)

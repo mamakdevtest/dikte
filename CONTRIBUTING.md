@@ -46,6 +46,12 @@ code one frame down, and the signals arrive at once.
 steady tone reads as its own noise floor however loud it is. Use `speech()`
 rather than `tone()` when a recording is meant to have somebody talking in it.
 
+**A railed input is not silence, though it looks exactly like it.** A recording
+whose samples are pinned at full scale has no level left to move, so the check
+above reads it as room tone and the words in it are thrown away.
+`audio.saturated()` tells the two apart, and the pipeline asks it before it
+discards anything the levels called silent.
+
 **`cli.launch_gui` replaces the process.** With no instance running, some verbs
 `os.execv` into the application, which would take the test run with it. Patch
 `cli.launch_gui`. `DikteTest` blocks `os.execv` as a backstop, so a test that

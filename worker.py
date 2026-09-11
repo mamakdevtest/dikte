@@ -127,10 +127,15 @@ class Pipeline(QObject):
         while not self._pause.is_set() and not self._stop.is_set():
             time.sleep(0.15)
 
-    def run(self, wav_path, duration, rms_values=(), ask=False, paste=None):
+    def run(self, wav_path, duration, rms_values=(), ask=False, paste=None,
+            speech_observed=False):
         """`paste` overrides the setting for this one run, which is what a
         dictation asked for from a terminal wants: the text comes back down the
-        socket, and pasting it into whatever had focus is nobody's intention."""
+        socket, and pasting it into whatever had focus is nobody's intention.
+
+        `speech_observed` says the live preview has already read words out of
+        this recording: the audio holds speech, and the silence check is not
+        the thing to ask about it."""
         if self.busy:
             return
         self._stop.clear()
@@ -138,6 +143,7 @@ class Pipeline(QObject):
         self._thread = threading.Thread(
             target=self._work,
             args=(wav_path, duration, list(rms_values), ask, paste),
+            kwargs={"speech_observed": bool(speech_observed)},
             daemon=True,
         )
         self._thread.start()
@@ -404,7 +410,8 @@ class Pipeline(QObject):
         self._pause.set()
         self._stop.set()
 
-    def _work(self, wav_path, duration, rms_values, ask, paste_override=None, _job_id=None, _retry_mode=None):
+    def _work(self, wav_path, duration, rms_values, ask, paste_override=None,
+              speech_observed=False, _job_id=None, _retry_mode=None):
         conf = self.conf
         started = time.monotonic()
         raw = ""
@@ -413,11 +420,21 @@ class Pipeline(QObject):
         job_id = _job_id
 
         # Room tone only: don't spend an API call, and don't invite a
-        # hallucinated sentence back. Skipped on retry (durable audio already validated).
-        if _retry_mode is None and conf["skip_silent"]:
+        # hallucinated sentence back. Skipped on retry (durable audio already
+        # validated), and skipped for a recording the live preview has already
+        # read words out of: what the same microphone already produced is
+        # stronger evidence than a level statistic, which a noisy floor or a
+        # clipped input can talk into calling speech silence.
+        if _retry_mode is None and conf["skip_silent"] and not speech_observed:
             stats = vad.analyse(rms_values, CHUNK_SECONDS, conf["speech_margin_db"])
-            if vad.is_silent(stats, conf["silence_db"], conf["speech_margin_db"],
-                             conf["min_voiced_seconds"]):
+            quiet = vad.is_silent(stats, conf["silence_db"],
+                                  conf["speech_margin_db"],
+                                  conf["min_voiced_seconds"])
+            # A railed input has no level left to move, so those numbers read a
+            # clipped dictation as flat silence. The samples settle it, and
+            # saying "no speech" to somebody whose words are on the screen is
+            # the worst answer available.
+            if quiet and not audio.saturated(wav_path):
                 self._discard(wav_path, job)
                 self.failed.emit(
                     t("No speech detected ({level} dB)", level=round(stats["speech_db"]))
@@ -520,7 +537,12 @@ class Pipeline(QObject):
                         )
                     raise
 
-                if conf["filter_hallucinations"] and vad.looks_like_hallucination(raw, duration):
+                if conf["filter_hallucinations"] and (
+                        # Off preview words rather than off the levels: a stock
+                        # phrase is a stock phrase at any length when the gate
+                        # was skipped on evidence a model produced.
+                        vad.looks_like_hallucination(raw, duration)
+                        or (speech_observed and vad.stock_phrase(raw))):
                     self._discard(wav_path, job)
                     self.failed.emit(t("Discarded a stock phrase: “{text}”", text=raw[:60]))
                     return

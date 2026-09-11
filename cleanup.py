@@ -28,7 +28,9 @@ from i18n import t
 # The hosted road holds no name of its own: a user/* gateway out of the
 # registry is recognised apart, and Config.load has already turned whatever a
 # config still held of the retired hosted gateways into one of those.
-PROVIDERS = ("local", "claude", "codex", "antigravity")
+# OpenCode Go is the one hosted built-in: a subscription with its own routing
+# rules (session header + per-family paths), gated by its compat checkbox.
+PROVIDERS = ("local", "claude", "codex", "antigravity", "opencode-go")
 
 
 def _subprocess_kwargs():
@@ -67,6 +69,8 @@ def model(conf):
     name = provider(conf)
     if name == "local":
         return conf["local_llm_model"]
+    if name == "opencode-go":
+        return (conf["opencode_go_model"] or "").strip() or "kimi-k2.7-code"
     if name == "claude":
         return conf["cleanup_claude_model"].strip() or "haiku"
     if name == "codex":
@@ -141,6 +145,18 @@ def _dispatch(name, text, conf, system_prompt, timeout, aborter=None):
             reasoning=conf["cleanup_reasoning"],
             base_url=providers.base_url(conf, name), provider=name,
             service=who.name, timeout=timeout, aborter=aborter,
+        )
+    if name == "opencode-go":
+        who = providers.provider(conf, name)
+        if who is None:
+            raise api.ApiError(t("Unknown provider."))
+        chosen = model(conf)
+        return api.cleanup(
+            text, providers.credential(conf, name), chosen, system_prompt,
+            reasoning=conf["cleanup_reasoning"],
+            base_url=providers.base_url(conf, name), provider=name,
+            service=who.name, timeout=timeout, aborter=aborter,
+            session_id=providers.opencode_go_session_id(conf),
         )
     if name == "local":
         return _local(text, conf, system_prompt, timeout, aborter)

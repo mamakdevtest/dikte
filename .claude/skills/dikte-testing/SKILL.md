@@ -8,11 +8,16 @@ description: How to write and run tests for the Dikte PyQt6 app - offscreen Qt a
 ## Run
 
 ```sh
-python -m unittest discover --verbose
+python -m unittest discover --verbose   # the contract command, ~82s
+python tools/quick_tests.py             # iteration: the same minus test_ui, ~14s
+python tools/quick_tests.py tests.test_worker   # or just what you touched
 ```
 
 Same command CI uses (`.github/workflows/tests.yml`: Linux + Windows,
 Python 3.11–3.13). Only dependency: PyQt6. No network, no audio device.
+`tests.test_ui` is 68 of the full suite's 82 seconds — 131 tests that each
+build the whole settings window — so it is the last thing to run, not the
+first. The full command is still what "done" means.
 
 ## Architecture (do not fight it)
 

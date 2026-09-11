@@ -792,6 +792,14 @@ DEFAULTS = {
     "groq_base_url": "https://api.groq.com/openai/v1",
     "deepgram_api_key": "",
     "deepgram_base_url": "https://api.deepgram.com/v1",
+    # OpenCode Go: a hosted TEXT-only subscription with its own routing rules
+    # (stable x-opencode-session header, per-family endpoint paths). Off by
+    # default: the local models stay the default, the checkbox opts in.
+    "opencode_go_api_key": "",
+    "opencode_go_base_url": "https://opencode.ai/zen/go/v1",
+    "opencode_go_enabled": False,   # the compat checkbox in Settings
+    "opencode_go_model": "kimi-k2.7-code",
+    "opencode_go_session_id": "",   # minted on first use, then stable
     "transcribe_provider": "local",  # "local", or a key of TRANSCRIBERS
     "transcribe_model": "gpt-4o-transcribe",           # used when provider is openai
     "groq_transcribe_model": "whisper-large-v3-turbo",

@@ -1015,6 +1015,41 @@ def chunk_levels(chunk):
     return min(1.0, peak), min(1.0, rms)
 
 
+def saturated(path, seconds=2.0, level=0.99, min_seconds=0.8):
+    """True when the recording's samples are pinned at full scale.
+
+    An input given more gain than it can take rails: the waveform becomes a
+    wall at ±full scale, its level cannot move, and the silence check reads the
+    recording as flat and still whatever was said into it. Only the samples
+    show it, and what they say is that this is somebody talking into too much
+    gain — a dictation worth transcribing, not room tone.
+
+    Most of the window has to be pinned: a few loud samples are a tap on the
+    microphone, not an input with no headroom left. The first `seconds` are
+    enough to tell the difference, because gain is a property of the input and
+    not of the moment — which is why this is only asked when the levels
+    already said silence.
+    """
+    try:
+        wav = wave.open(str(path), "rb")
+    except (OSError, wave.Error):
+        return False
+    pinned = 0.0
+    with wav:
+        rate = wav.getframerate() or RATE
+        block_seconds = CHUNK_FRAMES / rate
+        try:
+            for _step in range(max(1, int(seconds * rate / CHUNK_FRAMES))):
+                chunk = wav.readframes(CHUNK_FRAMES)
+                if not chunk:
+                    break
+                if chunk_levels(chunk)[0] >= level:
+                    pinned += block_seconds
+        except (OSError, wave.Error):
+            return False
+    return pinned >= min_seconds
+
+
 def stereo_levels(chunk):
     """(left peak, right peak) in 0..1 from interleaved stereo s16."""
     samples = array.array("h")

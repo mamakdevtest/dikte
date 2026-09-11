@@ -32,6 +32,12 @@ slash-command sugar but must not change semantics.
 - Before starting: establish a clean baseline run and record it in EVIDENCE.md.
 - After changes: targeted module tests first, then the full suite,
   then `git diff --check`.
+- Iteration is the fast half: `python tools/quick_tests.py` runs everything
+  except `tests.test_ui` (1342 tests in ~14 s, against ~82 s for the whole
+  suite). The settings-window round trips are 68 of those 82 seconds — 131
+  tests that each build the whole window — so they are the last thing to run,
+  not the first. Pass module names to run only what you touched
+  (`python tools/quick_tests.py tests.test_worker`).
 - Use the existing offscreen Qt fixtures (tests/support.py); do not invent
   parallel test infrastructure.
 

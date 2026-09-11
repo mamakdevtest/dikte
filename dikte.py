@@ -985,11 +985,12 @@ class Dikte:
                 print(f"dikte: could not retire activity: {exc}", file=sys.stderr)
         if current is not None:
             self._activity_widgets.pop(kind, None)
-            if not dismiss:
-                try:
-                    current.deleteLater()
-                except Exception:
-                    pass
+            # The widget keeps its place in the per-kind attribute until the
+            # next activity of that kind replaces it. Deleting it here — the
+            # concealed activity is already off screen — left that attribute
+            # naming a dead object, and restart, which puts every card away
+            # before it replaces the process, died on it: the new code never
+            # loaded and the old one kept running.
 
     def _reflow_activities(self):
         coordinator = getattr(self, "_coordinator", None)
@@ -1530,13 +1531,19 @@ class Dikte:
 
     def _on_recorded(self, wav_path, duration, rms_values):
         owner, self.recorder_owner = self.recorder_owner, None
+        # Read before end() forgets it: words the live preview has already
+        # taken out of this recording are proof it holds speech, and the
+        # silence check must not overrule what the same microphone already
+        # said out loud.
+        heard = bool(self.live.heard())
         self.live.end()
         wants_paste = self.paste_override.pop(owner, None)
         if owner == ASK:
             self.ask_pipeline.run(wav_path, duration, rms_values, ask=True,
-                                   paste=wants_paste)
+                                  paste=wants_paste, speech_observed=heard)
         else:
-            self.pipeline.run(wav_path, duration, rms_values, paste=wants_paste)
+            self.pipeline.run(wav_path, duration, rms_values, paste=wants_paste,
+                              speech_observed=heard)
 
     # ---- retry helpers (exposed for history/minutes UI) ------------------
 
@@ -1860,13 +1867,17 @@ class Dikte:
         if self.meeting_state == M_RECORDING:
             self.meeting_ticker.stop()
             self.meeting_recorder.stop()
-        self.overlay.dismiss()
-        self.ask_overlay.dismiss()
-        try:
-            if getattr(self, "result_overlay", None) is not None:
-                self.result_overlay.dismiss()
-        except Exception:
-            pass
+        # A view a finished activity retired is kept, not deleted, so it is
+        # still here to put away. A card that will not go quietly must not stop
+        # the reload either: reaching the exec is the whole point.
+        for widget in (self.overlay, self.ask_overlay, self.meeting_overlay,
+                       getattr(self, "result_overlay", None)):
+            if widget is None:
+                continue
+            try:
+                widget.dismiss()
+            except Exception as exc:
+                print(f"dikte: could not dismiss a view: {exc}", file=sys.stderr)
         # Also on the restart path, which replaces the process without ever
         # reaching atexit and would otherwise leave the models in memory.
         ggml.stop_all()

@@ -262,6 +262,29 @@ def build(window):
         "Runs as the account you are signed in with, on this computer."),
         variant="info"))
 
+    window.opencode_go_box = _provider_card(SectionCard(t("OpenCode Go")), t("OpenCode Go"))
+    outer.addWidget(window.opencode_go_box)
+    go_form = _CardForm(window.opencode_go_box)
+    window.opencode_go_enabled_agent = QCheckBox()
+    _setting(window.opencode_go_box, go_form,
+             t("Use OpenCode Go for this agent"),
+             t("Sends Go's routing session id and model-family endpoint; "
+               "off leaves this agent on its other provider."),
+             window.opencode_go_enabled_agent)
+    window.opencode_go_model_agent = QComboBox()
+    window.opencode_go_model_agent.setEditable(True)
+    window.refresh_opencode_go_models_agent = btn(t("Fetch model list"), "secondary", "sm")
+    window.refresh_opencode_go_models_agent.clicked.connect(
+        window._load_opencode_go_models)
+    _setting(window.opencode_go_box, go_form, t("Model"),
+             t("Go model id; endpoint path follows the family."),
+             window._row(window.opencode_go_model_agent,
+                          window.refresh_opencode_go_models_agent))
+    window.opencode_go_box.add(InfoNote(t(
+        "Needs the OpenCode Go key in Settings → Providers; no commands run, "
+        "no files open."),
+        variant="info"))
+
     window.gateway_box = _provider_card(SectionCard(t("Gateway")), "")
     outer.addWidget(window.gateway_box)
     gateway_form = _CardForm(window.gateway_box)

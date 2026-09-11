@@ -144,6 +144,7 @@ KEY_SETTINGS = {
     "openai": "openai_api_key",
     "groq": "groq_api_key",
     "deepgram": "deepgram_api_key",
+    "opencode-go": "opencode_go_api_key",
 }
 
 
@@ -451,6 +452,7 @@ class SettingsWindow(QDialog):
     _models_loaded = pyqtSignal(list, str)
     _transcribe_models_loaded = pyqtSignal(list, str)
     _agy_models_loaded = pyqtSignal(list, str)
+    _opencode_go_models_loaded = pyqtSignal(list, str)
     _claude_models_loaded = pyqtSignal(list, str)
     _codex_models_loaded = pyqtSignal(list, str)
     _meeting_models_loaded = pyqtSignal(list, str)
@@ -529,6 +531,7 @@ class SettingsWindow(QDialog):
         self._models_loaded.connect(self._on_models_loaded)
         self._transcribe_models_loaded.connect(self._on_transcribe_models_loaded)
         self._agy_models_loaded.connect(self._on_agy_models_loaded)
+        self._opencode_go_models_loaded.connect(self._on_opencode_go_models_loaded)
         self._claude_models_loaded.connect(self._on_claude_models_loaded)
         self._codex_models_loaded.connect(self._on_codex_models_loaded)
         self._meeting_models_loaded.connect(self._on_meeting_models_loaded)
@@ -623,6 +626,7 @@ class SettingsWindow(QDialog):
         "openai": "sk-… (falls back to OPENAI_API_KEY)",
         "groq": "gsk_… (falls back to GROQ_API_KEY)",
         "deepgram": "(falls back to DEEPGRAM_API_KEY)",
+        "opencode-go": "(falls back to OPENCODE_GO_API_KEY)",
     }
 
     def _providers_group(self):
@@ -1097,6 +1101,51 @@ class SettingsWindow(QDialog):
             combo.setCurrentText(current)
         self.models_label.setText(t("{count} models loaded.", count=len(models)))
 
+    def _load_opencode_go_models(self):
+        """Go's curated catalog, for the cleanup and agent model boxes."""
+        for button in (getattr(self, "refresh_opencode_go_models", None),
+                       getattr(self, "refresh_opencode_go_models_agent", None)):
+            try:
+                if button is not None:
+                    button.setEnabled(False)
+            except Exception:
+                pass
+        self.models_label.setText(t("Fetching model list…"))
+
+        def work():
+            try:
+                self._opencode_go_models_loaded.emit(
+                    providers.fetch_models(self._conf_view("opencode-go"),
+                                           "opencode-go"), "")
+            except api.ApiError as exc:
+                self._opencode_go_models_loaded.emit([], str(exc))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_opencode_go_models_loaded(self, models, error):
+        for button in (getattr(self, "refresh_opencode_go_models", None),
+                       getattr(self, "refresh_opencode_go_models_agent", None)):
+            try:
+                if button is not None:
+                    button.setEnabled(True)
+            except Exception:
+                pass
+        if error:
+            self.models_label.setText(t("Could not fetch the list: {error}", error=error))
+            return
+        for combo in (getattr(self, "opencode_go_model", None),
+                      getattr(self, "opencode_go_model_agent", None)):
+            try:
+                if combo is None:
+                    continue
+                current = combo.currentText()
+                combo.clear()
+                combo.addItems(models)
+                combo.setCurrentText(current)
+            except Exception:
+                pass
+        self.models_label.setText(t("{count} models loaded.", count=len(models)))
+
     def _load_claude_models(self):
         """The models the user's own Claude Code settings name, for whichever
         Claude row asked."""
@@ -1336,7 +1385,8 @@ class SettingsWindow(QDialog):
         conf.data["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
         models = {"claude": (self.cleanup_claude_model, "cleanup_claude_model"),
                   "codex": (self.cleanup_codex_model, "cleanup_codex_model"),
-                  "antigravity": (self.cleanup_agy_model, "cleanup_agy_model")}
+                  "antigravity": (self.cleanup_agy_model, "cleanup_agy_model"),
+                  "opencode-go": (self.opencode_go_model, "opencode_go_model")}
         if provider.startswith("user/"):
             conf.data["providers"] = json.loads(
                 json.dumps(self.conf.data.get("providers") or []))
@@ -1525,6 +1575,12 @@ class SettingsWindow(QDialog):
                                         provider == "codex")
         self.cleanup_form.setRowVisible(self.cleanup_agy_model_row,
                                         provider == "antigravity")
+        self.cleanup_form.setRowVisible(self.opencode_go_model_row,
+                                        provider == "opencode-go")
+        try:
+            self.opencode_go_model.setVisible(provider == "opencode-go")
+        except Exception:
+            pass
         self.cleanup_form.setRowVisible(self.cleanup_reasoning,
                                         provider not in ("local",
                                                          "antigravity"))
@@ -1552,6 +1608,9 @@ class SettingsWindow(QDialog):
         self.claude_box.setVisible(provider == "claude")
         self.codex_box.setVisible(provider == "codex")
         self.agy_box.setVisible(provider == "antigravity")
+        go_box = getattr(self, "opencode_go_box", None)
+        if go_box is not None:
+            go_box.setVisible(provider == "opencode-go")
         gateway = provider.startswith("user/")
         self.gateway_box.setVisible(gateway)
         if gateway and who is not None:
@@ -2229,6 +2288,13 @@ class SettingsWindow(QDialog):
             out["cleanup_claude_model"] = (self.cleanup_claude_model.currentText().strip() if hasattr(self, "cleanup_claude_model") else "")
             out["cleanup_codex_model"] = (self.cleanup_codex_model.currentText().strip() if hasattr(self, "cleanup_codex_model") else "")
             out["cleanup_agy_model"] = (self.cleanup_agy_model.currentText().strip() if hasattr(self, "cleanup_agy_model") else "")
+            out["opencode_go_enabled"] = any([
+                bool(self.opencode_go_enabled.isChecked()) if hasattr(self, "opencode_go_enabled") else False,
+                bool(self.opencode_go_enabled_agent.isChecked()) if hasattr(self, "opencode_go_enabled_agent") else False,
+                bool(self.opencode_go_enabled_meeting.isChecked()) if hasattr(self, "opencode_go_enabled_meeting") else False,
+            ])
+            out["opencode_go_model"] = (self.opencode_go_model.currentText().strip() if hasattr(self, "opencode_go_model") else "")
+            out["opencode_go_model_agent"] = (self.opencode_go_model_agent.currentText().strip() if hasattr(self, "opencode_go_model_agent") else "")
             out["cleanup_reasoning"] = (self.cleanup_reasoning.currentData() or "") if hasattr(self, "cleanup_reasoning") else ""
             try:
                 out["cleanup_custom_enabled"] = bool(self.cleanup_custom_enabled.isChecked()) if hasattr(self, "cleanup_custom_enabled") else False
@@ -2717,6 +2783,9 @@ class SettingsWindow(QDialog):
             conf["cleanup_agy_model"] or cfg.DEFAULTS["cleanup_agy_model"])
         self._select_data(self.cleanup_provider, conf["cleanup_provider"])
         self._cleanup_provider_changed()  # selecting index 0 fires no signal
+        self.opencode_go_enabled.setChecked(bool(conf["opencode_go_enabled"]))
+        self.opencode_go_model.setCurrentText(
+            conf["opencode_go_model"] or cfg.DEFAULTS["opencode_go_model"])
         self._select_data(self.cleanup_reasoning, conf["cleanup_reasoning"])
         self.local_llm_gpu.setChecked(conf["local_llm_gpu"])
         self.local_llm_preload.setChecked(conf["local_llm_preload"])
@@ -2768,6 +2837,11 @@ class SettingsWindow(QDialog):
 
         self._select_data(self.assistant_provider, conf["assistant_provider"])
         self.assistant_model.setCurrentText(conf["assistant_model"])
+        if hasattr(self, "opencode_go_enabled_agent"):
+            self.opencode_go_enabled_agent.setChecked(bool(conf["opencode_go_enabled"]))
+        if hasattr(self, "opencode_go_model_agent"):
+            self.opencode_go_model_agent.setCurrentText(
+                conf["opencode_go_model"] or cfg.DEFAULTS["opencode_go_model"])
         self._select_data(self.assistant_permission, conf["assistant_permission_mode"])
         self.assistant_codex_model.setCurrentText(conf["assistant_codex_model"])
         self.assistant_agy_model.setCurrentText(
@@ -2804,6 +2878,9 @@ class SettingsWindow(QDialog):
         self._select_data(self.meeting_theirs_language,
                           conf["meeting_theirs_language"])
         self.meeting_cleanup.setChecked(conf["meeting_cleanup"])
+        if hasattr(self, "opencode_go_enabled_meeting"):
+            self.opencode_go_enabled_meeting.setChecked(
+                bool(conf["opencode_go_enabled"]))
         self.meeting_max_minutes.setValue(max(5, int(conf["meeting_max_seconds"]) // 60))
         self.meeting_keep_audio.setChecked(conf["meeting_keep_audio"])
         self.meeting_retention.setValue(int(conf["meeting_audio_retention_days"]))
@@ -2999,6 +3076,23 @@ class SettingsWindow(QDialog):
         conf["cleanup_agy_model"] = (self.cleanup_agy_model.currentText().strip()
                                      or cfg.DEFAULTS["cleanup_agy_model"])
         conf["cleanup_reasoning"] = self.cleanup_reasoning.currentData() or ""
+        go_on = []
+        if hasattr(self, "opencode_go_enabled"):
+            go_on.append(bool(self.opencode_go_enabled.isChecked()))
+            conf["opencode_go_model"] = (
+                self.opencode_go_model.currentText().strip()
+                or cfg.DEFAULTS["opencode_go_model"])
+        if hasattr(self, "opencode_go_enabled_agent"):
+            go_on.append(bool(self.opencode_go_enabled_agent.isChecked()))
+            agent_go_model = self.opencode_go_model_agent.currentText().strip()
+            if agent_go_model:
+                conf["opencode_go_model"] = agent_go_model
+        if hasattr(self, "opencode_go_enabled_meeting"):
+            go_on.append(bool(self.opencode_go_enabled_meeting.isChecked()))
+        was_on = bool(conf.get("opencode_go_enabled", False))
+        conf["opencode_go_enabled"] = any(go_on)
+        if was_on and not conf["opencode_go_enabled"]:
+            providers.reset_opencode_go_session_id(conf)
         conf["local_llm_model"] = self.local_llm.selected()
         conf["local_llm_repo"] = self.local_llm.repository()
         conf["local_llm_gpu"] = self.local_llm_gpu.isChecked()
