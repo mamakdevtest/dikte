@@ -3,9 +3,19 @@
 Builds every visible surface once per theme x language, freezes timers, and
 saves one PNG per screen under --out as <theme>_<lang>_<screen>.png.
 
-Usage:
     python tools/shoot_ui.py --out /tmp/dikte-shots \\
         --themes blue,orange --langs en,tr
+    python tools/shoot_ui.py --out /tmp/dikte-shots --check   # and assert it
+
+`--check` is the half that makes this a test rather than a gallery: every
+surface in the manifest has to land on disk and has to hold more than one
+colour. A surface that stops rendering used to be a slightly shorter list of
+files that nobody counted.
+
+Nothing here compares pixels across machines. Qt rasterises text differently on
+each platform, so a golden image would fail on Windows and macOS for a reason
+that has nothing to do with the interface, and deterministic tests are a rule in
+this repository, not a preference.
 """
 
 import atexit
@@ -32,7 +42,9 @@ for _var in ("LC_ALL", "LC_MESSAGES", "LANG"):
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
+import ast
 import contextlib
+import pathlib
 import urllib.request
 from unittest import mock
 
@@ -151,6 +163,81 @@ HISTORY_ROW = {
 }
 
 
+REPO = pathlib.Path(__file__).resolve().parent.parent
+
+# Every surface the tour is expected to produce, named. The pages are counted
+# from the source rather than written down here, so a tenth settings page that
+# nobody taught the tour about fails instead of being skipped.
+NAMED_SURFACES = (
+    "hintmenu",
+    "overlay_rec", "overlay_ask", "overlay_meet", "overlay_busy",
+    "overlay_done", "overlay_warn", "overlay_err", "overlay_paused",
+    "result_collapsed", "result_expanded",
+    "live_collapsed", "live_expanded",
+    "thinking", "thinking_paused",
+    "provider_dialog", "provider_keys", "history_details", "prompt_creator",
+)
+
+
+def page_count():
+    """How many top-level pages the window registers, read from the source.
+
+    Two paths add one. `AppShell.add_page()` covers the nine settings pages and
+    the overlay page. `DashboardWindow.__init__` inserts the dashboard straight
+    into the tab widget and then hand-builds its navigation button, reaching
+    into `shell._nav_layout`, `shell._nav` and `shell._nav_titles` — so it is not
+    covered by counting `add_page` calls, and it is the reason this is two
+    counts rather than one.
+    """
+    sources = (("settings_ui.py", "add_page"),
+               ("ui/app_window.py", "insertTab"))
+    total = 0
+    for relative, method in sources:
+        tree = ast.parse((REPO / relative).read_text(encoding="utf-8"))
+        total += sum(1 for node in ast.walk(tree)
+                     if isinstance(node, ast.Call)
+                     and getattr(node.func, "attr", None) == method)
+    return total
+
+
+def expected_names():
+    """The file stems one theme-and-language tour has to produce."""
+    return [f"page{i:02d}" for i in range(page_count())] + list(NAMED_SURFACES)
+
+
+def _is_blank(path):
+    """True when a frame holds a single colour, whatever the colour is."""
+    from PyQt6.QtGui import QImage
+
+    image = QImage(str(path))
+    if image.isNull():
+        return True
+    step_x = max(1, image.width() // 60)
+    step_y = max(1, image.height() // 60)
+    first = None
+    for y in range(0, image.height(), step_y):
+        for x in range(0, image.width(), step_x):
+            pixel = image.pixel(x, y)
+            if first is None:
+                first = pixel
+            elif pixel != first:
+                return False
+    return True
+
+
+def check(out_dir, tags):
+    """Every expected surface landed, and none of them drew nothing."""
+    problems = []
+    for tag in tags:
+        for name in expected_names():
+            path = os.path.join(out_dir, f"{tag}_{name}.png")
+            if not os.path.isfile(path):
+                problems.append(f"missing: {os.path.basename(path)}")
+            elif _is_blank(path):
+                problems.append(f"blank: {os.path.basename(path)}")
+    return problems
+
+
 def _no_network(*args, **kwargs):
     raise AssertionError("shoot_ui reached the network")
 
@@ -220,6 +307,9 @@ def main():
     parser.add_argument("--out", required=True)
     parser.add_argument("--themes", default="blue,orange")
     parser.add_argument("--langs", default="en,tr")
+    parser.add_argument("--check", action="store_true",
+                        help="assert every expected surface was drawn, and "
+                             "exit non-zero when one was not")
     args = parser.parse_args()
     themes = [t for t in args.themes.split(",") if t]
     langs = [l for l in args.langs.split(",") if l]
@@ -298,7 +388,13 @@ def main():
                 window = DashboardWindow(conf)
                 window.resize(1000, 700)
                 pages = window.shell.tabs.count()
-                for i in range(min(pages, 11)):
+                declared = page_count()
+                if pages != declared:
+                    raise SystemExit(
+                        f"the window registers {pages} pages, but settings_ui.py "
+                        f"has {declared} add_page() calls; the tour and the "
+                        "manifest would disagree about what to capture")
+                for i in range(pages):
                     window.shell.set_page(i)
                     count += 1 if shoot(
                         app, window,
@@ -426,6 +522,18 @@ def main():
                 app.processEvents()
 
         print(f"wrote {count} PNGs to {args.out}")
+
+    if args.check:
+        tags = [f"{thm}_{lang}" for thm in themes for lang in langs]
+        problems = check(args.out, tags)
+        if problems:
+            print("surface check FAILED:")
+            for problem in problems:
+                print("  " + problem)
+            raise SystemExit(1)
+        surfaces = len(expected_names())
+        print(f"surface check OK: {surfaces} surfaces x {len(tags)} "
+              f"theme-and-language runs, all drawn")
 
 
 if __name__ == "__main__":
