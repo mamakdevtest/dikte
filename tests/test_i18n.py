@@ -5,12 +5,63 @@ whose placeholder was renamed raises KeyError at the moment the message is
 shown, which is exactly when nobody is watching a terminal.
 """
 
+import ast
+import json
+import pathlib
 import string
 import unittest
 from unittest import mock
 
 import i18n
 from tests.support import DikteTest
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+GAPS_FILE = pathlib.Path(__file__).resolve().parent / "i18n_untranslated.json"
+
+# What a module calls the translator. `ui/shell.py` imports it as `_t`, and the
+# alias was invisible to this scan until 2026-09-12 — which is how the sidebar
+# chips "Local" and "Ready" stayed English in a Turkish window.
+ALIASES = ("t", "_t")
+
+
+def untranslated_strings(repo=None):
+    """{string: [where it is asked for]} for every t() literal with no entry.
+
+    Product code only: the tests and the tools speak to a developer, not to the
+    person using Dikte, and `i18n.py` is the table itself.
+    """
+    root = pathlib.Path(repo) if repo else REPO
+    paths = [path for path in
+             sorted(root.glob("*.py")) + sorted(root.glob("ui/**/*.py"))
+             if path.name != "i18n.py" and "__pycache__" not in path.parts]
+    found = {}
+    for path in paths:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            name = getattr(func, "attr", None) or getattr(func, "id", None)
+            if name not in ALIASES:
+                continue
+            first = node.args[0]
+            if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+                continue
+            if first.value and first.value not in i18n.TR:
+                where = found.setdefault(first.value, [])
+                site = f"{path.relative_to(root)}:{node.lineno}"
+                if site not in where:
+                    where.append(site)
+    return {key: sorted(value) for key, value in sorted(found.items())}
+
+
+def recorded_gaps():
+    """The gaps the repository accepts today, as {string: [where]}."""
+    payload = json.loads(GAPS_FILE.read_text(encoding="utf-8"))
+    return payload["gaps"]
 
 
 def placeholders(text):
@@ -119,39 +170,46 @@ class Table(unittest.TestCase):
             with self.subTest(source=source[:50]):
                 translated.format(**{key: "x" for key in names})
 
-    def test_user_visible_strings_reach_t(self):
-        """Every t("...") literal in product code should have a TR entry.
+    def test_every_t_literal_is_translated_or_recorded(self):
+        """The gap may not grow, and the record may not lie.
 
-        Scans non-test .py files for t("literal") calls and fails only
-        when the gap grows: the count below is the ratchet. Adding a new
-        user-visible string without a Turkish translation increases the
-        count and fails; adding translations decreases it (then lower
-        the expected number in this test).
+        This replaced a count-based ratchet (`assertLessEqual(len(missing),
+        104)`) on 2026-09-12. A count cannot tell a new gap from an old one:
+        swapping one untranslated string for another keeps the number and
+        passes. It also never tightened, so a closed gap silently bought room
+        for a new one, and it did not follow the `_t` alias, which hid two
+        strings the sidebar shows on every page.
+
+        So the exact set is recorded in `tests/i18n_untranslated.json` and both
+        directions fail. Closing a gap is progress that has to be written down;
+        opening one is the thing this exists to stop.
         """
-        import ast
-        import pathlib
-        repo = pathlib.Path(__file__).resolve().parent.parent
-        missing = set()
-        for path in sorted(repo.glob("*.py")) + sorted(repo.glob("ui/**/*.py")):
-            try:
-                tree = ast.parse(path.read_text(encoding="utf-8"))
-            except (OSError, SyntaxError):
-                continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                func = node.func
-                name = getattr(func, "attr", None) or getattr(func, "id", None)
-                if name != "t" or not node.args:
-                    continue
-                first = node.args[0]
-                if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                    literal = first.value
-                    if literal and literal not in i18n.TR:
-                        missing.add(f"{path.name}: {literal[:60]}")
-        self.assertLessEqual(
-            len(missing), 104,
-            f"t() literals without TR entry grew: {sorted(missing)[:10]}")
+        actual = untranslated_strings()
+        recorded = recorded_gaps()
+
+        opened = sorted(set(actual) - set(recorded))
+        self.assertEqual([], opened, (
+            "these strings reach t() with no Turkish entry and are not in "
+            f"{GAPS_FILE.name}. Translate them in i18n.py, or — if the gap is "
+            "genuinely accepted for now — record it with "
+            "'python tools/i18n_gaps.py --write':\n  "
+            + "\n  ".join(f"{key!r} at {', '.join(actual[key])}" for key in opened)))
+
+        closed = sorted(set(recorded) - set(actual))
+        self.assertEqual([], closed, (
+            "these strings are recorded as untranslated but no longer are, so "
+            "the record is holding room the gap does not need. Delete them with "
+            f"'python tools/i18n_gaps.py --write':\n  " + "\n  ".join(repr(k) for k in closed)))
+
+    def test_the_gap_record_lists_where_each_string_is_asked_for(self):
+        """A record with no call site is a note, not a lead for whoever fixes it."""
+        for key, sites in recorded_gaps().items():
+            with self.subTest(string=key[:40]):
+                self.assertTrue(sites, f"{key!r} is recorded without a location")
+                for site in sites:
+                    path, _, lineno = site.rpartition(":")
+                    self.assertTrue((REPO / path).is_file(), f"{path} no longer exists")
+                    self.assertTrue(lineno.isdigit(), f"{site!r} has no line number")
 
 
 class VoiceReliabilityParity(DikteTest):

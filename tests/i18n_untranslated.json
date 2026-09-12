@@ -1,0 +1,335 @@
+{
+  "why": "Strings that reach t() with no Turkish entry, so they render in English inside a Turkish window. Recorded, not accepted: the test fails when this set changes in either direction.",
+  "shrink_with": "python tools/i18n_gaps.py --write",
+  "recorded": "2026-09-12",
+  "count": 104,
+  "gaps": {
+    "A Hugging Face repository of GGUF files. The list is fetched; any other one can be typed in.": [
+      "ui/local_models.py:63"
+    ],
+    "A recording that reaches this stops on its own and is still transcribed.": [
+      "ui/pages/general.py:294"
+    ],
+    "Ask": [
+      "ui/pages/dashboard.py:194"
+    ],
+    "Automatic": [
+      "ui/pages/providers.py:172"
+    ],
+    "Bad provider URL: {error}": [
+      "api.py:252"
+    ],
+    "Below the threshold the transcription is never called.": [
+      "ui/pages/general.py:312"
+    ],
+    "Cannot start meeting while another voice capture is active on this device. Finish it or choose a shareable input.": [
+      "dikte.py:1345"
+    ],
+    "Checking…": [
+      "ui/local_models.py:125"
+    ],
+    "Choose where speech-to-text and transcript cleanup run. Keys are stored only on this computer.": [
+      "ui/pages/providers.py:127"
+    ],
+    "Could not create {path}: {error}": [
+      "ggml.py:154"
+    ],
+    "Could not delete the model: {error}": [
+      "ggml.py:507"
+    ],
+    "Could not download {name}: HTTP {code}": [
+      "ggml.py:202"
+    ],
+    "Could not download {name}: {error}": [
+      "ggml.py:206"
+    ],
+    "Could not install {name}: {error}": [
+      "ggml.py:409"
+    ],
+    "Could not reach the Windows shortcut service.": [
+      "hotkey.py:516"
+    ],
+    "Could not reach {url}: {error}": [
+      "hub.py:69"
+    ],
+    "Could not read the answer from {url}: {error}": [
+      "hub.py:73"
+    ],
+    "Could not start {name}: {error}": [
+      "ggml.py:651",
+      "ggml.py:665"
+    ],
+    "Could not unpack {name}: {error}": [
+      "ggml.py:348",
+      "ggml.py:359"
+    ],
+    "Could not write {name}: {error}": [
+      "ggml.py:212"
+    ],
+    "Delete": [
+      "ui/local_models.py:71"
+    ],
+    "Delete model": [
+      "ui/local_models.py:335"
+    ],
+    "Delete {name} from this machine?": [
+      "ui/local_models.py:336"
+    ],
+    "Dictation, the agent command and the meeting microphone listen to this input.": [
+      "ui/pages/general.py:159"
+    ],
+    "Download": [
+      "ui/local_models.py:354",
+      "ui/local_models.py:55",
+      "ui/local_models.py:69"
+    ],
+    "Download stopped.": [
+      "ui/local_models.py:320"
+    ],
+    "Downloaded, version {version}.": [
+      "ui/local_models.py:141",
+      "ui/local_models.py:180"
+    ],
+    "Downloading: {done} of {total}{share}": [
+      "ui/local_models.py:307"
+    ],
+    "Downloading…": [
+      "ui/local_models.py:260"
+    ],
+    "Every dictation and agent command, kept on this computer.": [
+      "ui/pages/history.py:18"
+    ],
+    "Everyday dictation: language, where the text goes, recording limits and silence detection.": [
+      "ui/pages/general.py:139"
+    ],
+    "Fetching the model list…": [
+      "ui/local_models.py:201"
+    ],
+    "Global key combinations that work wherever the focus is.": [
+      "ui/pages/shortcuts.py:15"
+    ],
+    "Hugging Face did not return a model list.": [
+      "hub.py:187"
+    ],
+    "Installed on the system: {path}": [
+      "ui/local_models.py:138",
+      "ui/local_models.py:177"
+    ],
+    "Keep audio files": [
+      "ui/pages/general.py:341"
+    ],
+    "Language and input": [
+      "ui/pages/general.py:144"
+    ],
+    "Load the model when Dikte starts": [
+      "ui/pages/providers.py:168",
+      "ui/pages/providers.py:301"
+    ],
+    "Loading microphones…": [
+      "ui/pages/general.py:157"
+    ],
+    "Local": [
+      "ui/shell.py:197",
+      "ui/shell.py:240"
+    ],
+    "Local model": [
+      "cleanup.py:178"
+    ],
+    "No audio recorder found.": [
+      "chunked_session.py:96"
+    ],
+    "No local cleanup model has been downloaded yet. Settings → API and models → Download.": [
+      "ggml.py:866"
+    ],
+    "No whisper model has been downloaded yet. Settings → API and models → Download.": [
+      "ggml.py:838"
+    ],
+    "Not installed.": [
+      "ui/local_models.py:132",
+      "ui/local_models.py:144",
+      "ui/local_models.py:171"
+    ],
+    "Nothing downloaded yet.": [
+      "ui/local_models.py:359"
+    ],
+    "Off means the recording is deleted once transcribed.": [
+      "ui/pages/general.py:342"
+    ],
+    "Off means the transcript is only copied to the clipboard.": [
+      "ui/pages/general.py:184"
+    ],
+    "On this machine": [
+      "ui/pages/providers.py:161",
+      "ui/pages/providers.py:295"
+    ],
+    "Overlay/Indicator": [
+      "settings_ui.py:507",
+      "ui/pages/overlay.py:59"
+    ],
+    "Paused — thinking on hold": [
+      "dikte.py:1247"
+    ],
+    "Program": [
+      "ui/local_models.py:57"
+    ],
+    "Publisher": [
+      "ui/local_models.py:66"
+    ],
+    "Ready": [
+      "ui/shell.py:205"
+    ],
+    "Ready: {name}.": [
+      "ui/local_models.py:361"
+    ],
+    "Recorded meetings and the minutes written from them.": [
+      "ui/pages/minutes.py:58"
+    ],
+    "Recording behavior": [
+      "ui/pages/general.py:218"
+    ],
+    "Recordings older than this are deleted when the app starts and after each meeting. The written minutes are never touched.": [
+      "ui/pages/meeting.py:281"
+    ],
+    "Result display": [
+      "ui/pages/general.py:207"
+    ],
+    "Runs on this machine, on llama.cpp.": [
+      "settings_ui.py:1593"
+    ],
+    "Silence detection": [
+      "ui/pages/general.py:307"
+    ],
+    "Storage": [
+      "ui/pages/general.py:338"
+    ],
+    "Text insertion": [
+      "ui/pages/general.py:179"
+    ],
+    "The cleanup model spent its whole reply on thinking. Set Thinking to “Off”.": [
+      "api.py:690"
+    ],
+    "The download stopped early ({done} of {total}).": [
+      "ggml.py:191"
+    ],
+    "The download tried to write outside the directory it was unpacking into.": [
+      "ggml.py:338"
+    ],
+    "The floating indicator in the screen corner while recording.": [
+      "ui/pages/general.py:284"
+    ],
+    "The indicator shows recording, work and result states at a glance. The tray menu keeps the same actions reachable outside the window.": [
+      "ui/pages/overlay.py:60"
+    ],
+    "The right language means fewer mishearings on the first try.": [
+      "ui/pages/general.py:164"
+    ],
+    "This agent request may already have run. Confirm before retrying it.": [
+      "assistant.py:267",
+      "worker.py:181"
+    ],
+    "Threads": [
+      "ui/pages/providers.py:182"
+    ],
+    "Use the graphics card": [
+      "ui/pages/providers.py:166",
+      "ui/pages/providers.py:300"
+    ],
+    "What you had copied returns once pasting is done.": [
+      "ui/pages/general.py:201"
+    ],
+    "Windows would not give Dikte {shortcut}; another application already holds it.": [
+      "hotkey.py:579"
+    ],
+    "avg": [
+      "ui/pages/dashboard.py:240"
+    ],
+    "downloaded": [
+      "ui/local_models.py:236",
+      "ui/local_models.py:242"
+    ],
+    "last 30 days": [
+      "ui/pages/dashboard.py:243"
+    ],
+    "llama.cpp is not installed. Settings → API and models → Download.": [
+      "ggml.py:862"
+    ],
+    "max duration reached": [
+      "audio.py:357"
+    ],
+    "min": [
+      "ui/pages/dashboard.py:245"
+    ],
+    "no output": [
+      "ggml.py:691"
+    ],
+    "not downloaded": [
+      "ui/local_models.py:244"
+    ],
+    "success": [
+      "ui/pages/dashboard.py:242"
+    ],
+    "total": [
+      "ui/pages/dashboard.py:157"
+    ],
+    "total duration": [
+      "ui/pages/dashboard.py:245"
+    ],
+    "whisper.cpp is not installed. Settings → API and models → Download.": [
+      "ggml.py:834"
+    ],
+    "whisper.cpp publishes no macOS build. Install it with: brew install whisper-cpp": [
+      "ggml.py:383"
+    ],
+    "{binary} not found. Install it, or pick another cleanup provider under Settings → API and models.": [
+      "cleanup.py:306"
+    ],
+    "{error}\n\nThe recording has been kept. Settings → Minutes can try again. ({retry})": [
+      "dikte.py:1504"
+    ],
+    "{name} did not start: {error}": [
+      "ggml.py:690"
+    ],
+    "{name} does not match its published checksum. Nothing was installed.": [
+      "ggml.py:195"
+    ],
+    "{name} has not been downloaded yet.": [
+      "ui/local_models.py:363"
+    ],
+    "{name} is longer than it said it would be.": [
+      "ggml.py:183"
+    ],
+    "{name} is published without a checksum, so there is no way to tell what arrived. Nothing was installed.": [
+      "ggml.py:147"
+    ],
+    "{name} was not in the download.": [
+      "ggml.py:403"
+    ],
+    "{repo} did not return a file list.": [
+      "hub.py:153"
+    ],
+    "{repo} has no downloadable release.": [
+      "hub.py:136"
+    ],
+    "{repo} {tag} has no build for this machine.": [
+      "ggml.py:391"
+    ],
+    "{repo} {tag} has no whisper-bin-x64.zip for this machine.": [
+      "ggml.py:388"
+    ],
+    "{service} has no cleanup model chosen. Pick one in Settings.": [
+      "cleanup.py:140"
+    ],
+    "{service} has no minutes model chosen. Pick one in Settings.": [
+      "meeting.py:498"
+    ],
+    "{service} has no model chosen for this. Pick one in Settings.": [
+      "assistant.py:519"
+    ],
+    "{url} answered HTTP {code}.": [
+      "hub.py:66"
+    ],
+    "—": [
+      "ui/pages/dashboard.py:240"
+    ]
+  }
+}
