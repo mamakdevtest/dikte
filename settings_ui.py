@@ -504,7 +504,7 @@ class SettingsWindow(QDialog):
         # Overlay is 10th tab per prototype (last)
         try:
             from ui.pages import overlay as overlay_page
-            self.shell.add_page(t("Overlay/Indicator"), overlay_page.build(self), "pip")
+            self.shell.add_page(t("Overlay/Indicator"), overlay_page.build(self), "monitor")
         except Exception:
             pass
 

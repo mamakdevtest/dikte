@@ -65,6 +65,7 @@ ICONS = {
     "tag": '<path d="m3.5 12.6V5.5a2 2 0 0 1 2-2h7.1a2 2 0 0 1 1.4.6l6.5 6.5a2 2 0 0 1 0 2.8l-7.1 7.1a2 2 0 0 1-2.8 0l-6.5-6.5a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/>',
     "type": '<path d="M5 6.5V4.5h14v2"/><path d="M12 4.5V19.5"/><path d="M9 19.5h6"/>',
     "clock": '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2.5"/>',
+    "history": '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
     "arrowUR": '<path d="M7 17 17 7"/><path d="M8.5 7H17v8.5"/>',
     "minus": '<path d="M5.5 12h13"/>',
     "square": '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
