@@ -1,5 +1,10 @@
 name: tests
 
+# The interpreter range here is the range pyproject.toml declares. 3.14 joined
+# on 2026-09-12 because the whole suite already passes on it locally, which made
+# the old "<3.14" bound a claim about installability rather than about the code.
+# Windows and macOS 3.14 are unverified as of that date; fail-fast is off, so a
+# failure on one of them is reported without hiding the other two.
 on:
   push:
     branches: [master]
@@ -11,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +44,16 @@ jobs:
       - name: Run the tests
         run: python -m unittest discover --verbose
 
+      # The interface is a set of surfaces, and one of them quietly failing to
+      # draw looks exactly like a passing test run. This renders every surface
+      # offscreen and fails when one is missing or holds a single colour
+      # (docs/ai/ROADMAP.md T0.5). Linux only: the offscreen platform and the
+      # frames it produces are the ones verified here.
+      - name: Render every interface surface
+        run: |
+          python tools/shoot_ui.py --out /tmp/dikte-shots \
+            --themes blue --langs en,tr --check
+
       - name: Check for whitespace errors
         run: git diff --check
 
@@ -51,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4

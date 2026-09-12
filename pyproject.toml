@@ -7,7 +7,13 @@ name = "dikte"
 version = "1.0.0"
 description = "Local-first voice dictation, transcription and cleanup desktop app"
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.15"
+# The repository declares GPL-3.0 (LICENSE, README) while this line says MIT,
+# and the two cannot both be true: PyQt6 is GPL-3.0-or-commercial, so a
+# permissive licence here is not merely inaccurate, it is unshippable. The
+# correction is an open product decision, tracked as Q1 in docs/ai/ROADMAP.md —
+# either this becomes "GPL-3.0" and PyQt6 stays, or the bindings move to
+# PySide6 (LGPL) and the metadata is free to be permissive.
 license = { text = "MIT" }
 dependencies = [
     "PyQt6>=6.6,<7",
