@@ -193,7 +193,9 @@ There is not one design; there are three, all still present in the repo:
    with a title bar, **nine horizontal tabs** with a blue underline, a checkbox
    form, a blue Save button bottom-right, **no sidebar**. This is a *previous UI
    generation*. The current build has a 226 px sidebar and eleven pages. **The
-   README advertises a product that no longer exists.**
+   README advertises a product that no longer exists.** *(Fixed 2026-09-13: all
+   seven frames re-shot from the shipping build with `tools/shoot_ui.py --readme`
+   — dark, English, 1475x1489, reviewed by eye before replacing them.)*
 3. **`ui/tokens.py`, what actually ships** — six *dark-only* colour rooms
    (`blue`, `green`, `violet`, `orange`, `pink`, `teal`), each a charcoal base
    mixed with a saturated accent, plus a real `LIGHT` palette that is unreachable.

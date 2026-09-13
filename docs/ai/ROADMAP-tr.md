@@ -194,7 +194,9 @@ Tek bir tasarım yok; üç tane var ve üçü de hâlâ depoda:
    koyu bir pencere, mavi alt çizgili **dokuz yatay sekme**, onay kutusu formu,
    sağ altta mavi Kaydet butonu, **kenar çubuğu yok**. Bu *önceki bir arayüz
    nesli*. Mevcut yapıda 226 px kenar çubuğu ve on bir sayfa var.
-   **README artık var olmayan bir ürünü tanıtıyor.**
+   **README artık var olmayan bir ürünü tanıtıyor.** *(13.09.2026'da düzeltildi: yedi
+   kare de sevk edilen yapıdan `tools/shoot_ui.py --readme` ile yeniden çekildi —
+   koyu, İngilizce, 1475x1489, değiştirilmeden önce gözle incelendi.)*
 3. **`ui/tokens.py`, gerçekte dağıtılan** — altı *yalnızca koyu* renk odası
    (`blue`, `green`, `violet`, `orange`, `pink`, `teal`), her biri doygun bir
    vurguyla karıştırılmış kömür tabanlı, artı erişilemeyen gerçek bir `LIGHT`

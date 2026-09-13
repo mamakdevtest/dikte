@@ -1,3 +1,75 @@
+# VERIFICATION — Phases 0–4 (2026-09-12 → 2026-09-13)
+
+Date of record: 2026-09-13 (UTC+03) | Linux 7.2.2-1-cachyos, Python 3.14.7, PyQt6, offscreen Qt
+
+**This section is a backfill, and it says so.** Phases 0–4 ran on 2026-09-12 and
+2026-09-13 and recorded their evidence in `docs/ai/ROADMAP.md` — each phase's delivery
+and its red evidence, date by date — but not here, which is where the contract asks for
+it. The output below was **re-run on 2026-09-13 against the tree at `ca52afe`**: it is
+what this repository does now, not a transcript of those sessions. Nothing here is
+reconstructed from memory, and no phase is claimed as verified on the strength of a
+command whose output nobody kept.
+
+## Commands and results (re-run 2026-09-13)
+
+### Full suite
+- `python3.14 -m unittest discover` → **Ran 1562 tests in 106.365s — OK**
+- Test count through the four phases: 1477 (Phase 0 entry) → 1500 → 1511 → 1519 → 1524 →
+  1529 → 1530 → 1539 → 1548 → 1551 → 1557 → **1562**. Every step is a guard that was
+  proved red before it was trusted green.
+
+### The three ratchets
+- `python3.14 tools/i18n_gaps.py` → **`0 strings reach t() with no Turkish entry:`**
+  (record: `tests/i18n_untranslated.json` — an exact set with call sites, not a count)
+- `python3.14 tools/except_audit.py --silent` → **`286 broad handlers report nothing at
+  all.`** — of 312 broad handlers, 26 report. Record: `tests/except_silent.json`, keyed
+  by `module:function`, and the burn-down is T4.8.
+- `python3.14 -m unittest tests.test_except_ratchet` → **Ran 3 tests — OK**
+
+### The surface tour
+- `QT_QPA_PLATFORM=offscreen python3.14 tools/shoot_ui.py --out /tmp/dikte-verify --check`
+  → **`wrote 120 PNGs to /tmp/dikte-verify`** and
+  **`surface check OK: 30 surfaces x 4 theme-and-language runs, all drawn`**
+- `QT_QPA_PLATFORM=offscreen python3.14 tools/shoot_ui.py --readme --out /tmp/dikte-readme`
+  → 7 images, 1475x1489, dark/EN; reviewed by eye (contact sheet + hero + API page at full
+  size) before replacing `docs/settings-*.webp`
+
+### Reliability and hygiene
+- `python3.14 -m unittest tests.test_reliability` → **Ran 2 tests — OK**. One half proves a
+  slot's exception is reported and the process survives it; the other proves a bare abort
+  kills the process, so the first half is measuring something real.
+- `python3.14 -m py_compile config.py ui/stats.py ui/pages/dashboard.py dikte.py ui/overlay_coordinator.py` → exit 0
+- `python3.14 tools/ai_sync.py --check` → **OK**
+- `git diff --check` → **clean**
+
+## What the four phases closed
+
+| Phase | What was delivered | Evidence in `ROADMAP.md` |
+|---|---|---|
+| 0 — guardrails | Licence contradiction resolved (Q1), `requires-python` widened + 3.14 in CI, the i18n count ratchet replaced by an exact-set record, icon contracts | `docs/ai/ROADMAP.md`, Phase 0 rows |
+| 1 — platform core | The `CONFIG_DIR`/data-path and IPC/startup splits, `ui/format.py`, the recovery/details UX | Phase 1 rows |
+| 2 — visual direction | The documented Warm Technical Minimalism palette in real light and dark, single-source control rhythm, the six saturated colour rooms retired | Phase 2 rows |
+| 3 — seven surfaces | The live card, the thinking panel, the tray, empty states, the nine settings pages, and the Wayland fallback — each fixed from a measured defect with a red guard | Phase 3, surfaces 1–7 |
+| 4 — reliability closure | The overlay coordinator's fallback slot, the slot-crash report, the partial-save message, the T4.8 ratchet, the T4.9 trigger/race/locking decision, and two burn-down slices | Phase 4 rows |
+
+## Gaps / notes
+
+- **The two notes this file carried on 2026-08-30 are closed.** That version said the
+  coordinator's recompute trigger and the `Config.data` race "were not taken up in this
+  patch": the trigger is now tested by running all three overlay widgets against a spy
+  coordinator, and the race was reproduced (`RuntimeError: dictionary changed size during
+  iteration` from inside `json.dump`) and fixed by snapshotting before the save.
+- **T4.8 is not finished**: 286 silent handlers are listed with a shape, not yet with a
+  per-site reason. The row is `◐` in the roadmap, deliberately.
+- **No macOS or Windows run was observed here.** The three-OS claims rest on the CI
+  matrix, and Windows/macOS 3.14 paths are marked unverified in the workflow itself. A
+  per-OS manual protocol is Phase 5 (T5.6).
+- **The recording path was not exercised by hand** in these phases: there is no microphone
+  or display on this machine, so record → transcribe → paste is covered by tests and by
+  the tour's frames, not by a person pressing the key.
+
+---
+
 # VERIFICATION — Overlay / Voice Reliability Pass (2026-08-30) — Update 2: concurrency hang fix
 
 Date: 2026-08-30 (UTC) | Linux, Python 3.12+, PyQt6 offscreen
