@@ -9,6 +9,7 @@ the preview must never become an error the user has to deal with.
 """
 
 import os
+import sys
 import tempfile
 import threading
 
@@ -151,6 +152,7 @@ class LiveTranscriber(QObject):
         except Exception:
             # A preview that cannot run (no provider, no network, an aborted
             # app shutdown) is not the user's problem to read about.
+            print("dikte: the live-text helper could not be probed, so live text is off for this session", file=sys.stderr)
             return ""
         finally:
             try:

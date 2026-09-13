@@ -5,6 +5,7 @@ No gettext, no .mo files; the string table is small enough to keep in code.
 """
 
 import os
+import sys
 
 _lang = "en"
 
@@ -31,7 +32,7 @@ def _windows_locale():
         except (OSError, AttributeError, ValueError):
             pass
     except Exception:
-        pass
+        print("dikte: the Windows locale could not be read, so the interface falls back to English", file=sys.stderr)
     return ""
 
 

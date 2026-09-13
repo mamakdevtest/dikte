@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 265,
+  "count": 251,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -16,34 +16,26 @@
     "config.py:Config._clamped_ai_levels": 1,
     "config.py:Config._clamped_edit_level": 1,
     "config.py:Config.cleanup_prompt": 1,
-    "dikte.py:Dikte.__init__": 3,
+    "dikte.py:Dikte.__init__": 1,
     "dikte.py:Dikte._apply_settings": 3,
     "dikte.py:Dikte._build_tray": 3,
     "dikte.py:Dikte._current_seconds": 1,
-    "dikte.py:Dikte._new_result_overlay": 1,
     "dikte.py:Dikte._on_error": 1,
     "dikte.py:Dikte._on_finished": 1,
     "dikte.py:Dikte._on_live_transcript": 1,
     "dikte.py:Dikte._on_meeting_progress": 1,
     "dikte.py:Dikte._on_result_copy": 1,
     "dikte.py:Dikte._retire_activity": 1,
-    "dikte.py:Dikte._toggle_live_popup": 1,
     "dikte.py:Dikte._tray_icon": 1,
-    "dikte.py:Dikte.open_dashboard": 1,
     "dikte.py:Dikte.open_settings": 1,
     "dikte.py:Dikte.restart": 1,
-    "dikte.py:Dikte.retry_agent_from_job": 1,
-    "dikte.py:Dikte.retry_meeting_from_base": 1,
-    "dikte.py:Dikte.retry_voice_job": 1,
     "dikte.py:Dikte.stop": 1,
     "dikte.py:Dikte.stop_ask": 1,
     "dikte.py:HintMenu.paintEvent": 1,
     "dikte.py:HintMenu.sizeHint": 1,
     "dikte.py:_win32_message_box": 1,
-    "dikte.py:run_app": 2,
+    "dikte.py:run_app": 1,
     "hotkey.py:WindowsHotkey._pump": 1,
-    "i18n.py:_windows_locale": 1,
-    "livetext.py:LiveTranscriber._probe": 1,
     "meeting.py:MeetingPipeline.run": 1,
     "meeting.py:MeetingPipeline.stop": 1,
     "overlay.py:<module>": 1,
@@ -106,7 +98,7 @@
     "settings_ui.py:SettingsWindow.preview_overlay_corner": 2,
     "settings_ui.py:SettingsWindow.resizeEvent": 4,
     "ui/app_window.py:<module>": 2,
-    "ui/app_window.py:DashboardWindow.__init__": 7,
+    "ui/app_window.py:DashboardWindow.__init__": 6,
     "ui/app_window.py:DashboardWindow.showEvent": 1,
     "ui/components.py:Button.__init__": 1,
     "ui/components.py:Dropdown.__init__": 2,
@@ -134,7 +126,6 @@
     "ui/pages/dashboard.py:_goto_tab": 1,
     "ui/pages/dashboard.py:_make_handler._fn": 1,
     "ui/pages/dashboard.py:_quick_actions": 1,
-    "ui/pages/dashboard.py:build": 2,
     "ui/pages/dashboard.py:build.refresh": 1,
     "ui/pages/general.py:build._on_picker_changed": 2,
     "ui/pages/history.py:build": 1,
@@ -209,7 +200,6 @@
       "value of the wrong shape": 1
     },
     "dikte.py:Dikte.__init__": {
-      "optional import": 2,
       "optional widget": 1
     },
     "dikte.py:Dikte._apply_settings": {
@@ -223,9 +213,6 @@
     },
     "dikte.py:Dikte._current_seconds": {
       "worker that is gone": 1
-    },
-    "dikte.py:Dikte._new_result_overlay": {
-      "optional import": 1
     },
     "dikte.py:Dikte._on_error": {
       "unclassified": 1
@@ -245,13 +232,7 @@
     "dikte.py:Dikte._retire_activity": {
       "view refreshed after the fact": 1
     },
-    "dikte.py:Dikte._toggle_live_popup": {
-      "optional import": 1
-    },
     "dikte.py:Dikte._tray_icon": {
-      "optional import": 1
-    },
-    "dikte.py:Dikte.open_dashboard": {
       "optional import": 1
     },
     "dikte.py:Dikte.open_settings": {
@@ -259,15 +240,6 @@
     },
     "dikte.py:Dikte.restart": {
       "optional widget": 1
-    },
-    "dikte.py:Dikte.retry_agent_from_job": {
-      "optional import": 1
-    },
-    "dikte.py:Dikte.retry_meeting_from_base": {
-      "optional import": 1
-    },
-    "dikte.py:Dikte.retry_voice_job": {
-      "optional import": 1
     },
     "dikte.py:Dikte.stop": {
       "worker that is gone": 1
@@ -285,16 +257,10 @@
       "optional import": 1
     },
     "dikte.py:run_app": {
-      "optional import": 2
+      "optional import": 1
     },
     "hotkey.py:WindowsHotkey._pump": {
       "value of the wrong shape": 1
-    },
-    "i18n.py:_windows_locale": {
-      "optional import": 1
-    },
-    "livetext.py:LiveTranscriber._probe": {
-      "optional import": 1
     },
     "meeting.py:MeetingPipeline.run": {
       "unclassified": 1
@@ -508,8 +474,7 @@
       "optional widget": 2,
       "teardown that is already done": 1,
       "lookup that is not there": 1,
-      "unclassified": 2,
-      "optional import": 1
+      "unclassified": 2
     },
     "ui/app_window.py:DashboardWindow.showEvent": {
       "optional widget": 1
@@ -595,9 +560,6 @@
     },
     "ui/pages/dashboard.py:_quick_actions": {
       "optional widget": 1
-    },
-    "ui/pages/dashboard.py:build": {
-      "optional import": 2
     },
     "ui/pages/dashboard.py:build.refresh": {
       "optional import": 1

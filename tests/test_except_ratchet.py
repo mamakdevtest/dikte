@@ -26,6 +26,10 @@ RECORD = pathlib.Path(__file__).resolve().parent / "except_silent.json"
 
 BROAD = {"Exception", "BaseException"}
 REPORTING_ATTRS = ("emit", "warn", "warning", "error", "log", "notify", "critical",
+                   # A traceback on stderr is as loud as reporting gets, and the counter
+                   # called it silence until `dikte.open_dashboard`'s fallback was read:
+                   # it prints the traceback and then opens the old settings window.
+                   "print_exc", "print_stack",
                    "exception", "report", "traceback")
 
 

@@ -24,7 +24,7 @@ try:
 except Exception as exc:
     # ASCII-only on purpose: this line exists because the streams may not be able to carry
     # anything else, and a message that garbles itself is not a message.
-    print(f"dikte: could not switch the console streams to UTF-8 "
+    print("dikte: could not switch the console streams to UTF-8 "
           f"({type(exc).__name__}), so non-ASCII output may be garbled", file=sys.stderr)
 
 
@@ -324,6 +324,7 @@ class Dikte:
             self._coordinator = OverlayCoordinator(self.conf["overlay_corner"])
             _has_coordinator = True
         except Exception:
+            print("dikte: the overlay coordinator could not be imported, so this run has no on-screen feedback for a dictation", file=sys.stderr)
             self._coordinator = None
             _has_coordinator = False
             Activity = None  # type: ignore
@@ -342,6 +343,7 @@ class Dikte:
             self.thinking.pauseToggled.connect(self._on_thinking_pause)
             self.thinking.stopRequested.connect(self.cancel_ask)
         except Exception:
+            print("dikte: the thinking panel could not be imported, so agent work will not show its reasoning", file=sys.stderr)
             self.thinking = None
         self.recorder = audio.Recorder()
         self.pipeline = Pipeline(self.conf)
@@ -934,6 +936,7 @@ class Dikte:
                 pass
             return widget
         except Exception:
+            print("dikte: the result card could not be imported, so transcripts will be pasted without the card that shows and re-copies them", file=sys.stderr)
             return None
 
     def _prepare_activity_view(self, kind):
@@ -1141,6 +1144,7 @@ class Dikte:
                 self.live_popup = LivePopup(self.conf["overlay_corner"],
                                             below=anchor)
             except Exception:
+                print("dikte: the live preview could not be imported, so words will appear only when the recording ends", file=sys.stderr)
                 self.live_popup = None
                 return
         else:
@@ -1596,6 +1600,8 @@ class Dikte:
             import voice_jobs
             job = voice_jobs.get_voice_job(job_id)
         except Exception:
+            print("dikte: the jobs module could not be imported, so the retry did nothing",
+                  file=sys.stderr)
             return False
         if job is None:
             return False
@@ -1609,6 +1615,7 @@ class Dikte:
             import meeting as _m
             return _m.retry_meeting(base, self.conf)
         except Exception:
+            print("dikte: the meeting module could not be imported, so the retry did nothing", file=sys.stderr)
             return False
 
     def retry_agent_from_job(self, job_id):
@@ -1617,6 +1624,7 @@ class Dikte:
             import voice_jobs
             job = voice_jobs.get_voice_job(job_id)
         except Exception:
+            print("dikte: the jobs module could not be imported, so the agent retry did nothing", file=sys.stderr)
             return False
         if job is None or job.get("kind") != "agent":
             return False
@@ -2189,7 +2197,7 @@ def run_app(args):
         conf0 = cfg.Config()
         _theme.apply(conf0.get("ui_theme", "dark") or "dark")
     except Exception:
-        pass
+        print("dikte: the saved settings could not be applied at startup, so this run uses the defaults", file=sys.stderr)
     # Before Dikte is built, because building it is what may start a server, and
     # a signal arriving in the middle of that would otherwise take the default
     # action and leave the server behind. A signal this early lands in the

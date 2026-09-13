@@ -310,7 +310,7 @@ def build(window):
         lst.itemClicked.connect(lambda _item=None: _goto_tab(window, ("History", "Geçmiş")))
         lst.itemDoubleClicked.connect(lambda _item=None: _goto_tab(window, ("History", "Geçmiş")))
     except Exception:
-        pass
+        print("dikte: part of the dashboard could not be built, so a section of it is missing", file=sys.stderr)
     left_list_card.add(lst)
     recent.addWidget(left_list_card, 1)
     right_list_card = SectionCard(t("Recent meetings"), t("Last 3"))
@@ -333,7 +333,7 @@ def build(window):
         ml.itemClicked.connect(lambda _item=None: _goto_tab(window, ("Minutes", "Tutanak")))
         ml.itemDoubleClicked.connect(lambda _item=None: _goto_tab(window, ("Minutes", "Tutanak")))
     except Exception:
-        pass
+        print("dikte: part of the dashboard could not be built, so a section of it is missing", file=sys.stderr)
     right_list_card.add(ml)
     recent.addWidget(right_list_card, 1)
     outer.addLayout(recent)
