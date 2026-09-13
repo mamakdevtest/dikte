@@ -1863,7 +1863,7 @@ class Dikte:
                     flags |= _sp.CREATE_NO_WINDOW  # type: ignore[attr-defined]
                 except AttributeError:
                     pass
-                _sp.Popen([sys.executable, ipc.script_path(), "--gui"],
+                _sp.Popen(ipc.launch_command("--gui"),
                           creationflags=flags, close_fds=True,
                           stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, stdin=_sp.DEVNULL)
             except OSError as exc:
@@ -1872,7 +1872,8 @@ class Dikte:
             return
         self.shutdown()
         QLocalServer.removeServer(SERVER_NAME)
-        os.execv(sys.executable, [sys.executable, ipc.script_path(), "--gui"])
+        _restart = ipc.launch_command("--gui")
+        os.execv(sys.executable, _restart)
 
     def shutdown(self):
         self._quitting = True

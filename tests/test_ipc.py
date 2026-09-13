@@ -155,5 +155,65 @@ class Send(unittest.TestCase):
         self.assertTrue(sock.disconnected)
 
 
+class TheFrozenBuildCanFindItself(unittest.TestCase):
+    """T5.1: a bundle must not need a developer's Python, or a source tree.
+
+    Three callers used to build `sys.executable + script_path()` by hand, which is right
+    only while Dikte is a checkout. In a frozen build that pair names a file which is not
+    on the disk, so the KDE shortcut, the hand-over to a running instance and the
+    second-instance spawn would all fail — on the machine nobody tests by hand, which is
+    where a packaging bug lives.
+    """
+
+    def test_a_checkout_runs_the_script(self):
+        with mock.patch.object(sys, "frozen", False, create=True):
+            self.assertEqual([sys.executable, ipc.script_path(), "record"],
+                             ipc.launch_command("record"))
+
+    def test_a_bundle_runs_itself(self):
+        with mock.patch.object(sys, "frozen", True, create=True):
+            self.assertEqual([sys.executable, "record"], ipc.launch_command("record"))
+
+    def test_presence_of_the_flag_is_not_enough(self):
+        """`sys.frozen` has to be true, not merely there.
+
+        A checkout that inherits a falsey flag must keep running its script: the slip
+        this guards against is truthiness, and it would only appear in a bundle.
+        """
+        with mock.patch.object(sys, "frozen", 0, create=True):
+            self.assertEqual([sys.executable, ipc.script_path(), "record"],
+                             ipc.launch_command("record"))
+
+    def test_the_shortcut_command_survives_a_path_with_spaces(self):
+        with mock.patch.object(sys, "frozen", False, create=True), \
+                mock.patch.object(ipc, "script_path", return_value="/home/a b/dikte.py"):
+            cmd = ipc.command_for("record")
+        self.assertIn("'/home/a b/dikte.py'", cmd)
+        self.assertTrue(cmd.endswith("record"), cmd)
+
+    def test_nothing_else_spells_the_pair_out_by_hand(self):
+        """One place knows how to re-run this application: `launch_command`.
+
+        A fourth caller copying the old pair would fail only in a frozen build, which is
+        the one build a developer's test run never exercises.
+        """
+        import ast
+        import pathlib
+
+        offenders = []
+        files = sorted(pathlib.Path(".").glob("*.py"))
+        files += sorted(pathlib.Path("ui").rglob("*.py"))
+        for path in files:
+            if path.name == "ipc.py" or "__pycache__" in path.parts:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "script_path"):
+                    offenders.append(f"{path}:{node.lineno}")
+        self.assertEqual([], offenders, (
+            "run the application through ipc.launch_command() instead:\n  "
+            + "\n  ".join(offenders)))
+
+
 if __name__ == "__main__":
     unittest.main()

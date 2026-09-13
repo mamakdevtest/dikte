@@ -167,10 +167,7 @@ def _ask_instance(opts, cmd, wait=False, **args):
 
 def launch_gui(verb=""):
     """No instance running, so become the application itself."""
-    args = [sys.executable, ipc.script_path()]
-    if verb:
-        args.append(verb)
-    args.append("--gui")
+    args = ipc.launch_command(*([verb] if verb else []), "--gui")
     os.execv(sys.executable, args)
 
 

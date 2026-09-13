@@ -10,6 +10,7 @@ shortcut may still send.
 
 import json
 import os
+import shlex
 import sys
 
 try:
@@ -61,9 +62,32 @@ def script_path():
     )
 
 
+def launch_command(*args):
+    """How to run this application again — as a bundle, or as the checkout it is.
+
+    Three callers used to spell this out as `sys.executable + script_path()`, which is
+    right only while Dikte is a directory of source files. In a frozen build
+    `sys.executable` is the bundle's own binary and `script_path()` names a file that is
+    not on the disk, so the KDE shortcut, the hand-over to a running instance and the
+    second-instance spawn would all fail — on the platform nobody is testing by hand,
+    which is exactly where a packaging bug lives.
+
+    PyInstaller sets `sys.frozen` in the bundle, so the answer is known at the one place
+    that has to know it.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *args]
+    return [sys.executable, script_path(), *args]
+
+
 def command_for(verb):
-    """The command line a KDE shortcut runs for one of the verbs."""
-    return f"{sys.executable} {script_path()} {verb}"
+    """The command line a KDE shortcut runs for one of the verbs.
+
+    Quoted, because the same command line is written into a `.desktop` file and run by a
+    shell: a checkout under `/home/someone/My Projects/dikte` is a normal place to keep
+    one, and it used to arrive there as two words.
+    """
+    return " ".join(shlex.quote(part) for part in launch_command(verb))
 
 
 def send(cmd, wait=False, timeout=0, **args):

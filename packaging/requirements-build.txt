@@ -1,0 +1,7 @@
+# Build-time only. Q3 in docs/ai/ROADMAP.md keeps the runtime to the standard library
+# plus PyQt6; packaging tooling is the sanctioned exception, and this file is the whole of
+# it. Nothing here ships inside the bundle — PyInstaller is the tool, not a passenger —
+# and the runtime dependency list stays in pyproject.toml, unchanged.
+
+PyQt6>=6.6,<7
+pyinstaller>=6.22,<7

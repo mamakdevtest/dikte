@@ -16,3 +16,8 @@ _ui.log
 *.part
 _genicon.py
 promt-v2.md
+.venv-build/
+
+# PyInstaller output (T5.1): the bundle is built, never committed.
+dist/
+build/
