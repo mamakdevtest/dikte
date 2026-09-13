@@ -134,7 +134,10 @@ model download, with the sizes shown, and a button that switches transcription t
 machine), and **the real thing** — press your shortcut and dictate a sentence; the page
 watches for it and, if nothing arrives in 90 seconds, names the three things worth
 checking. Skipping is allowed: the dashboard's **Set up** button and `dikte setup` bring
-it back, and `dikte doctor` answers the same questions in the terminal.
+it back, and `dikte doctor` answers the same questions in the terminal. When something is
+wrong, `dikte doctor --bundle dikte-diagnostics.zip` writes the report, the environment, the
+settings (keys masked), the counts and the end of the log into one file you can read before
+attaching it to a bug report — no keys, no audio, no transcripts.
 
 ## Using it
 

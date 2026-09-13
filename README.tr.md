@@ -129,7 +129,10 @@ kaydedip bir şey duyup duymadığını söylüyor), **motor** (boyutları göst
 indirmesi ve yazıya çevirmeyi bu makineye alan bir düğme) ve **gerçek şey** — kısayoluna
 basıp bir cümle söyle; sayfa onu bekliyor ve 90 saniyede bir şey gelmezse bakmaya değer üç
 şeyi sayıyor. Atlamak serbest: panodaki **Kur** düğmesi ve `dikte setup` onu geri getirir,
-`dikte doctor` aynı soruları terminalde yanıtlar.
+`dikte doctor` aynı soruları terminalde yanıtlar. Bir şey ters gittiğinde
+`dikte doctor --bundle dikte-diagnostics.zip` raporu, ortamı, ayarları (anahtarlar maskeli),
+sayıları ve günlüğün sonunu tek dosyaya yazar; hata raporuna eklemeden önce okuyabilirsin —
+anahtar yok, ses yok, transkript yok.
 
 ## Kullanım
 

@@ -1,3 +1,45 @@
+# VERIFICATION — the diagnostics bundle, and the promises being the tests
+
+## End to end, through the real CLI
+
+A sandbox with a fake key in the config, the same key echoed into the log, and a real
+sentence in the history:
+
+    $ dikte doctor --bundle diagnostics.zip
+    ✓ bundle, …/diagnostics.zip (6177 bytes: README.txt, doctor.json, environment.json,
+      history.json, log.txt, settings.json) — no keys, no audio, no transcripts
+    members: [README.txt, doctor.json, environment.json, history.json, log.txt, settings.json]
+    key         present: False
+    gateway     present: False
+    transcript  present: False
+    openai_api_key in settings.json: ***
+    provider key masked: ***
+    model kept: ggml-tiny.en.bin
+    log line: 'dikte: request rejected for *** at https://api.openai.com'
+    history: {"dictations": 1, "failed": 0, "last": "2026-09-13 09:00:00"}
+
+Two mechanisms, because one of them is not enough: masking by **name** is what the settings
+window does and it covers the structured settings, while scrubbing by **value** covers the
+unstructured place — the log, which is exactly where a key gets echoed by an error message.
+That log line is the test that matters.
+
+## What is tested rather than asserted
+
+`tests/test_diagnostics.py`, 9 tests: the settings summary masks by name but keeps
+everything that is not secret (`local_model`, the gateway's base URL — a bundle that hid the
+settings it exists to explain would be useless); a log that echoes a key comes out masked and
+the rest of the log survives; **no member of the archive carries any of the three secrets**;
+a secret too short to scrub is still masked by name; the history is counted and never quoted
+(`"my bank password is hunter2"` appears nowhere); an unreadable history is reported rather
+than counted as empty; the README lists the files and both promises; a machine with no log
+produces an empty `log.txt` instead of failing.
+
+Two mistakes of mine, both caught by the tests rather than by review: I guessed the history's
+timestamp field was `when`/`time` (it is `ts`, written by `worker.py`) and I put the
+timestamped row first in the fixture while `read_history` returns newest **last**. The module
+was right and the fixture was wrong in the second case; the first case is why the field name
+is now taken from the worker rather than invented.
+
 # VERIFICATION — the first-run wizard, and the counter's third blind spot
 
 ## What is verified

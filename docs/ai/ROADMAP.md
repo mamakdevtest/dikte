@@ -443,9 +443,17 @@ Only after Phase 5. Ranked by value against effort:
    90 seconds, names the three likely causes (`dikte doctor` names which). 17 tests, every
    failure path saying something — the module adds no silent handler to the record. *Left:
    no macOS or Windows run has met it, and the README tour has no shot of it.*
-2. `sherpa-onnx` streaming partials as an optional second local engine (§3.4).
-3. A diagnostics bundle from `dikte doctor --json` — already 80% built — for
-   bug reports without telemetry.
+2. **Diagnostics bundle — landed.** `dikte doctor --bundle dikte-diagnostics.zip` writes what
+   a bug report needs into one archive: the doctor report, the environment (platform, Python,
+   frozen or not, Wayland or X11, the dirs), the settings with every value whose *name* says
+   key/token/secret masked, a count of what has been dictated, and the end of the log. Three
+   promises, each a test: no secret value survives (masked by name **and** scrubbed by value
+   against the real secrets, so a log line that echoed a key comes out as `***`), no audio and
+   no transcript text (history is counted, never copied), and the archive's own `README.txt`
+   states both so the person sending it can check rather than trust. Verified end to end
+   through the real CLI in a sandbox (`tests/test_diagnostics.py`, 9 tests).
+3. `sherpa-onnx` streaming partials as an optional second local engine (§3.4) — **waits on a
+   decision**: it is a new third-party dependency, which `AGENTS.md` says the user decides.
 4. Diarisation quality for meetings beyond channel-splitting.
 
 ## 6. Verification contract

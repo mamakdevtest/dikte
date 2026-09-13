@@ -445,9 +445,18 @@ Yalnızca Faz 5'ten sonra. Değere göre sıralı:
    `dikte doctor` söylüyor). 17 test; her başarısızlık yolu bir şey söylüyor — modül kayda
    hiç sessiz handler eklemiyor. *Kalan: hiçbir macOS ya da Windows koşusu onu görmedi ve
    README turunda bir karesi yok.*
-2. `sherpa-onnx` akışlı ara sonuçları, isteğe bağlı ikinci yerel motor olarak (§3.4).
-3. `dikte doctor --json`'dan teşhis paketi — zaten %80 hazır — telemetri olmadan
-   hata raporu için.
+2. **Teşhis paketi — indi.** `dikte doctor --bundle dikte-diagnostics.zip`, bir hata
+   raporunun ihtiyacı olanı tek arşive yazıyor: doctor raporu, ortam (platform, Python,
+   dondurulmuş mu, Wayland mı X11 mi, dizinler), *adı* key/token/secret diyen her değerin
+   maskelendiği ayarlar, ne kadar dikte alındığının sayısı ve günlüğün sonu. Üç söz, her biri
+   bir test: hiçbir gizli değer sağ kalmıyor (adla maskeleniyor **ve** gerçek değerlere karşı
+   değerce temizleniyor — anahtarı yankılamış bir günlük satırı `***` olarak çıkıyor), ses ve
+   transkript metni yok (geçmiş sayılıyor, kopyalanmıyor) ve arşivin kendi `README.txt`'i
+   ikisini de yazıyor, böylece gönderen kişi güvenmek yerine kontrol edebiliyor. Kum havuzunda
+   gerçek CLI üzerinden uçtan uca doğrulandı (`tests/test_diagnostics.py`, 9 test).
+3. `sherpa-onnx` akışlı ara sonuçları, isteğe bağlı ikinci yerel motor olarak (§3.4) —
+   **karar bekliyor**: yeni bir üçüncü taraf bağımlılık ve `AGENTS.md` bunu kullanıcının
+   kararı sayıyor.
 4. Toplantılar için kanal ayrımının ötesinde konuşmacı ayrıştırma kalitesi.
 
 ## 6. Doğrulama sözleşmesi
