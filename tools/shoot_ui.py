@@ -251,6 +251,50 @@ def freeze(widget):
             pass
 
 
+def page_height(window, base=700):
+    """How tall the window has to be for the current page to fit whole.
+
+    Each settings page lives in a scroll area and most of them are taller than the
+    window, so capturing at a fixed 700 px photographed only the top of the long
+    ones: the History page's delete row and the Minutes page's action row had
+    never appeared in a single frame of this tour. The check that reads these
+    frames asks whether a surface is drawn, not how tall it is, so growing the
+    window for the capture costs nothing and shows the whole page.
+
+    The caller resets the window to `base` before calling: the viewport grows with
+    the window, so measuring after a resize measures the resize, and the heights
+    compound page after page.
+    """
+    from PyQt6.QtWidgets import QScrollArea
+
+    # Only the page on screen: measuring every page in the window makes the
+    # tallest one decide every frame's height, which is how the first attempt
+    # produced eleven identical 2204 px captures.
+    current = None
+    shell = getattr(window, "shell", None)
+    if shell is not None and getattr(shell, "tabs", None) is not None:
+        current = shell.tabs.currentWidget()
+    areas = []
+    if isinstance(current, QScrollArea):
+        areas = [current]
+    elif current is not None:
+        areas = current.findChildren(QScrollArea)
+    if not areas:
+        areas = window.findChildren(QScrollArea)
+
+    chrome = None
+    needed = base
+    for area in areas:
+        content = area.widget()
+        if content is None:
+            continue
+        if chrome is None:
+            # The window's own furniture, constant across pages.
+            chrome = window.height() - area.viewport().height()
+        needed = max(needed, content.sizeHint().height() + chrome)
+    return needed
+
+
 def shoot(app, widget, path, width=None, height=None):
     widget.show()
     if width is not None and height is not None:
@@ -401,11 +445,15 @@ def main():
                         f"has {declared} add_page() calls; the tour and the "
                         "manifest would disagree about what to capture")
                 for i in range(pages):
+                    # Back to the documented size first: the page height is
+                    # measured from there, not from the previous page's resize.
+                    window.resize(1000, 700)
                     window.shell.set_page(i)
+                    app.processEvents()
                     count += 1 if shoot(
                         app, window,
                         os.path.join(args.out, f"{tag}_page{i:02d}.png"),
-                        1000, 700) else 0
+                        1000, page_height(window)) else 0
                 window.close()
                 window.deleteLater()
                 app.processEvents()
