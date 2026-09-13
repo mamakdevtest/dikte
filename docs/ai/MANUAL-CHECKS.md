@@ -39,7 +39,7 @@ which quietly edits itself is worse than one that shows where it was wrong.
 | 8 | Change a setting, quit, relaunch; then `dikte config` in a terminal | The setting is still there, and the two agree | Two processes, one file (the T4.9 locking decision) |
 | 9 | Launch the app twice (double click the icon while it runs) | The second launch opens the dashboard of the first and exits 0 | N8's fix, verified on Linux in a sandbox; the desktop-entry path is what changes per OS |
 | 10 | Restart from the tray, and quit from the tray | It comes back as the frozen app (not as a Python script); quit leaves no process | The `launch_command` paths, which broke silently in a bundle until T5.1 |
-| 11 | Force a failure with a wrong API key, then look for the message | The message is visible *somewhere the user can find it* — the window, or the log | N9: a frozen app's stdout goes nowhere. Until a log exists, "the message" is the open question this row is here to keep visible |
+| 11 | Force a failure with a wrong API key, then look for the message | It is visible *somewhere a person can find it*: in the window, and — when there is no terminal — in `DATA_DIR/dikte.log` | N9 is answered: `dikte.keep_a_log()` tees the output into that file and `dikte doctor` prints its path. What this row checks is the part automation cannot: that the file is where a person would actually think to look |
 | 12 | Uninstall by the OS's own means (Windows: Settings → Apps; Linux: remove the package; macOS: drag to Trash) | No leftover process, no leftover startup entry | Only the OS's installer knows what it installed |
 
 ## Per-OS notes that are not yet answers

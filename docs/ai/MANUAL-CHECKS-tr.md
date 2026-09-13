@@ -39,7 +39,7 @@ Bir adım başarısız olduysa, bastığı çıktıyla birlikte tabloda kalır �
 | 8 | Bir ayarı değiştir, çık, yeniden başlat; sonra terminalde `dikte config` | Ayar yerinde ve ikisi uyuşuyor | İki süreç, tek dosya (T4.9'un kilit kararı) |
 | 9 | Uygulamayı iki kez başlat (çalışırken simgeye çift tıkla) | İkinci başlatma birincinin panosunu açar ve 0 ile çıkar | N8'in düzeltmesi Linux'ta kum havuzunda kanıtlandı; işletim sistemi başına değişen şey masaüstü girdisi yolu |
 | 10 | Tepsiden yeniden başlat ve tepsiden çık | Dondurulmuş uygulama olarak geri gelir (Python betiği olarak değil); çıkış süreç bırakmaz | T5.1'e kadar pakette sessizce kırılan `launch_command` yolları |
-| 11 | Yanlış API anahtarıyla bir arıza zorla, sonra mesajı ara | Mesaj, kullanıcının bulabileceği bir yerde görünür — pencere ya da günlük | N9: dondurulmuş uygulamanın stdout'u hiçbir yere gitmiyor. Bir günlük gelene kadar "mesaj" bu satırın açık tuttuğu sorudur |
+| 11 | Yanlış API anahtarıyla bir arıza zorla, sonra mesajı ara | Mesaj, *bir kişinin bulabileceği* bir yerde: pencerede ve terminal yokken `DATA_DIR/dikte.log`'da | N9 cevaplandı: `dikte.keep_a_log()` çıktıyı o dosyaya çift yazıyor ve `dikte doctor` yolunu basıyor. Bu satırın kontrol ettiği şey otomasyonun yapamayacağı kısım: dosyanın, bir kişinin gerçekten bakmayı düşüneceği yer olup olmadığı |
 | 12 | İşletim sisteminin kendi yoluyla kaldır (Windows: Ayarlar → Uygulamalar; Linux: paketi kaldır; macOS: Çöp'e sürükle) | Ne artık süreç kalır, ne artık başlangıç girdisi | Yalnızca işletim sisteminin kurucusu ne kurduğunu bilir |
 
 ## Henüz cevap olmayan işletim sistemi notları
