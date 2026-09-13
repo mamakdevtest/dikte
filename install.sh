@@ -3,7 +3,9 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY="$(command -v python3)"
+# `|| true` because a frozen install has no reason to have Python on the machine at all,
+# and under `set -e` a failing command substitution would end the script right here.
+PY="$(command -v python3 || true)"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 AUTOSTART_DIR="$HOME/.config/autostart"
@@ -11,6 +13,25 @@ SHORTCUT="${1:-Ctrl+Space}"
 # Without the colon, so that a second argument given as "" stays empty. That is
 # how update.sh says "this one was turned off", as against not saying anything.
 CANCEL_SHORTCUT="${2-Ctrl+Alt+Space}"
+
+# A frozen build beside this script is what gets installed when there is one: it carries
+# its own interpreter and its own Qt, so Python stops being a prerequisite and the
+# launchers point at the bundle instead of at a script (T5.1/T5.4). `dist/dikte/dikte` is
+# where `packaging/build.py` leaves it. A symlink to it is enough: the bootloader resolves
+# the real path to find its `_internal/` directory, which is why the `dikte` command ends
+# up being a link rather than a wrapper.
+FROZEN="$DIR/dist/dikte/dikte"
+if [[ -x "$FROZEN" ]]; then
+  APP_EXEC="$FROZEN"
+  APP_CMD=("$FROZEN")
+  ICON="$DIR/icons/dikte.png"
+else
+  APP_EXEC="$DIR/dikte.py"
+  # The interpreter when there is one, and the script's own shebang when there is not —
+  # `command -v python3` and `#!/usr/bin/env python3` resolve the same way.
+  if [[ -n "$PY" ]]; then APP_CMD=("$PY" "$DIR/dikte.py"); else APP_CMD=("$DIR/dikte.py"); fi
+  ICON="audio-input-microphone"
+fi
 
 say()  { printf '  %s\n' "$1"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
@@ -36,7 +57,9 @@ fi
 for cmd in "${audio_cmds[@]}" "${desktop_cmds[@]}"; do
   command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
-python3 -c 'import PyQt6.QtWidgets' 2>/dev/null || missing+=("python-pyqt6")
+if [[ ! -x "$FROZEN" ]]; then
+  python3 -c 'import PyQt6.QtWidgets' 2>/dev/null || missing+=("python-pyqt6")
+fi
 
 if ((${#missing[@]})); then
   warn "Missing: ${missing[*]}"
@@ -73,21 +96,24 @@ fi
 
 # 3. Launchers -------------------------------------------------------------
 mkdir -p "$BIN_DIR" "$APP_DIR" "$AUTOSTART_DIR"
-ln -sf "$DIR/dikte.py" "$BIN_DIR/dikte"
-chmod +x "$DIR/dikte.py"
+ln -sf "$APP_EXEC" "$BIN_DIR/dikte"
+if [[ "$APP_EXEC" == "$DIR/dikte.py" ]]; then chmod +x "$DIR/dikte.py"; fi
 ok "Command installed: $BIN_DIR/dikte"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) warn "$BIN_DIR is not on your PATH. For fish: fish_add_path $BIN_DIR" ;;
 esac
 
+# A launcher in a `.desktop` file is run by a shell, so the path is quoted: a checkout
+# under "$HOME/My Projects/dikte" is a normal place to keep one, and it used to arrive
+# there as two arguments.
 cat > "$APP_DIR/dikte.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Dikte
 Comment=Voice dictation: record, transcribe, clean up, paste
-Exec=$PY $DIR/dikte.py
-Icon=audio-input-microphone
+Exec="$APP_EXEC"
+Icon=$ICON
 Categories=Utility;AudioVideo;
 StartupNotify=false
 EOF
@@ -97,8 +123,8 @@ cat > "$AUTOSTART_DIR/dikte.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Dikte
-Exec=$PY $DIR/dikte.py
-Icon=audio-input-microphone
+Exec="$APP_EXEC"
+Icon=$ICON
 X-GNOME-Autostart-enabled=true
 StartupNotify=false
 EOF
@@ -120,7 +146,7 @@ if [[ "$SHORTCUT" == "$CANCEL_SHORTCUT" ]]; then
 fi
 
 register() {   # which  combination  label
-  if out="$("$PY" "$DIR/dikte.py" shortcut install "$1" --combo "$2" 2>&1)"; then
+  if out="$("${APP_CMD[@]}" shortcut install "$1" --combo "$2" 2>&1)"; then
     ok "$3: $2"
   else
     # One line: the rest of what it has to say about KWin is printed below.
@@ -128,7 +154,8 @@ register() {   # which  combination  label
   fi
 }
 
-if python3 -c 'import PyQt6.QtWidgets' 2>/dev/null; then
+# A bundle has Qt inside it; a source install has to have it on the machine.
+if [[ -x "$FROZEN" ]] || python3 -c 'import PyQt6.QtWidgets' 2>/dev/null; then
   register toggle "$SHORTCUT" "Start and stop"
   if [[ -n "$CANCEL_SHORTCUT" ]]; then
     register cancel "$CANCEL_SHORTCUT" "Discard the recording"
