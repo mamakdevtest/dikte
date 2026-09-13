@@ -1,3 +1,54 @@
+# VERIFICATION — T4.8's fourth slice: a control that does nothing
+
+## The number
+
+    273 silent handlers -> 265 (the fourth slice), "optional widget" 95 -> 87. Eight more out,
+    all by reporting.
+
+## The defect: a picker that stopped listening
+
+`_on_audio_sources_loaded` fills three device pickers (the dictation microphone, the meeting
+microphone, the system-audio source). Each one was blocked while its list was rebuilt so the
+rebuild would not fire a change event per item:
+
+    self.mic.blockSignals(True)
+    ...
+    self.mic.blockSignals(False)
+    ...
+
+    except Exception:
+        pass
+
+`blockSignals(False)` sat inside the `try`. One failure — a bad entry, a `findData` that
+raises, a picker that is not there yet — and every picker that had **not been reached yet**
+stayed signal-blocked for the life of the window. The user then chooses a microphone and
+nothing happens: no event, no save, no message. It is the worst shape a UI bug takes, because
+there is nothing on screen to explain it.
+
+Now the unblocking is a `finally` that walks all three pickers, and the failure prints.
+
+`tests/test_ui.py` pins it by forcing the failure — `addItem` raises — and asserting three
+things: the failure is reported, the picker is unblocked, and (by construction) the failing
+path was really taken. With the old code the third assertion is what makes the second fail.
+
+## The other seven
+
+- `settings_ui`'s tab-change guard: if that `connect` failed, `_on_tab_change_requested`
+  never ran, so the unsaved-edits question was never asked and the edit was simply lost.
+- The shortcut row's two-way sync between the template box and the key box: if it failed,
+  one of them silently kept a stale value.
+- `sys.stdout`/`sys.stderr`'s `reconfigure(encoding="utf-8")`, in three entry points (`cli`,
+  `config`, `dikte`): on a Windows console in cp1252 the Turkish strings go out garbled, and
+  the line saying so is deliberately ASCII-only — a message that garbles itself is not a
+  message.
+- `open_dashboard`'s deep link: `dikte settings --page api` landing on the dashboard without a
+  word is how a deep link looks like it worked.
+
+Left alone on purpose: `dikte.py`'s connection to `partialTranscript` is guarded in the same
+way, but the comment beside it says the signal only exists for streaming-capable providers —
+so failing there is the design, and a line per dictation would be noise. That is the other
+half of the triage: not every silence is a defect.
+
 # VERIFICATION — T4.8's third slice: unknown is not "no"
 
 ## The number
