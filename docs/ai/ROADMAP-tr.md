@@ -307,7 +307,7 @@ ekran görüntülerinden yazılmıştı.
 **Doğrulama:** alınan her kare kilitlenen yöne karşı incelenir; altın-görüntü
 manifestosu her commit'te bilinçli güncellenir, asla körlemesine değil.
 
-### Faz 4 — Güvenilirliği kapatma (7–10 g) — *sürüyor: T4.1–T4.7 doğrulandı, T4.8 başladı*
+### Faz 4 — Güvenilirliği kapatma (7–10 g) — *T4.1–T4.9 doğrulandı ya da düzeltildi; T4.8'in temizliği kaldı*
 
 Zaten açık olan turu kendi bağımlılık sırasıyla kapat:
 

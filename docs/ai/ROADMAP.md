@@ -303,7 +303,7 @@ U10), and all three were written from the old screenshots.
 **Verification:** every captured frame reviewed against the locked direction;
 the golden-image manifest updated deliberately in each commit, never blindly.
 
-### Phase 4 — Reliability closure (7–10 d) — *in progress: T4.1–T4.7 verified, T4.8 begun*
+### Phase 4 — Reliability closure (7–10 d) — *T4.1–T4.9 verified or fixed; T4.8's burn-down remains*
 
 Close the pass that is already open, in its own dependency order:
 
