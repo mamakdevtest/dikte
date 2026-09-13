@@ -7,6 +7,7 @@ neighbour's slot and makes removal close gaps immediately.
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -18,6 +19,14 @@ except Exception:  # headless / import-time fallback
     QApplication = None  # type: ignore
 
 from overlay import GAP as OVERLAY_GAP, MARGIN as OVERLAY_MARGIN
+
+# What a slot is worth when its activity has no widget to measure. These are the
+# live overlay's own two heights (overlay._LIVE_COLLAPSED_H / _LIVE_EXPANDED_H):
+# a widget-less stack that disagreed with a real one about the same overlay would
+# place the next card in the wrong place.
+FALLBACK_HEIGHT = 72.0
+FALLBACK_COLLAPSED_HEIGHT = 28.0
+FALLBACK_WIDTH = 320.0
 
 
 @dataclass
@@ -38,26 +47,33 @@ class Activity:
     expanded: bool = False
 
     def height(self) -> float:
-        """Effective height used for geometry (collapsed vs expanded)."""
+        """Effective height used for geometry (collapsed vs expanded).
+
+        A registered activity normally carries its widget and the widget knows its
+        own height. The fallback is for one that does not — which includes a widget
+        destroyed while still registered, so the catch stays broad and says what
+        happened rather than returning a number in silence.
+        """
         w = self.widget
-        if w is not None and hasattr(w, "height"):
+        if w is not None:
             try:
-                # Prefer the widget's current height (already accounts for
-                # collapsed constant _MEETING_COLLAPSED_W / _LIVE vs footer).
                 return float(w.height())
-            except Exception:
-                pass
-        # Fallback for widget-less activities: collapsed is shorter.
-        return 72.0 if not self.collapsed else 72.0
+            except Exception as exc:
+                print(f"dikte: activity {self.id!r} cannot be measured "
+                      f"({exc}); using the fallback height", file=sys.stderr)
+        # The two branches used to be the same number, so `collapsed` made no
+        # difference to a widget-less activity however tall the comment said it was.
+        return FALLBACK_COLLAPSED_HEIGHT if self.collapsed else FALLBACK_HEIGHT
 
     def width(self) -> float:
         w = self.widget
-        if w is not None and hasattr(w, "width"):
+        if w is not None:
             try:
                 return float(w.width())
-            except Exception:
-                pass
-        return 320.0
+            except Exception as exc:
+                print(f"dikte: activity {self.id!r} cannot be measured "
+                      f"({exc}); using the fallback width", file=sys.stderr)
+        return FALLBACK_WIDTH
 
 
 class OverlayCoordinator:

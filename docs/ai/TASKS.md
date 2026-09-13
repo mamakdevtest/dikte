@@ -9,14 +9,104 @@ section is the authoritative checklist for the remediation.
 
 ### Implementation
 - [x] R0 — Re-establish live state, reproduce root causes, and create the Context Ledger
-- [ ] R1 — Dynamic activity-session registry and coordinator-owned geometry
-- [ ] R2 — Independent meeting/dictation/agent/result overlay views and bounded detail UI
-- [ ] R3 — Safe concurrent capture policy and non-destructive unsupported-device UX
-- [ ] R4 — Durable audio-before-classification and crash-discoverable meeting capture
+- [x] R1 — Dynamic activity-session registry and coordinator-owned geometry
+      *(verified against live source 2026-09-12)*. `ui/overlay_coordinator.py` is
+      the layout authority: an id-keyed registry with `register` / `update` /
+      `remove` / `get` / `ordered` / `__len__` / `__contains__`, `created_order`
+      immutable after registration so a card's place never changes under it, and
+      `recompute_geometry()` reflowing the whole stack on every lifecycle call —
+      registration itself is the reflow, so a caller cannot forget the second
+      call. The geometry arithmetic lives here, not in the widgets: heights and
+      widths come from `Activity.height()/width()`, and `_screen_area()` is the
+      only place the screen is asked. One defect, in the path nothing had ever
+      run: with no widget to measure, `height()` returned **72.0 for collapsed and
+      expanded alike** while its comment claimed the collapsed one was shorter, so
+      a collapsed slot took a full one and its neighbour sat 44 px too high. Fixed
+      with `FALLBACK_HEIGHT` / `FALLBACK_COLLAPSED_HEIGHT`, which are the live
+      overlay's own `_LIVE_EXPANDED_H` / `_LIVE_COLLAPSED_H` rather than new
+      numbers (asserted, so the two cannot drift apart). A widget Qt has already
+      deleted now falls back **and says so** on stderr instead of returning a
+      number in silence. 5 tests cover the widget-less path, which had none.
+- [x] R2 — Independent meeting/dictation/agent/result overlay views and bounded detail UI
+      *(verified against live source 2026-09-12)*. Four kinds, four views:
+      `dikte.py:936-953` builds a **separate widget instance** per kind
+      (`self.overlay`, `self.ask_overlay`, `self.meeting_overlay`,
+      `self.result_overlay`), keeps it in `_activity_widgets[kind]` and registers
+      that same object with the coordinator — so two activities running at once are
+      two windows, not one window in two states. The detail UI is bounded rather
+      than growing without limit: `ResultOverlay` caps at `EXPANDED_MAX_HEIGHT = 180`
+      with a scrollbar for the rest, and `LivePopup` is `WIDTH = 460`,
+      `MIN_HEIGHT = 96` with a compact cap of `HEIGHT = 260` and
+      `MAX_AREA_FRACTION = 0.6` — the expanded card never takes more than 60% of the
+      screen. Those bounds were nominal until Phase 3 surface 2 made the card
+      actually obey them (it had been a fixed 260 px box). Evidence: 44 tests across
+      `test_overlay_coordinator_contract` (11), `test_overlay_refinement` (13) and
+      `test_overlay_meeting` (20).
+- [x] R3 — Safe concurrent capture policy and non-destructive unsupported-device UX
+      *(verified against live source 2026-09-12)*. Two refusals, both with a reason
+      and a way out, and neither one stops what is already running:
+      `dikte.py:1038` refuses a new dictation while the meeting microphone is held
+      ("Finish the meeting or choose a shareable input") and `dikte.py:1362` refuses
+      a meeting while another voice capture is active. That is the non-destructive
+      shape: the newer request is turned away, the older capture keeps its audio.
+      Evidence: `test_dikte_capture_contract` 3 tests —
+      `test_nonshared_meeting_refuses_newer_dictation_without_stopping_meeting`.
+- [x] R4 — Durable audio-before-classification and crash-discoverable meeting capture
+      *(verified against live source 2026-09-12)*. The audio is written to a voice
+      job **before** anything is classified: `worker.py:491` calls
+      `voice_jobs.save_voice_job(entry)` with the `audio_path`, and the transcription
+      branch begins only after it (line 504). If that write fails the worker stops and
+      tells the user — `Could not preserve recording safely` — rather than classify
+      audio it cannot keep. An interrupted run stays discoverable because the state
+      survives in the entry: `settings_ui.py:117-121` renders `recorded` as *waiting to
+      be written up*, `transcribed` as *transcript ready, minutes missing* and `failed`
+      as itself, so a crash is visible in Minutes instead of silent. Evidence: 119
+      tests across `test_voice_jobs` (37), `test_voice_job_persistence_contract` (5)
+      and `test_meeting` (77).
 - [x] R5 — Checkpointed retry/delivery idempotency and safe agent retry boundary
-- [ ] R6 — History/Minutes recovery details, explicit deletion, and retry UX
-- [ ] R7 — Editing Level migration completion and EN/TR parity
-- [ ] R8 — Deterministic regression coverage
+- [x] R6 — History/Minutes recovery details, explicit deletion, and retry UX
+      *(verified against live source 2026-09-12)*. Details and retry: the History
+      page's recovery card lists each retryable job as
+      `kind · timestamp · stage: message` with a `Retry` beside `Reload`, and since
+      Phase 3 surface 5 the card **exists only when there is something to recover**
+      — it used to render in every state, an empty box with a dead button in the best
+      space on the page, which on a fresh install is what "recovery UX" amounted to.
+      Explicit deletion: `_delete_history` asks before removing more than one row
+      (*Delete the {count} selected entries?*) and `_clear_history` guards the empty
+      list; both buttons are `danger` and sit apart from the safe actions (T2.5), so
+      the row cannot be clicked through by accident. Minutes recovery: an interrupted
+      run shows its own state rather than nothing — `waiting to be written up`,
+      `transcript ready, minutes missing`, `failed` (`settings_ui.py:117-121`).
+      Evidence: `tests/test_empty_states.py` (the card hides/appears on the right
+      condition, including a completed job that must not raise it) and
+      `test_minutes_ui` (5).
+- [x] R7 — Editing Level migration completion and EN/TR parity
+      *(verified against live source 2026-09-12)*. The migration is complete: the
+      retired independent shortening slider survives only as the `pop` that removes
+      it (`config.py:1048`), a comment forbidding its reintroduction
+      (`settings_ui.py:3204`) and the contract test that pins both — nothing reads
+      it, and `ai_edit_level` is clamped to 1..5 on every load
+      (`config.py:1043-1046`). Parity: the untranslated set is **empty**
+      (`tools/i18n_gaps.py` → 0), the ratchet records it as a set rather than a count
+      so a new gap cannot hide behind an old one (L6), a guard fails on a source
+      string that is already Turkish (the L9 class), and Phase 1 closed the gap that
+      the count-based guard had been hiding. Phase 3 surface 3 found and fixed the
+      last of it: the thinking panel had **no i18n at all** — Turkish literals in the
+      English interface. Evidence: `test_config_editing_level_contract` (1),
+      `test_i18n` (the set, the quality and the ratchet), `test_thinking` (every label
+      changes with the language).
+- [x] R8 — Deterministic regression coverage
+      *(verified against live source 2026-09-12)*. Determinism: `tests/__init__.py`
+      pins `QT_QPA_PLATFORM=offscreen` **before** Qt is imported, so no test needs a
+      display, an audio device or a window manager, and nothing in the suite touches
+      the network. The coverage this item asked for is the guards, and Phases 0–3
+      added them where findings had escaped: icon-name contracts, the i18n set plus
+      the Turkish-source rule, the objectName/style contracts, the control rhythm,
+      focus surviving every button variant, destructive actions set apart, region
+      names on the pill, and the sheet being the only place a control height is
+      fixed. Each was proved red before it was trusted green. Evidence: the whole
+      suite — **1539 tests OK** (2026-09-12) — plus `tools/quick_tests.py` for the
+      14-second half, and `git diff --check` clean.
 
 ### Final Verification
 - [x] V1 — Targeted tests: 378 OK (voice_jobs, worker, assistant, audio, meeting, i18n, overlay_meeting, overlay_refinement, dikte_capture_contract, overlay_coordinator_contract, config_editing_level_contract) + persistence contract 5/5 + test_ui 125 OK + config/meeting 183 OK

@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QApplication
 import dikte
 import overlay as overlay_module
 from tests.support import DikteTest
+from ui import overlay_coordinator as coordinator
 from ui.live_popup import LivePopup
 from ui.overlay_coordinator import Activity, OverlayCoordinator
 from ui.result_overlay import ResultOverlay
@@ -35,6 +36,79 @@ class _OverlayStub:
 
     def move(self, x, y):
         self.moves.append((x, y))
+
+
+class TheFallbackSlot(unittest.TestCase):
+    """An activity with no widget, which the registry documents as optional (R1).
+
+    The app always registers a widget, so this path had never been run — which is
+    how `height()` kept a branch that returned the same number for collapsed and
+    expanded while its comment claimed the collapsed one was shorter.
+    """
+
+    def activity(self, ident, order, **kwargs):
+        return Activity(id=ident, kind=ident, created_order=order,
+                        state="recording", **kwargs)
+
+    def test_a_collapsed_slot_is_shorter_than_an_expanded_one(self):
+        self.assertLess(self.activity("a", 0, collapsed=True).height(),
+                        self.activity("b", 1).height())
+
+    def test_the_fallbacks_are_the_live_overlays_own_heights(self):
+        """A widget-less stack that disagreed with a real one would misplace the
+        next card, so these are the overlay's numbers rather than new ones."""
+        self.assertEqual(overlay_module._LIVE_EXPANDED_H,
+                         coordinator.FALLBACK_HEIGHT)
+        self.assertEqual(overlay_module._LIVE_COLLAPSED_H,
+                         coordinator.FALLBACK_COLLAPSED_HEIGHT)
+
+    def test_a_widgetless_neighbour_still_takes_its_slot(self):
+        """Compared as a difference, so the screen it lands on does not matter."""
+        alone = _OverlayStub()
+        first = OverlayCoordinator("bottom-left")
+        first.register(self.activity("a", 0, widget=alone))
+        y_alone = alone.moves[-1][1]
+
+        with_neighbour = _OverlayStub()
+        second = OverlayCoordinator("bottom-left")
+        second.register(self.activity("a", 0, widget=with_neighbour))
+        second.register(self.activity("b", 1))  # no widget at all
+        y_with_neighbour = with_neighbour.moves[-1][1]
+
+        self.assertEqual(int(coordinator.FALLBACK_HEIGHT + second.gap),
+                         y_alone - y_with_neighbour)
+
+    def test_collapsing_a_widgetless_neighbour_frees_the_difference(self):
+        expanded = _OverlayStub()
+        first = OverlayCoordinator("bottom-left")
+        first.register(self.activity("a", 0, widget=expanded))
+        first.register(self.activity("b", 1))
+        y_expanded = expanded.moves[-1][1]
+
+        collapsed = _OverlayStub()
+        second = OverlayCoordinator("bottom-left")
+        second.register(self.activity("a", 0, widget=collapsed))
+        second.register(self.activity("b", 1, collapsed=True))
+        y_collapsed = collapsed.moves[-1][1]
+
+        self.assertEqual(int(coordinator.FALLBACK_HEIGHT
+                             - coordinator.FALLBACK_COLLAPSED_HEIGHT),
+                         y_collapsed - y_expanded,
+                         "a collapsed slot must actually take less room")
+
+    def test_a_widget_that_cannot_be_measured_falls_back_instead_of_raising(self):
+        class Deleted:
+            """What Qt gives you after the C++ object is gone."""
+
+            def height(self):
+                raise RuntimeError("wrapped C/C++ object of type Overlay deleted")
+
+            def width(self):
+                raise RuntimeError("wrapped C/C++ object of type Overlay deleted")
+
+        act = self.activity("a", 0, widget=Deleted())
+        self.assertEqual(coordinator.FALLBACK_HEIGHT, act.height())
+        self.assertEqual(coordinator.FALLBACK_WIDTH, act.width())
 
 
 class DynamicActivityStack(unittest.TestCase):
