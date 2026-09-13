@@ -425,6 +425,13 @@ Her faz için pazarlıksız, `ai/workflows.md`'den devralınmış:
 - Her faz gerçek komut çıktısını `docs/ai/VERIFICATION.md`'ye yazar.
   Tahmini PASS yok.
 - Ekran turu yeniden alınır ve incelenir; varsayılmaz.
+  - İki README yedi ayar penceresi karesi gömüyor ve bunlar **üretiliyor, elle
+    yapılmıyor**: `python3.14 tools/shoot_ui.py --readme` onları sevk edilen yapıdan
+    `docs/settings-*.webp` içine yeniden çekiyor (koyu, İngilizce, 1475x1489). Yeniden
+    koşmak her arayüz değişikliğinin parçası ve kareler commit edilmeden önce gözle
+    incelenir — `--check` bir yüzeyin *çizildiğini* sorar, oysa bir sayfa kusursuz
+    çizilip yanlış bir şey söyleyebilir (13.09.2026: API sayfası tek bir model dosyası
+    hakkında üç farklı cevap veriyordu ve bunu yalnızca kareyi okumak yakaladı).
 - Faz tamam sayılmadan önce grafik tazelenir.
 - §7/Q3 açık kararı olmadan yeni üçüncü taraf bağımlılık yok.
 

@@ -423,6 +423,13 @@ Non-negotiable for every phase, inherited from `ai/workflows.md`:
 - Every phase records its real command output in `docs/ai/VERIFICATION.md`.
   No predicted PASS.
 - The screenshot tour is re-captured and reviewed, not assumed.
+  - The two READMEs embed seven frames of the settings window, and they are **generated,
+    not hand-made**: `python3.14 tools/shoot_ui.py --readme` re-shoots them from the
+    shipping build into `docs/settings-*.webp` (dark, English, 1475x1489). Re-running it
+    belongs to any UI change, and the frames are looked at before they are committed —
+    `--check` asks whether a surface was *drawn*, and a page can be drawn perfectly while
+    saying something false (2026-09-13: the API page rendered three answers about one
+    model file, and only reading the frame caught it).
 - Graph refreshed before the phase is called complete.
 - No new third-party dependency without an explicit decision (§7/Q3).
 
