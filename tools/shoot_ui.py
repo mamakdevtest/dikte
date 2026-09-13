@@ -205,6 +205,30 @@ def expected_names():
     return [f"page{i:02d}" for i in range(page_count())] + list(NAMED_SURFACES)
 
 
+# The images both READMEs embed, by the shell page they show. Kept beside the rest of the
+# tour because they are the same claim — "this is what the product looks like today" —
+# and they had stopped making it: the embedded files were taken 2026-08-01, before the
+# return to Warm Technical Minimalism, so the README was showing a retired palette in a
+# window shape the product no longer has.
+README_SHOTS = (
+    ("settings-general", 1),
+    ("settings-api", 2),
+    ("settings-cleanup", 3),
+    ("settings-agent", 4),
+    ("settings-meeting", 5),
+    ("settings-audio-file", 7),
+    ("settings-shortcuts", 8),
+)
+# Every embedded file has been 1475x1489 since the first set, and the READMEs size their
+# <img> tags for it. A README is not the place to reflow a layout.
+README_SIZE = (1475, 1489)
+# Dark and English, which is what the embedded set has always been: both READMEs point at
+# these same seven files, so a Turkish shot would be wrong in one of the two.
+README_THEME = "dark"
+README_LANG = "en"
+WEBP_QUALITY = 88
+
+
 def _is_blank(path):
     """True when a frame holds a single colour, whatever the colour is."""
     from PyQt6.QtGui import QImage
@@ -295,7 +319,7 @@ def page_height(window, base=700):
     return needed
 
 
-def shoot(app, widget, path, width=None, height=None):
+def shoot(app, widget, path, width=None, height=None, quality=None):
     widget.show()
     if width is not None and height is not None:
         widget.resize(width, height)
@@ -303,10 +327,39 @@ def shoot(app, widget, path, width=None, height=None):
     widget.update()
     app.processEvents()
     app.processEvents()
-    ok = widget.grab().save(path)
+    frame = widget.grab()
+    # `quality` is the WebP encoder's; PNG has no such knob and Qt ignores it there.
+    ok = frame.save(path, None, quality) if quality is not None else frame.save(path)
     if not ok:
         raise RuntimeError(f"grab().save failed for {path}")
     return path
+
+
+def shoot_readme(app, conf, out_dir, size=README_SIZE):
+    """Write the images the READMEs embed, at the size they embed them.
+
+    The tour's own frames are 1000 px wide and exactly as tall as each page, because the
+    check that reads them asks whether a surface was drawn. The README shows one fixed
+    near-square window per tab in a grid, which is what these files have always been.
+    Same window and same fixtures, one fixed size instead of a measured one.
+    """
+    conf["ui_theme"] = README_THEME
+    theme.apply(README_THEME)
+    i18n.set_language(README_LANG)
+
+    window = DashboardWindow(conf)
+    written = []
+    for name, index in README_SHOTS:
+        window.resize(*size)
+        window.shell.set_page(index)
+        app.processEvents()
+        path = os.path.join(out_dir, f"{name}.webp")
+        shoot(app, window, path, size[0], size[1], quality=WEBP_QUALITY)
+        written.append(path)
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+    return written
 
 
 def build_prompt_creator(parent):
@@ -348,13 +401,20 @@ def build_prompt_creator(parent):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", required=True)
+    parser.add_argument("--out", help="where the frames go; required unless --readme")
     parser.add_argument("--themes", default="light,dark")
     parser.add_argument("--langs", default="en,tr")
+    parser.add_argument("--readme", action="store_true",
+                        help="write the seven images the READMEs embed, into --out "
+                             "(default: docs/), instead of the full surface tour")
     parser.add_argument("--check", action="store_true",
                         help="assert every expected surface was drawn, and "
                              "exit non-zero when one was not")
     args = parser.parse_args()
+    if not args.out and not args.readme:
+        parser.error("--out is required unless --readme is given")
+    if args.readme:
+        args.out = args.out or "docs"
     themes = [t for t in args.themes.split(",") if t]
     langs = [l for l in args.langs.split(",") if l]
     os.makedirs(args.out, exist_ok=True)
@@ -380,6 +440,15 @@ def main():
                                               return_value=["ggml-small.bin"]))
         stack.enter_context(mock.patch.object(ggml, "installed_llm_models",
                                               return_value=["gemma-3-4b-it-Q4_K_M.gguf"]))
+        # `have_model()` is a real file check, and the sandbox holds no model files, so
+        # patching the *lists* alone left the frames contradicting themselves: the model
+        # picker said "(downloaded)" while the status line directly under it said the
+        # file "has not been downloaded yet" in red, and the provider row said "Ready".
+        # Three widgets, three answers about one file, and the tour was photographing it.
+        stack.enter_context(mock.patch.object(
+            ggml, "have_model",
+            lambda path: pathlib.Path(path).name in ("gemma-3-4b-it-Q4_K_M.gguf",
+                                                     "ggml-small.bin")))
         stack.enter_context(mock.patch.object(ggml, "installed_program",
                                               return_value="/usr/bin/shoot"))
         stack.enter_context(mock.patch.object(ggml, "installed_version",
@@ -436,6 +505,13 @@ def main():
             })
         except Exception:
             pass
+
+        if args.readme:
+            written = shoot_readme(app, conf, args.out)
+            print(f"wrote {len(written)} README images to {args.out}")
+            for path in written:
+                print(f"  {path}")
+            return 0
 
         count = 0
         for thm in themes:
