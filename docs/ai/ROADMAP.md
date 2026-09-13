@@ -282,20 +282,23 @@ cannot carry button text at any size the design uses (N2), a style rule that
 matches nothing fails silently in two more ways (N3), and the tour was photographing
 only the top of every page (N4).
 
-### Phase 3 — Surface-by-surface rebuild (10–14 d)
+### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 1 of 7 delivered*
 
 Rebuild in this order — most-visible first, and each surface has its own
-verification frame from T0.5.
+verification frame from T0.5. Each finding is re-checked against the code and a
+current frame before anything is changed: three of the survey's UI findings have
+now turned out to be stale or wrong (X3, the `Promtlar` half of L5, and most of
+U10), and all three were written from the old screenshots.
 
-| Order | Surface | Fixes |
-|---|---|---|
-| 1 | Recording pill + paused/busy/warning/error states | U10, U11 |
-| 2 | Result overlay + live popup (content-sizing, empty state) | U6 |
-| 3 | Thinking panel — same visual family as the pill | U11 |
-| 4 | Tray menu — icons, separators, toggle state | U12 |
-| 5 | Dashboard (stat semantics, empty states) | U4 |
-| 6 | The nine settings pages | U2–U5, U9 |
-| 7 | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
+| Order | State | Surface | What it settled |
+|---|---|---|---|
+| 1 | **done** | Recording pill + paused/busy/warning/error states | U10 re-checked claim by claim: the timer *does* carry recording context (red dot, timer, Pause/Stop read as one control), Pause and Stop are *not* cramped, and the "missing drag affordance" contradicts documented behaviour — `i18n.py:887` tells the user the indicator "sürüklenemez", and Settings places it by corner. The one real defect was that the live-transcript button, Pause and Stop had **no name in any form**: the pill is a single custom-painted widget, only the meeting toggle ever set a tooltip or accessible description. Fixed, and the new region-name contract fails when a `_hover_*` flag is added without one. U11's busy-pill comparison is the next surface's job, since it needs both frames. |
+| 2 | next | Result overlay + live popup (content-sizing, empty state) | U6 |
+| 3 | | Thinking panel — same visual family as the pill | U11 |
+| 4 | | Tray menu — icons, separators, toggle state | U12 |
+| 5 | | Dashboard (stat semantics, empty states) | U4 |
+| 6 | | The nine settings pages | U2–U5, U9 |
+| 7 | | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
 
 **Verification:** every captured frame reviewed against the locked direction;
 the golden-image manifest updated deliberately in each commit, never blindly.
@@ -580,6 +583,18 @@ prompt field, toggle off           background surface2 (#f2ede1) = disabled
                                    (the enabled field colour is #f7f3e9)
 ```
 
+### 2026-09-12 — Phase 3, surface 1 (the recording pill)
+
+| File | Change |
+|---|---|
+| `overlay.py` | every interactive region of the pill gets a tooltip and an accessible description, and the widget itself gets a name; naming happens in one place, from whatever the pointer is over |
+| `i18n.py` | `"Recording indicator"` → `"Kayıt göstergesi"` — the i18n guard caught the new string before the suite would have, which is what it is for |
+| `tests/test_overlay_refinement.py` | a `RegionNames` contract: each region is named, the empty case clears rather than goes stale, Pause says Resume when paused, and a new `_hover_*` flag in the source without a region name fails the suite |
+
+Proven red before green: with naming restored to meeting-only, the contract names
+the gap — `the expand region has no name`, `the live region has no name`, `the
+meeting region has no name`.
+
 ### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
@@ -645,6 +660,25 @@ where it was wrong:
   before it could be checked at all. `tools/shoot_ui.py` now measures each page and
   grows the window to fit it — 700 to 2040 px, at each page's own height — and the
   reorder was then confirmed on the frame.
+
+- **N5 — U10 was mostly stale, and one of its parts contradicted the product's own
+  documentation.** The survey listed four faults in the recording pill, written
+  from `blue_tr_overlay_rec.png`, a frame from the generation before the design
+  work. Re-checked against the code and a current frame: the timer *does* carry
+  recording context (a red dot, a monospaced timer and Pause/Stop read as one
+  control); Pause and Stop are *not* cramped, they are separate circles with a
+  visible gap; and "there is no drag affordance" asks for behaviour the product
+  documents against — `i18n.py:887` tells the user the indicator "sürüklenemez"
+  ("cannot be dragged") and Settings places it by corner, so a drag handle would
+  contradict shipped copy. The fourth claim, "the centre glyph is unlabelled and
+  low-contrast", was half right and the half that mattered was not contrast: the
+  glyph is drawn in `fg3` at 5.6:1 and brightens on hover, which is deliberate, but
+  it had **no name in any form** — no tooltip, no accessible description, and no
+  visible text anywhere in the interface. Pause and Stop were in the same position.
+  That is now fixed and guarded. **Third UI finding in a row to be mostly wrong
+  about the current product**; the survey's screenshots are from an older
+  generation, and this plan should stop trusting any finding that has not been
+  re-checked against source.
 
 And during Phase 1:
 

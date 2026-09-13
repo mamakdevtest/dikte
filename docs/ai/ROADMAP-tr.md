@@ -286,19 +286,23 @@ düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kural�
 daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
 fotoğraflıyordu (N4).
 
-### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g)
+### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 1'i teslim edildi*
 
-Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi var.
+Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi
+var. Her bulgu, hiçbir şey değiştirilmeden önce koda ve güncel bir kareye karşı
+yeniden kontrol ediliyor: taramanın arayüz bulgularından üçü şimdiden eskimiş ya da
+yanlış çıktı (X3, L5'in `Promtlar` yarısı ve U10'un büyük kısmı) ve üçü de eski
+ekran görüntülerinden yazılmıştı.
 
-| Sıra | Yüzey | Çözdüğü |
-|---|---|---|
-| 1 | Kayıt pili + duraklatılmış/meşgul/uyarı/hata durumları | U10, U11 |
-| 2 | Sonuç overlay'i + canlı popup (içeriğe göre boyutlanma, boş durum) | U6 |
-| 3 | Düşünme paneli — pille aynı görsel aile | U11 |
-| 4 | Tepsi menüsü — ikonlar, ayırıcılar, aç/kapat durumu | U12 |
-| 5 | Kontrol paneli (istatistik anlamı, boş durumlar) | U4 |
-| 6 | Dokuz ayar sayfası | U2–U5, U9 |
-| 7 | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
+| Sıra | Durum | Yüzey | Neyi çözdüğü |
+|---|---|---|---|
+| 1 | **bitti** | Kayıt pili + duraklatılmış/meşgul/uyarı/hata durumları | U10 iddia iddia kontrol edildi: zamanlayıcı kayıt bağlamını **taşıyor** (kırmızı nokta, zamanlayıcı ve Duraklat/Durdur tek bir kontrol olarak okunuyor), Duraklat ile Durdur **sıkışık değil**, ve "sürükleme tutamacı yok" belgelenmiş davranışa aykırı — `i18n.py:887` kullanıcıya göstergenin "sürüklenemez" olduğunu söylüyor ve onu Ayarlar köşeye göre yerleştiriyor. Tek gerçek kusur, canlı-yazı düğmesi ile Duraklat ve Durdur'un **hiçbir biçimde adı olmamasıydı**: pil tek bir elle çizilen widget ve yalnızca toplantı anahtarı hiç tooltip ya da erişilebilir açıklama kurmuştu. Düzeltildi; yeni bölge-adı sözleşmesi, bölge adı olmadan eklenen bir `_hover_*` bayrağında kırmızı oluyor. U11'in meşgul-pil karşılaştırması sıradaki yüzeyin işi, çünkü iki kareyi birden gerektiriyor. |
+| 2 | sıradaki | Sonuç overlay'i + canlı popup (içeriğe göre boyutlanma, boş durum) | U6 |
+| 3 | | Düşünme paneli — pille aynı görsel aile | U11 |
+| 4 | | Tepsi menüsü — ikonlar, ayırıcılar, aç/kapat durumu | U12 |
+| 5 | | Kontrol paneli (istatistik anlamı, boş durumlar) | U4 |
+| 6 | | Dokuz ayar sayfası | U2–U5, U9 |
+| 7 | | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
 
 **Doğrulama:** alınan her kare kilitlenen yöne karşı incelenir; altın-görüntü
 manifestosu her commit'te bilinçli güncellenir, asla körlemesine değil.
@@ -584,6 +588,18 @@ prompt alanı, anahtar kapalı            arka plan surface2 (#f2ede1) = devre d
                                         (açık alan rengi #f7f3e9)
 ```
 
+### 2026-09-12 — Faz 3, yüzey 1 (kayıt pili)
+
+| Dosya | Değişiklik |
+|---|---|
+| `overlay.py` | pilin her etkileşimli bölgesi bir tooltip ve erişilebilir açıklama kazandı, widget'ın kendisi de bir ad; adlandırma tek yerde, imlecin üzerinde olduğu şeye göre yapılıyor |
+| `i18n.py` | `"Recording indicator"` → `"Kayıt göstergesi"` — i18n korkuluğu yeni metni takımdan önce yakaladı; tam da bunun için var |
+| `tests/test_overlay_refinement.py` | bir `RegionNames` sözleşmesi: her bölge adlı, boş durum bayat kalmak yerine temizliyor, duraklatılmışken Duraklat düğmesi Devam diyor, ve kaynakta bölge adı olmadan beliren yeni bir `_hover_*` bayrağı takımı kırmızı yapıyor |
+
+Yeşilden önce kırmızı kanıtlandı: adlandırma yalnızca toplantı hâline döndürülünce
+sözleşme boşluğu adıyla söylüyor — `the expand region has no name`, `the live region
+has no name`, `the meeting region has no name`.
+
 ### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
@@ -653,6 +669,24 @@ gösterenden daha kötüdür:
   işinin önce inançla yeniden sıralanıp ancak sonra kontrol edilebilmesinin sebebi.
   `tools/shoot_ui.py` artık her sayfayı ölçüp pencereyi ona göre büyütüyor — kendi
   yüksekliğinde 700 ile 2040 px arası — ve sıralama sonra kare üzerinde doğrulandı.
+
+- **N5 — U10 büyük ölçüde eskimişti ve bir maddesi ürünün kendi belgesiyle
+  çelişiyordu.** Tarama, kayıt pilinde dört kusur saymıştı; hepsi tasarım işinden
+  önceki nesle ait `blue_tr_overlay_rec.png` karesinden yazılmış. Koda ve güncel bir
+  kareye karşı yeniden kontrol edildi: zamanlayıcı kayıt bağlamını **taşıyor**
+  (kırmızı nokta, eşaralıklı zamanlayıcı ve Duraklat/Durdur tek bir kontrol olarak
+  okunuyor); Duraklat ile Durdur **sıkışık değil**, aralarında görünür bir boşluk
+  olan ayrı daireler; ve "sürükleme tutamacı yok" ürünün karşı çıktığı bir davranışı
+  istiyor — `i18n.py:887` kullanıcıya göstergenin "sürüklenemez" olduğunu söylüyor ve
+  Ayarlar onu köşeye göre yerleştiriyor, yani bir tutamaç gönderilmiş metinle
+  çelişirdi. Dördüncü iddia, "ortadaki glif etiketsiz ve düşük kontrastlı", yarı yarıya
+  doğruydu ve önemli olan yarısı kontrast değildi: glif `fg3` ile 5.6:1'de çiziliyor
+  ve hover'da parlıyor — bu bilinçli — ama **hiçbir biçimde adı yoktu**: ne tooltip,
+  ne erişilebilir açıklama, ne de arayüzün herhangi bir yerinde görünür metin.
+  Duraklat ve Durdur aynı durumdaydı. Bu artık düzeltildi ve korkuluk altında.
+  **Üst üste üçüncü arayüz bulgusu güncel ürün hakkında büyük ölçüde yanlış**;
+  taramanın ekran görüntüleri eski bir nesle ait ve bu plan kaynağa karşı yeniden
+  kontrol edilmemiş hiçbir bulguya güvenmeyi bırakmalı.
 
 Faz 1 sırasında:
 
