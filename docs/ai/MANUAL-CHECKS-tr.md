@@ -41,19 +41,23 @@ Bir adım başarısız olduysa, bastığı çıktıyla birlikte tabloda kalır �
 | 10 | Tepsiden yeniden başlat ve tepsiden çık | Dondurulmuş uygulama olarak geri gelir (Python betiği olarak değil); çıkış süreç bırakmaz | T5.1'e kadar pakette sessizce kırılan `launch_command` yolları |
 | 11 | Yanlış API anahtarıyla bir arıza zorla, sonra mesajı ara | Mesaj, *bir kişinin bulabileceği* bir yerde: pencerede ve terminal yokken `DATA_DIR/dikte.log`'da | N9 cevaplandı: `dikte.keep_a_log()` çıktıyı o dosyaya çift yazıyor ve `dikte doctor` yolunu basıyor. Bu satırın kontrol ettiği şey otomasyonun yapamayacağı kısım: dosyanın, bir kişinin gerçekten bakmayı düşüneceği yer olup olmadığı |
 | 12 | İşletim sisteminin kendi yoluyla kaldır (Windows: Ayarlar → Uygulamalar; Linux: paketi kaldır; macOS: Çöp'e sürükle) | Ne artık süreç kalır, ne artık başlangıç girdisi | Yalnızca işletim sisteminin kurucusu ne kurduğunu bilir |
+| 13 | `~/.config/dikte/config.json`'ı sil, sonra uygulamayı başlat | İlk-kurulum sihirbazı çıkıyor; ikinci başlatmada bir daha görünmüyor; panodaki **Kur** düğmesi ve `dikte setup` onu geri getiriyor | Sihirbazın kendi adımları elle koşulacak kısım: 1. adım mikrofon istiyor, 3. adım gerçek bir dikteyi bekliyor, 2. adım bir model indiriyor — CI'da hiçbiri yok |
 
 ## Henüz cevap olmayan işletim sistemi notları
 
 - **Linux**: 1–10. satırlar 13.09.2026'da dondurulmuş pakete karşı bir kum havuzunda
-  koşuldu (`probe_double_start.py`, `packaging/build.py`); 3, 5, 7, 11 ve 12 hariç — onlar
+  koşuldu (`probe_double_start.py`, `packaging/build.py`); 3, 5, 7, 11, 12 ve 13 hariç — onlar
   masaüstü oturumu, mikrofon ya da bir paket istiyor. Gösterge sayfasının XWayland yedeği
   (X2) bir Wayland oturumu olduğunda buraya giren Linux'a özel bir satırdır.
 - **macOS**: hiçbir şey koşulmadı. `.app` paketi spec ile kuruluyor ve içinde mikrofon
   kullanım metni var (`NSMicrophoneUsageDescription`), ama hiçbir izin penceresi
   görülmedi. İmzalama ve notarization başlamadı ve bir Apple Developer hesabı istiyor (Q4).
-- **Windows**: hiçbir şey koşulmadı. `install.ps1` şu an *kaynak* bir depoyu `pythonw`
-  başlangıç girdisiyle kuruyor; T5.4'ün onu dondurulmuş uygulamaya yöneltmesi ve ihtiyaç
-  duyduğu konsolsuz ikizin var olması gerekiyor.
+- **Windows**: hiçbir şey koşulmadı. T5.4 indi: `packaging/dikte.spec` `dikte.exe`'nin
+  yanında konsolsuz bir `diktew.exe` ikizi üretiyor ve `install.ps1`, `dist\dikte\` içinde
+  dondurulmuş bir paket varsa onu tercih ediyor (yorumlayıcı keşfini, sürüm kontrolünü ve
+  PyQt6 kurulumunu tek blokta atlıyor), CI için `-NoLaunch` ile. Hiç koşulmamış olan
+  kurucunun kendisi — geliştirme makinesinde `pwsh` yok, yani yukarıdaki satır onun ilk
+  gerçek testi ve `build.yml`'in `windows-latest` adımı ilk otomatik olanı.
 
 ## Bu satırlar hiç koşulmazsa ne doğrulanmamış kalır
 

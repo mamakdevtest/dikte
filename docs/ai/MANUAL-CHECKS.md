@@ -41,20 +41,24 @@ which quietly edits itself is worse than one that shows where it was wrong.
 | 10 | Restart from the tray, and quit from the tray | It comes back as the frozen app (not as a Python script); quit leaves no process | The `launch_command` paths, which broke silently in a bundle until T5.1 |
 | 11 | Force a failure with a wrong API key, then look for the message | It is visible *somewhere a person can find it*: in the window, and — when there is no terminal — in `DATA_DIR/dikte.log` | N9 is answered: `dikte.keep_a_log()` tees the output into that file and `dikte doctor` prints its path. What this row checks is the part automation cannot: that the file is where a person would actually think to look |
 | 12 | Uninstall by the OS's own means (Windows: Settings → Apps; Linux: remove the package; macOS: drag to Trash) | No leftover process, no leftover startup entry | Only the OS's installer knows what it installed |
+| 13 | Delete `~/.config/dikte/config.json`, then start the application | The first-run wizard appears; a second start does not show it again; the dashboard's **Set up** button and `dikte setup` bring it back | The wizard's own steps are the manual part: step 1 wants a microphone, step 3 waits for a real dictation, and step 2 downloads a model — none of which CI has |
 
 ## Per-OS notes that are not yet answers
 
 - **Linux**: rows 1–10 were run against the frozen bundle on 2026-09-13 in a sandbox
-  (`probe_double_start.py`, `packaging/build.py`) except 3, 5, 7, 11 and 12, which need a
+  (`probe_double_start.py`, `packaging/build.py`) except 3, 5, 7, 11, 12 and 13, which need a
   desktop session, a microphone or a package. The `Indicator` page's XWayland fallback
   (X2) is a Linux-only row that belongs here once a Wayland session is available.
 - **macOS**: nothing has been run. The `.app` bundle is built by the spec and the
   microphone usage string is in it (`NSMicrophoneUsageDescription`), but no permission
   dialog has ever been seen. Signing and notarisation are unstarted and need an Apple
   Developer account (Q4).
-- **Windows**: nothing has been run. `install.ps1` currently installs a *source* checkout
-  with a `pythonw` startup entry; T5.4 has to point it at the frozen app, and the
-  console-less twin it needs does not exist yet.
+- **Windows**: nothing has been run. T5.4 is in: `packaging/dikte.spec` produces a
+  console-less `diktew.exe` twin next to `dikte.exe`, and `install.ps1` prefers the frozen
+  bundle in `dist\dikte\` when one is there (skipping the interpreter discovery, the version
+  check and the PyQt6 install in one block) with `-NoLaunch` for CI. What has never run is
+  the installer itself — `pwsh` is not on the development machine, so the row above is the
+  first real test of it, and `build.yml`'s `windows-latest` step is the first automated one.
 
 ## What stays unverified if these are never run
 

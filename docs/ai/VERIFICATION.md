@@ -1,3 +1,53 @@
+# VERIFICATION — T4.8's second slice, and the config that stopped the application
+
+## The number
+
+    284 silent handlers -> 279 (the second slice), and the reason counts moved with it:
+    "value of the wrong shape" 54 -> 49. The record is rewritten with `--write`; the ratchet
+    fails in both directions, so the movement is a fact rather than a claim.
+
+## The defect: a settings file that would not load
+
+Reading the "value of the wrong shape" class to write reasons for it turned up a handler
+guarding `self.data["cleanup_prompt"].strip()`. The question "can this actually fail?" had a
+worse answer than expected — not in the handler's own path, but four lines above it:
+
+    $ python3.14 -c "import config; config.Config()"   # with cleanup_prompt: 1234
+    File "config.py", line 1040, in load
+        stored_prompt = self.data["cleanup_prompt"].strip()
+    AttributeError: 'int' object has no attribute 'strip'
+
+A hand-edited, fork-written or half-written settings file holding anything but text where a
+prompt goes **took the application down at startup** — no window, no message, nothing to do
+about it. Found by writing the test that was supposed to prove the *other* repairs work.
+
+Fixed by repairing at the door and saying so (`cleanup_prompt`/`file_cleanup_prompt` that are
+not text are ignored out loud; a settings file holding a list or a number says what it holds
+and the defaults are used), with `tests/test_config.py` covering 1234, `[1, 2]`, `{"a": 1}`,
+`True` and a top-level list.
+
+## Five handlers gone, and the arithmetic of deleting them
+
+Three kinds of work, all of them the burn-down:
+
+- **Two reported.** `Config.load`'s two repairs now print which setting was replaced by a
+  default — a repair changes what the user asked for, and that is the one thing they should
+  hear about. They leave the "silent" record by reporting.
+- **One was data-carrying.** `chunked_session`'s failure *marker* (the visible gap in a
+  transcript) could not be persisted and said nothing: a lost chunk that left no trace that
+  it was lost. It prints now.
+- **Two were dead, and the third went with them.** The dashboard's seven-day and thirty-day
+  counts wrapped `datetime.strptime` in a handler that could never fire, because `_parse_ts`
+  verifies the string before returning it or returns None. Deleting them is the honest
+  burn-down — an untestable claim is not a guard — and the promise they relied on is now
+  pinned by a test that runs twelve inputs through `_parse_ts` and asserts that anything
+  non-None parses as `%Y-%m-%d`. The `cleanup_custom_enabled` handler became dead once the
+  prompts were coerced, so it was deleted too.
+
+The lesson this slice keeps re-teaching: **ask of every handler whether it can fire at all,
+before deciding whether it should report.** Two of the five could not, and one of the
+"unreachable" ones was hiding a crash four lines above it.
+
 # VERIFICATION — the diagnostics bundle, and the promises being the tests
 
 ## End to end, through the real CLI
