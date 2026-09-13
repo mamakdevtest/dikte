@@ -1,3 +1,55 @@
+# VERIFICATION — the state of the tree at the end of T4.8's run (2026-09-13)
+
+One pass over everything the verification contract asks for, run in order, with the real
+output. This is the snapshot a reviewer (or a push) should start from.
+
+```
+### SUITE
+Ran 1628 tests in 97.382s
+
+OK
+### I18N GAPS
+0 strings reach t() with no Turkish entry:
+### EXCEPT RATCHET
+247 broad handlers report nothing at all. The record is tests/except_silent.json;
+the burn-down is T4.8.
+### QT CONTRACT
+Ran 5 tests in 0.550s
+
+OK
+### SURFACE TOUR
+surface check OK: 30 surfaces x 4 theme-and-language runs, all drawn
+### AI SYNC
+OK
+### COMPILE
+compile exit 0
+### DIFF CHECK
+diff --check: clean
+### PROVENANCE
+82 commits since 047f4a6; 0 modified files
+```
+
+The record behind the ratchet, measured out of the commits rather than remembered:
+
+| slice | commit | silent handlers | sites |
+|---|---|---|---|
+| before the burn-down run | `8204a03` | 291 | 180 |
+| 1. reasons + a defect | `ba0e5f8` | 284 | 177 |
+| 2. the load that raised | `30d29fe` | 279 | 176 |
+| 3. unknown is not "no" | `06031b7` | 273 | 172 |
+| 4. the picker left deaf | `ce78e76` | 265 | 167 |
+| 5. features that vanished | `68d5473` | 251 | 158 |
+| 6. the guard that never ran | `875c840` | 247 | 157 |
+
+Six slices, and what they found is the argument for the whole exercise: a data-losing prune, a
+settings file that stopped the application from starting, a hardware claim nothing had
+verified, a picker left deaf, twelve features that vanished without a word, and an
+unsaved-edits guard that had never once run since it was written.
+
+Two of those were found by *making a failure speak* and then reading what it said in the next
+run's output. That is worth stating plainly: the ratchet's value is not the number going down,
+it is that a silent `except` is a place where the product's own reports cannot reach anyone.
+
 # VERIFICATION — the settings read that stopped pretending to know
 
 ## The mechanism, and the measurement
