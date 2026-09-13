@@ -1,3 +1,37 @@
+# VERIFICATION — T4.8's ninth slice: a class checked and found clean
+
+## The number
+
+    237 silent handlers, unchanged — and that is the result, not a failure to produce one.
+
+## What was checked
+
+The "presentation that may not resolve" class, all ten handlers, and the one that looked
+dangerous:
+
+    except Exception:
+        try:
+            return QPixmap()
+        except Exception:
+            # As a last resort (no QApplication), return an uninitialised
+            # pixmap without constructing pixels.
+            return QPixmap.__new__(QPixmap)
+
+A `QPixmap` built through `__new__` skips `__init__` and has no pixels, so the question worth
+asking was whether it can reach a painter. It cannot: `QPixmap()` succeeds whenever there is a
+`QApplication`, so the fallback only fires in a headless context — where nothing paints. The
+direct callers of `pixmap()` outside `icon()` pass it to `QLabel.setPixmap`, which Qt handles for
+a null pixmap, and in that context there is no label either.
+
+The other nine are palette and geometry fallbacks with a literal colour as the fallback — the
+shape the file wants, not a failure being hidden.
+
+## Why this slice did not shrink the number
+
+Because a burn-down that only counts moves is a burn-down that will invent moves. Nine of these
+ten are correct as written, and saying so — with the one hazard named and traced to
+unreachability — is worth more than a report line added to make the table look better.
+
 # VERIFICATION — T4.8's eighth slice: the Stop that could not be checked
 
 ## The number
@@ -82,28 +116,24 @@ output. This is the snapshot a reviewer (or a push) should start from.
 
 ```
 ### SUITE
-Ran 1628 tests in 97.382s
+Ran 1628 tests in 103.679s
 
 OK
 ### I18N GAPS
 0 strings reach t() with no Turkish entry:
 ### EXCEPT RATCHET
-247 broad handlers report nothing at all. The record is tests/except_silent.json;
+237 broad handlers report nothing at all. The record is tests/except_silent.json;
 the burn-down is T4.8.
 ### QT CONTRACT
-Ran 5 tests in 0.550s
+Ran 5 tests in 0.587s
 
 OK
 ### SURFACE TOUR
 surface check OK: 30 surfaces x 4 theme-and-language runs, all drawn
 ### AI SYNC
 OK
-### COMPILE
-compile exit 0
-### DIFF CHECK
-diff --check: clean
 ### PROVENANCE
-82 commits since 047f4a6; 0 modified files
+87 commits since 047f4a6
 ```
 
 The record behind the ratchet, measured out of the commits rather than remembered:
@@ -117,15 +147,21 @@ The record behind the ratchet, measured out of the commits rather than remembere
 | 4. the picker left deaf | `ce78e76` | 265 | 167 |
 | 5. features that vanished | `68d5473` | 251 | 158 |
 | 6. the guard that never ran | `875c840` | 247 | 157 |
+| 7. the prompt never kept | `4d267a7` | 245 | 156 |
+| 8. the Stop that could not be read | `3a9473d` | 237 | 149 |
+| 9. a class checked and found clean | — | 237 | 149 |
 
-Six slices, and what they found is the argument for the whole exercise: a data-losing prune, a
-settings file that stopped the application from starting, a hardware claim nothing had
-verified, a picker left deaf, twelve features that vanished without a word, and an
-unsaved-edits guard that had never once run since it was written.
+Nine slices, and what they found is the argument for the whole exercise: a data-losing prune, a
+settings file that stopped the application from starting, a hardware claim nothing had verified,
+a picker left deaf, twelve features that vanished without a word, an unsaved-edits guard that
+had never once run since it was written, a prompt the user believed was saved, and a Stop that a
+failed check reported as never having been asked for.
 
-Two of those were found by *making a failure speak* and then reading what it said in the next
-run's output. That is worth stating plainly: the ratchet's value is not the number going down,
-it is that a silent `except` is a place where the product's own reports cannot reach anyone.
+A theme is worth naming, because it recurred in three of those: **an unknown answered as a
+definite**. A measurement that failed became a fact about the hardware; a check that failed
+became a fact about the user; a read that failed became a zero in the history. Where this
+codebase is at its best is where it says "I could not tell" instead — and that is now what these
+nine places do.
 
 # VERIFICATION — the settings read that stopped pretending to know
 
