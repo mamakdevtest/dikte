@@ -1024,23 +1024,34 @@ class Dikte:
         self._coordinator_notify(kind, "processing", widget)
 
     def _capture_is_available(self, requested):
-        """Refuse a newer capture before it can disturb an active meeting."""
+        """Refuse a newer capture before it can disturb an active meeting.
+
+        `None` from the probe means "could not tell", and it is not the same answer as
+        "no": the capture is still declined — disturbing a running meeting is the worse
+        mistake — but the user is told which of the two happened, because "this device
+        cannot be shared" is a claim about their hardware that Dikte has not verified.
+        """
         if self.meeting_state != M_RECORDING:
             return True
         try:
             shared = bool(audio.can_concurrent_capture())
-        except Exception:
-            shared = False
+        except Exception as exc:
+            print(f"dikte: could not tell whether the device can be shared ({exc})",
+                  file=sys.stderr)
+            shared = None
         if shared:
             return True
         tray = getattr(self, "tray", None)
         if tray is not None:
-            tray.showMessage(
-                "Dikte",
-                t("Cannot start {activity} while the meeting microphone is active on this device. "
-                  "Finish the meeting or choose a shareable input.", activity=requested),
-                QSystemTrayIcon.MessageIcon.Warning, 10000,
-            )
+            message = (t("Cannot start {activity} while the meeting microphone is active on "
+                         "this device. Finish the meeting or choose a shareable input.",
+                         activity=requested)
+                       if shared is not None else
+                       t("Dikte could not tell whether this device can be shared, so it did "
+                         "not start {activity} while the meeting microphone is active. "
+                         "Finish the meeting, or try again.", activity=requested))
+            tray.showMessage("Dikte", message,
+                             QSystemTrayIcon.MessageIcon.Warning, 10000)
         return False
 
     def start(self):
@@ -1358,13 +1369,20 @@ class Dikte:
         if self.recording:
             try:
                 shared = bool(audio.can_concurrent_capture())
-            except Exception:
-                shared = False
+            except Exception as exc:
+                # Same distinction as `_capture_is_available`: unknown declines, but it
+                # says "unknown" rather than blaming the device.
+                print(f"dikte: could not tell whether the device can be shared ({exc})",
+                      file=sys.stderr)
+                shared = None
             if not shared:
                 self.tray.showMessage(
                     "Dikte",
                     t("Cannot start meeting while another voice capture is active on this device. "
-                      "Finish it or choose a shareable input."),
+                      "Finish it or choose a shareable input.") if shared is not None else
+                    t("Dikte could not tell whether this device can be shared, so the meeting "
+                      "was not started while another capture is active. Finish it, or try "
+                      "again."),
                     QSystemTrayIcon.MessageIcon.Warning, 10000,
                 )
                 return

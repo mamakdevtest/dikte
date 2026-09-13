@@ -759,8 +759,11 @@ class Pipeline(QObject):
                             error_stage=stage,
                             error_message=str(exc),
                         )
-                    except Exception:
-                        pass
+                    except Exception as record_exc:
+                        # The user is told the job failed (the emit below); what is missing is
+                        # the durable record of it, so the jobs list will show a stale status.
+                        print(f"dikte: could not record that job {job_id} failed "
+                              f"({record_exc})", file=sys.stderr)
             self.failed.emit(str(exc))
         except (OSError, voice_jobs.PersistenceError) as exc:
             # Derived output may exist in memory, but cannot be called a

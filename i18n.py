@@ -1236,4 +1236,7 @@ TR = {
     # ui/pages/dashboard.py — the setup button
     'Set up': 'Kur',
     'Microphone, engine, and one real dictation.': 'Mikrofon, motor ve gerçek bir dikte.',
+    # dikte.py — the device that could not be asked
+    'Dikte could not tell whether this device can be shared, so it did not start {activity} while the meeting microphone is active. Finish the meeting, or try again.': 'Dikte bu cihazın paylaşılıp paylaşılamayacağını anlayamadı; toplantı mikrofonu etkinken {activity} başlatılmadı. Toplantıyı bitir ya da yeniden dene.',
+    'Dikte could not tell whether this device can be shared, so the meeting was not started while another capture is active. Finish it, or try again.': 'Dikte bu cihazın paylaşılıp paylaşılamayacağını anlayamadı; başka bir kayıt etkinken toplantı başlatılmadı. Onu bitir ya da yeniden dene.',
 }

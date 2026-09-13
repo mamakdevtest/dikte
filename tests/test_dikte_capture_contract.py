@@ -35,6 +35,40 @@ class NonsharedCapture(DikteTest):
         shell.overlay.show_recording.assert_not_called()
 
 
+class AnUnknownDevice(DikteTest):
+    """A probe that fails is not an answer of "no".
+
+    `can_concurrent_capture()` returning False means this device cannot be shared; raising
+    means Dikte could not find out. Both decline the newer capture — disturbing a running
+    meeting is the worse mistake — but only the first may tell the user their hardware
+    cannot do it. The fallback used to be `False`, so an unreadable probe blamed the device.
+    """
+
+    def shell_with_active_meeting(self):
+        shell = object.__new__(dikte.Dikte)
+        shell.conf = self.config()
+        shell.meeting_state = dikte.M_RECORDING
+        shell.tray = mock.Mock()
+        return shell
+
+    def test_a_probe_that_fails_is_not_reported_as_a_device_that_cannot_share(self):
+        shell = self.shell_with_active_meeting()
+        with mock.patch.object(audio, "can_concurrent_capture",
+                               side_effect=OSError("no pactl")):
+            refused = dikte.Dikte._capture_is_available(shell, "dictation")
+        self.assertFalse(refused, "unknown still declines: the meeting comes first")
+        message = shell.tray.showMessage.call_args[0][1]
+        self.assertIn("could not tell", message)
+        self.assertNotIn("Cannot start", message)
+
+    def test_a_device_that_really_cannot_be_shared_says_so(self):
+        shell = self.shell_with_active_meeting()
+        with mock.patch.object(audio, "can_concurrent_capture", return_value=False):
+            refused = dikte.Dikte._capture_is_available(shell, "dictation")
+        self.assertFalse(refused)
+        self.assertIn("Cannot start", shell.tray.showMessage.call_args[0][1])
+
+
 class LivePreviewEvidence(DikteTest):
     """The recording is handed over with what the preview already heard.
 

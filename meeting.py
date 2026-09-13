@@ -213,8 +213,14 @@ class MeetingPipeline(QObject):
                     txt = doc_path.read_text(encoding="utf-8")
                     if TRANSCRIPT_MARKER in txt and read_transcript(txt).strip():
                         _keep_transcribed = True
-            except Exception:
-                pass
+            except Exception as probe_exc:
+                # A transcript that cannot be read back is not the same answer as "there is
+                # none": the meeting is marked failed either way (the pipeline did fail), but
+                # a row that says failed while the transcript sits on disk is worth a line.
+                # Not named `exc`: the enclosing handler's failure reason is recorded below
+                # and shadowing it would put the probe's error where the pipeline's belongs.
+                print(f"dikte: could not tell whether {base} already had a transcript "
+                      f"({probe_exc})", file=sys.stderr)
             if _keep_transcribed:
                 cfg.update_meeting(base, status="transcribed", error=str(exc))
             else:

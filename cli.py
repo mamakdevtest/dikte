@@ -638,12 +638,18 @@ def cmd_config_set(opts):
                          else "cleanup_prompt")
                 try:
                     other_empty = not str(conf[other]).strip()
-                except Exception:
-                    other_empty = True
+                except Exception as exc:
+                    # `None` is not `True`: deciding the flag from a value that could not be
+                    # read is how a failure switches a custom prompt off, and the flag is
+                    # better left exactly as the user had it.
+                    print(f"dikte: could not read {other} to work out whether a custom prompt "
+                          f"is set ({exc})", file=sys.stderr)
+                    other_empty = None
                 if other_empty:
                     conf["cleanup_custom_enabled"] = False
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"dikte: could not work out whether cleanup uses a custom prompt ({exc})",
+              file=sys.stderr)
     try:
         conf.save()
     except OSError as exc:

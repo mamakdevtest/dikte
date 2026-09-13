@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 279,
+  "count": 273,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -14,7 +14,6 @@
     "chunked_session.py:ChunkedLiveRecorder.stop": 2,
     "cli.py:<module>": 1,
     "cli.py:_safe_print": 1,
-    "cli.py:cmd_config_set": 2,
     "config.py:<module>": 1,
     "config.py:Config._clamped_ai_levels": 1,
     "config.py:Config._clamped_edit_level": 1,
@@ -23,7 +22,6 @@
     "dikte.py:Dikte.__init__": 3,
     "dikte.py:Dikte._apply_settings": 3,
     "dikte.py:Dikte._build_tray": 3,
-    "dikte.py:Dikte._capture_is_available": 1,
     "dikte.py:Dikte._current_seconds": 1,
     "dikte.py:Dikte._new_result_overlay": 1,
     "dikte.py:Dikte._on_error": 1,
@@ -40,7 +38,6 @@
     "dikte.py:Dikte.retry_agent_from_job": 1,
     "dikte.py:Dikte.retry_meeting_from_base": 1,
     "dikte.py:Dikte.retry_voice_job": 1,
-    "dikte.py:Dikte.start_meeting": 1,
     "dikte.py:Dikte.stop": 1,
     "dikte.py:Dikte.stop_ask": 1,
     "dikte.py:HintMenu.paintEvent": 1,
@@ -50,7 +47,6 @@
     "hotkey.py:WindowsHotkey._pump": 1,
     "i18n.py:_windows_locale": 1,
     "livetext.py:LiveTranscriber._probe": 1,
-    "meeting.py:MeetingPipeline._work": 1,
     "meeting.py:MeetingPipeline.run": 1,
     "meeting.py:MeetingPipeline.stop": 1,
     "overlay.py:<module>": 1,
@@ -180,7 +176,7 @@
     "ui/widgets.py:SettingRow.setNarrow": 1,
     "worker.py:Pipeline._discard": 1,
     "worker.py:Pipeline._retry_cleanup_only": 3,
-    "worker.py:Pipeline._work": 5
+    "worker.py:Pipeline._work": 4
   },
   "reasons": {
     "assistant.py:_ask_antigravity": {
@@ -211,9 +207,6 @@
     "cli.py:_safe_print": {
       "unclassified": 1
     },
-    "cli.py:cmd_config_set": {
-      "value of the wrong shape": 2
-    },
     "config.py:<module>": {
       "optional widget": 1
     },
@@ -241,9 +234,6 @@
       "optional import": 1,
       "optional widget": 1,
       "teardown that is already done": 1
-    },
-    "dikte.py:Dikte._capture_is_available": {
-      "value of the wrong shape": 1
     },
     "dikte.py:Dikte._current_seconds": {
       "worker that is gone": 1
@@ -294,9 +284,6 @@
     "dikte.py:Dikte.retry_voice_job": {
       "optional import": 1
     },
-    "dikte.py:Dikte.start_meeting": {
-      "value of the wrong shape": 1
-    },
     "dikte.py:Dikte.stop": {
       "worker that is gone": 1
     },
@@ -323,9 +310,6 @@
     },
     "livetext.py:LiveTranscriber._probe": {
       "optional import": 1
-    },
-    "meeting.py:MeetingPipeline._work": {
-      "value of the wrong shape": 1
     },
     "meeting.py:MeetingPipeline.run": {
       "unclassified": 1
@@ -754,8 +738,7 @@
     "worker.py:Pipeline._work": {
       "optional widget": 1,
       "clipboard restore that is best effort": 2,
-      "a target the settings may not have": 1,
-      "value of the wrong shape": 1
+      "a target the settings may not have": 1
     }
   }
 }
