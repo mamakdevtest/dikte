@@ -196,7 +196,9 @@ Tek bir tasarım yok; üç tane var ve üçü de hâlâ depoda:
    nesli*. Mevcut yapıda 226 px kenar çubuğu ve on bir sayfa var.
    **README artık var olmayan bir ürünü tanıtıyor.** *(13.09.2026'da düzeltildi: yedi
    kare de sevk edilen yapıdan `tools/shoot_ui.py --readme` ile yeniden çekildi —
-   koyu, İngilizce, 1475x1489, değiştirilmeden önce gözle incelendi.)*
+   koyu, İngilizce, 1475x1489, değiştirilmeden önce gözle incelendi. 13.09.2026'da
+   sekizincisi katıldı: `docs/setup.webp`, ilk-kurulum sihirbazının mikrofon adımı;
+   fixtür cihaz listesiyle çizildi, yani resim alındığı kum havuzunun değil ürünün.)*
 3. **`ui/tokens.py`, gerçekte dağıtılan** — altı *yalnızca koyu* renk odası
    (`blue`, `green`, `violet`, `orange`, `pink`, `teal`), her biri doygun bir
    vurguyla karıştırılmış kömür tabanlı, artı erişilemeyen gerçek bir `LIGHT`
@@ -469,9 +471,11 @@ Her faz için pazarlıksız, `ai/workflows.md`'den devralınmış:
 - Her faz gerçek komut çıktısını `docs/ai/VERIFICATION.md`'ye yazar.
   Tahmini PASS yok.
 - Ekran turu yeniden alınır ve incelenir; varsayılmaz.
-  - İki README yedi ayar penceresi karesi gömüyor ve bunlar **üretiliyor, elle
-    yapılmıyor**: `python3.14 tools/shoot_ui.py --readme` onları sevk edilen yapıdan
-    `docs/settings-*.webp` içine yeniden çekiyor (koyu, İngilizce, 1475x1489). Yeniden
+  - İki README sekiz kare gömüyor — ayar penceresinin sayfaları ve ilk-kurulum
+    sihirbazı — ve bunlar **üretiliyor, elle yapılmıyor**:
+    `python3.14 tools/shoot_ui.py --readme` onları sevk edilen yapıdan
+    `docs/settings-*.webp` ve `docs/setup.webp` içine yeniden çekiyor (koyu, İngilizce,
+    1475x1489). Yeniden
     koşmak her arayüz değişikliğinin parçası ve kareler commit edilmeden önce gözle
     incelenir — `--check` bir yüzeyin *çizildiğini* sorar, oysa bir sayfa kusursuz
     çizilip yanlış bir şey söyleyebilir (13.09.2026: API sayfası tek bir model dosyası

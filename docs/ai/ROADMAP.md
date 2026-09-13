@@ -195,7 +195,10 @@ There is not one design; there are three, all still present in the repo:
    generation*. The current build has a 226 px sidebar and eleven pages. **The
    README advertises a product that no longer exists.** *(Fixed 2026-09-13: all
    seven frames re-shot from the shipping build with `tools/shoot_ui.py --readme`
-   — dark, English, 1475x1489, reviewed by eye before replacing them.)*
+   — dark, English, 1475x1489, reviewed by eye before replacing them. An eighth
+   joined them on 2026-09-13: `docs/setup.webp`, the first-run wizard's microphone
+   step, drawn with a fixture device list so the picture is of the product and not
+   of the sandbox it was taken in.)*
 3. **`ui/tokens.py`, what actually ships** — six *dark-only* colour rooms
    (`blue`, `green`, `violet`, `orange`, `pink`, `teal`), each a charcoal base
    mixed with a saturated accent, plus a real `LIGHT` palette that is unreachable.
@@ -466,9 +469,11 @@ Non-negotiable for every phase, inherited from `ai/workflows.md`:
 - Every phase records its real command output in `docs/ai/VERIFICATION.md`.
   No predicted PASS.
 - The screenshot tour is re-captured and reviewed, not assumed.
-  - The two READMEs embed seven frames of the settings window, and they are **generated,
+  - The two READMEs embed eight frames — the settings window's pages and the first-run
+    wizard — and they are **generated,
     not hand-made**: `python3.14 tools/shoot_ui.py --readme` re-shoots them from the
-    shipping build into `docs/settings-*.webp` (dark, English, 1475x1489). Re-running it
+    shipping build into `docs/settings-*.webp` and `docs/setup.webp` (dark, English,
+    1475x1489). Re-running it
     belongs to any UI change, and the frames are looked at before they are committed —
     `--check` asks whether a surface was *drawn*, and a page can be drawn perfectly while
     saying something false (2026-09-13: the API page rendered three answers about one
