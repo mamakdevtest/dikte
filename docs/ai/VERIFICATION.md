@@ -215,13 +215,13 @@ output. This is the snapshot a reviewer (or a push) should start from.
 
 ```
 ### SUITE
-Ran 1628 tests in 103.679s
+Ran 1631 tests in 112.645s
 
 OK
 ### I18N GAPS
 0 strings reach t() with no Turkish entry:
-### EXCEPT RATCHET
-237 broad handlers report nothing at all. The record is tests/except_silent.json;
+### RATCHET
+227 broad handlers report nothing at all. The record is tests/except_silent.json;
 the burn-down is T4.8.
 ### QT CONTRACT
 Ran 5 tests in 0.587s
@@ -232,7 +232,7 @@ surface check OK: 30 surfaces x 4 theme-and-language runs, all drawn
 ### AI SYNC
 OK
 ### PROVENANCE
-87 commits since 047f4a6
+98 commits since 047f4a6
 ```
 
 The record behind the ratchet, measured out of the commits rather than remembered:
@@ -249,12 +249,18 @@ The record behind the ratchet, measured out of the commits rather than remembere
 | 7. the prompt never kept | `4d267a7` | 245 | 156 |
 | 8. the Stop that could not be read | `3a9473d` | 237 | 149 |
 | 9. a class checked and found clean | — | 237 | 149 |
+| 10. the buttons that did nothing | `30fd1cf` | 232 | 146 |
+| 11. the numbers that omitted rows | `057f62d` | 228 | 145 |
+| 12. N7, the panel and the language | `2a0e9b0` | 227 | 144 |
 
-Nine slices, and what they found is the argument for the whole exercise: a data-losing prune, a
-settings file that stopped the application from starting, a hardware claim nothing had verified,
-a picker left deaf, twelve features that vanished without a word, an unsaved-edits guard that
-had never once run since it was written, a prompt the user believed was saved, and a Stop that a
-failed check reported as never having been asked for.
+Twelve slices in all — nine of them burn-down, then three that read what the burn-down turned up
+(N7, the Apple decision, and the two decision tables). What they found is the argument for the
+exercise: a data-losing prune, a settings file that stopped the application from starting, a
+hardware claim nothing had verified, a picker left deaf, twelve features that vanished without a
+word, an unsaved-edits guard that had never once run since it was written, a prompt the user
+believed was saved, a Stop that a failed check reported as never having been asked for, buttons
+wired to names that do not exist, averages that described fewer recordings than the count beside
+them, and a panel that decided the process language from disk.
 
 A theme is worth naming, because it recurred in three of those: **an unknown answered as a
 definite**. A measurement that failed became a fact about the hardware; a check that failed
