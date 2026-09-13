@@ -56,9 +56,11 @@ Severity: **S1** blocks a daily driver · **S2** visible degradation · **S3** p
 | L2 | S1 | `"Overlay/Indicator"` is a **hardcoded English literal** used as both the nav label and the page title. | `settings_ui.py:507`, `ui/pages/overlay.py:59` |
 | L3 | S2 | The sidebar footer hardcodes `"Local"` and `"Ready"`. Only `"Ready: {model}"` exists in the table. | `i18n.t("Ready") == "Ready"`, `i18n.t("Local") == "Local"` |
 | L4 | S2 | Untranslated strings include **runtime states and destructive confirmations**: `Checking…`, `Downloading…`, `Download stopped.`, `Fetching the model list…`, `Delete model`, `Delete {name} from this machine?`. These are exactly the strings a user must understand before losing data. | probe output |
-| L5 | S2 | **Existing Turkish entries read badly or inconsistently.** `"Runs on" → "Şunun üstünde çalışır"` is a fragment used as a form label. `"Prompts" → "Promptlar"` while screenshots render `Promtlar`/`Promptlar`. The `"Local"` chip is untranslated next to `"Local dictation" → "Yerel dikte"`. | `i18n.py:531,993,897` |
+| L5 | S2 | **Existing Turkish entries read badly.** `"Runs on" → "Şunun üstünde çalışır"` was a sentence fragment used as a form label in three pages (Agent, Meeting, API); now `"Çalıştığı yer"`. The `"Local"` chip was untranslated next to `"Local dictation" → "Yerel dikte"`; now `"Yerel"`. **Correction:** the survey also claimed a `Promtlar`/`Promptlar` spelling split — `Promtlar` appears nowhere in the repository, it was a misreading of a screenshot. The table has always said `Promptlar`. | `i18n.py:531,993`; corrected 2026-09-12 |
 | L6 | S1 | **The i18n guard was a count, not a set.** `test_user_visible_strings_reach_t` asserted `len(missing) <= 104` over a scan that measured 102 — two units of slack, no way to tell a new gap from an old one (swapping one untranslated string for another keeps the number), no tightening when a gap closed, and no coverage of the `_t` alias, which is how `Local` and `Ready` — shown in the sidebar of every page — stayed invisible. Replaced in Phase 0 with an exact-set record. | `tests/test_i18n.py`, `tests/i18n_untranslated.json` |
-| L7 | S3 | No locale-aware number or date formatting: durations render `3.2s` / `2.0 sn` (dot decimal) in Turkish, history rows show ISO `2026-08-21 12:05:00`. | `blue_tr_page00.png`, `blue_tr_page09.png` |
+| L7 | S3 | No locale-aware number or date formatting: durations rendered `3.2s` / `2.0 sn` (dot decimal) in Turkish, history rows showed ISO `2026-08-21 12:05:00`. **Fixed in Phase 1** by `ui/format.py`. | `blue_tr_page00.png`, `blue_tr_page09.png` |
+| L8 | S2 | **The translation table carries entries nothing asks for.** Two static measurements disagree because a key often travels through a variable: scanning call sites says 131 keys have no `t("literal")` caller, scanning every string literal in product code says 69. Five were confirmed dead by supersession and deleted in Phase 1 (`"No KDE shortcut installed."` ×3, `"Registered in KDE: {shortcut}"`, the pre-`{retry}` minutes message). The rest need runtime coverage — a static scan cannot answer this, and both numbers over-report. | Phase 1 deletion; instrument proposed in Phase 6 |
+| L9 | S2 | **One source string was written in Turkish, not English.** `ui/pages/dashboard.py` passed `t("Genel bakış — son dikte ve toplantılarınız")`, and the table carried a matching entry that mapped the Turkish string to itself — so the *English* window showed Turkish while the Turkish window looked correct, and the gap guard could not see it (it asks whether an entry exists, and one did). Fixed at the call site, and the new guard then immediately found a **second, pre-existing instance** of the same entry that the fix had missed. | `tests/test_i18n.py::test_no_source_string_is_already_turkish` |
 
 ### 2.3 UI & visual (U)
 
@@ -85,7 +87,7 @@ Findings below are from the 60 captured frames, reviewed surface by surface.
 |---|---|---|---|
 | X1 | S1 | **There is no distributable build for any platform.** Install is a source checkout plus a developer Python: `install.sh` writes shortcuts and expects `dikte` on `PATH`; `install.ps1` registers a Start-menu entry but still runs `pythonw dikte.py`. No `.exe`, `.dmg`/`.app`, AppImage or Flatpak. For a daily-driver utility this is the largest adoption blocker. | `install.sh`, `install.ps1`, no packaging config |
 | X2 | S1 | **The Linux overlay depends on XWayland.** `dikte.py:41` sets `QT_QPA_PLATFORM=xcb` so the indicator can be placed in a screen corner. On a Wayland-only session without XWayland the indicator cannot appear at all, and fractional scaling is unreliable through that path. | `dikte.py:41`, `README.md:236` |
-| X3 | S1 | **Shortcut labels are platform-agnostic and the helper text is platform-specific the wrong way round.** The UI offers `Meta+A` / `Meta+M` on every platform, while helper copy hardcodes KDE (`KDE kısayolu olarak kur`) or macOS wording. Windows wants `Win`, macOS wants `Cmd`/`⌘`; the KDE copy is meaningless on Windows. | `ui/pages/agent.py`, `ui/pages/shortcuts.py`, `i18n.py:386` |
+| X3 | S3 | **Corrected on 2026-09-12: this was largely wrong.** The shortcut field already picks its suggestion list per platform (`SHORTCUTS` / `WIN_SHORTCUTS` / `MAC_SHORTCUTS`, chosen by `hotkey.desktop_name()`), both shortcut defaults are empty so a fresh install shows no hint at all, and the KDE-only explanation is gated on `hotkey.shortcut_needs_restart()` with a separate macOS branch. The `Meta+A` the survey objected to came from `tools/shoot_ui.py`'s own fixture data, not from the product — **a screenshot harness manufactured a finding about the product.** What survives is L8: three superseded KDE-specific keys nothing asked for. | `settings_ui.py:127-141`, `hotkey.py:desktop_name`, `tools/shoot_ui.py:CHANGED` |
 | X4 | S2 | **Nothing builds or launches a frozen artifact on any OS.** CI runs the test suite on Linux, Windows **and macOS** (3.11–3.13; 3.14 added in Phase 0), so the macOS code paths are exercised — what no job does is produce or start a distributable build, which is why X1 stays open. | `.github/workflows/tests.yml` |
 | X5 | S2 | The suite's Windows-only code path has a history of being exercised on Linux (`ctypes.windll`); it is currently mocked away rather than run on Windows in CI. | `docs/ai/VERIFICATION.md` |
 
@@ -232,19 +234,21 @@ of the swallowed failures live in one file) and H5 (the dashboard page bypasses
 `AppShell.add_page()` entirely, which is why the page count had to be derived
 from two call shapes rather than one).
 
-### Phase 1 — Localization closure (2–3 d)
+### Phase 1 — Localization closure — **EXECUTED 2026-09-12**
 
-| Task | What | Files |
+| Task | Delivered | How it was shown to work |
 |---|---|---|
-| T1.1 | Translate all 103 strings, including runtime states and destructive confirmations (L4) | `i18n.py` |
-| T1.2 | Delete the hardcoded `"Overlay/Indicator"` literal; give the page a real translated name (L2) | `settings_ui.py`, `ui/pages/overlay.py`, `i18n.py` |
-| T1.3 | Translate the sidebar chips `Local` / `Ready`, and label the version (L3, U7) | `ui/shell.py`, `i18n.py` |
-| T1.4 | **Review the Turkish, not just fill the table.** Fix `"Şunun üstünde çalışır"` as a label, standardise one form of *prompt*, make the chip and its noun agree (L5) | `i18n.py` |
-| T1.5 | Locale-aware formatting helper: decimal/thousands separators, duration, ISO→locale date. One module, one convention (L7) | new `ui/format.py`, `ui/pages/history.py`, `ui/pages/dashboard.py` |
-| T1.6 | Per-platform shortcut labels and helper copy: `Win` / `Cmd ⌘` / `Ctrl`, and KDE-specific copy shown only on KDE (X3) | `ui/pages/agent.py`, `ui/pages/shortcuts.py`, `hotkey.py`, `i18n.py` |
+| T1.1 | All 104 strings translated, in a dated block at the end of the table, grouped by source module. The block says where new strings should go instead (the topical sections above). | `python tools/i18n_gaps.py` → **`0 strings reach t() with no Turkish entry`**; the record is empty and the guard fails if it refills |
+| T1.2 | The English source is now `"Indicator"` rather than the slash-joined `"Overlay/Indicator"`, in both the nav label and the page title; Turkish `"Gösterge"`. | `settings_ui.py:507`, `ui/pages/overlay.py:59`; confirmed in the re-shot frame |
+| T1.3 | `"Local"` → `"Yerel"`, `"Ready"` → `"Hazır"`, and the unlabelled `1.0` now carries a `"Sürüm"` tooltip. | re-shot frame: the sidebar footer reads `whisper-1 · Yerel · ● Hazır · 1.0` |
+| T1.4 | `"Runs on" → "Çalıştığı yer"` (it is a form label in three pages, not a sentence). The *prompt* sub-item turned out to be a false premise — see §9. | `i18n.py:531` |
+| T1.5 | New `ui/format.py` (`decimal_separator`, `number`, `seconds`, `when`) plus `meeting.format_when` extended to read stamps that carry seconds, so month names are not duplicated. Applied to the history list, the history details dialog and the dashboard. | re-shot frames read `21 Ağu 2026 12:05 (2,0 sn)`, `3,2 sn`, `10 dk` — was `2026-08-21 12:05:00`, `3.2s` |
+| T1.6 | **Nothing to do** — the finding was wrong. See the corrected X3. | `settings_ui.py:127-141` |
+| — | Two defects found while doing the work: **L8** (dead entries) and **L9** (a Turkish string used as the English source). L9 gained a permanent guard. | `tests/test_i18n.py::test_no_source_string_is_already_turkish`, proven red before the fix landed |
 
-**Verification:** T0.3's guard passes with an empty opt-out list; screenshot tour
-re-run in `tr` and every frame read as Turkish; `python -m unittest discover` green.
+**Verification:** gap record empty; the tour re-shot in `tr` and `en` and read
+frame by frame — every remaining English string in those frames is data (a model
+id, a provider id, a fixture's meeting title), not interface text.
 
 ### Phase 2 — Design system (4–6 d) — *blocked on Q2*
 
@@ -427,7 +431,63 @@ surface check, blank:   ['blank: blue_tr_overlay_rec.png']
 
 Graph: `5372 nodes, 9509 edges, 311 communities`, `Built from commit: ffe8a5c7`.
 
-### Corrections made to this document during Phase 0
+### 2026-09-12 — Phase 1 executed
+
+Files touched (9 modified, 1 added):
+
+| File | Change |
+|---|---|
+| `i18n.py` | 105 entries added in a dated block; `"Runs on"` relabelled; five dead entries deleted |
+| `ui/format.py` | new — `decimal_separator`, `number`, `seconds`, `when` |
+| `meeting.py` | `format_when` now reads stamps that carry seconds, so history rows and meeting rows share one implementation |
+| `settings_ui.py` | the history list and the history details dialog go through `ui/format`; the indicator page is named `"Indicator"` |
+| `ui/pages/dashboard.py` | the subtitle is English again (see L9); durations and stamps formatted; `t("—")` unwrapped |
+| `ui/pages/overlay.py` | page title renamed to `"Indicator"` |
+| `ui/shell.py` | the version number carries a `"Sürüm"` tooltip |
+| `tests/test_i18n.py` | new guard: a source string may not contain a Turkish letter |
+| `tests/i18n_untranslated.json` | the record is now empty |
+
+Raw results:
+
+```
+$ python3.14 tools/i18n_gaps.py
+0 strings reach t() with no Turkish entry:
+
+$ python3.14 tools/shoot_ui.py --out /tmp/dikte-p1 --themes blue --langs tr,en --check
+wrote 60 PNGs to /tmp/dikte-p1
+surface check OK: 30 surfaces x 2 theme-and-language runs, all drawn
+```
+
+Red proof, before the fix landed:
+
+```
+$ python3.14 -m unittest tests.test_i18n.Table.test_no_source_string_is_already_turkish
+AssertionError: Lists differ: [] != ['Genel bakış — son dikte ve toplantılarınız']
+```
+
+And the guard earned its keep on its first full run: the suite came back
+`1478 tests, FAILED (failures=1)` because the table carried a *second* copy of
+that Turkish key — one that mapped the Turkish string to itself and had been
+there long before the survey. The call-site fix alone would have left it. That is
+the whole argument for a guard rather than a one-off cleanup.
+
+Full suite after the phase: `Ran 1478 tests in 90.237s — OK` (was 1473).
+
+Read off the re-shot Turkish frames, not assumed:
+
+```
+history row      21 Ağu 2026 12:05 (2,0 sn)      was  2026-08-21 12:05:00 (2.0 sn)
+dashboard card   3,2 sn ort.  ·  10 dk           was  3.2s avg  ·  10 min
+sidebar footer   whisper-1 · Yerel · ● Hazır     was  whisper-1 · Local · ● Ready
+nav item         Gösterge                        was  Overlay/Indicator
+```
+
+Every English string still visible in those frames is data rather than interface
+text: `whisper-1` (a model id), `openai` / `ask` (provider ids in the donut
+legend), and the fixture's own `Shot meeting` and `What is the capital of
+Turkey?`.
+
+### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
 where it was wrong:
@@ -444,7 +504,25 @@ where it was wrong:
   repository forbids. Delivered as a presence-and-non-blankness check instead,
   with the reason written into the tool.
 
+And during Phase 1:
+
+- **X3 was largely wrong**, and wrong because of the survey's own method. It
+  claimed the UI offers `Meta+A` on every platform; the shortcut field has always
+  picked its list per platform, both defaults are empty, and the KDE-only copy is
+  gated. The `Meta+A` came from `tools/shoot_ui.py`'s fixture dictionary, so the
+  harness manufactured a product finding. Corrected in the table; the lesson is
+  that a screenshot proves what the *fixture* renders, not what a user sees.
+- **The `Promtlar` half of L5 was a misreading.** `Promtlar` appears nowhere in
+  the repository. The vision pass read `Promptlar` wrong and the survey repeated
+  it as a defect. Corrected.
+- **T1.4's *prompt* sub-item was a false premise** for the same reason: the table
+  has always said `Promptlar`. Nothing was standardised because nothing was
+  inconsistent.
+- **T1.6 evaporated** on inspection — see X3.
+- **The plan's framing of L1 was right and its number was low**: 104, not 103,
+  once the `_t` alias was followed.
+
 ---
 
-*Begun from a read-only survey of `master @ ffe8a5c` on 2026-09-12; Phase 0
+*Begun from a read-only survey of `master @ ffe8a5c` on 2026-09-12; Phases 0 and 1
 executed the same day. Turkish twin: [`ROADMAP-tr.md`](ROADMAP-tr.md).*

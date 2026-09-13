@@ -56,9 +56,11 @@ değil.
 | L2 | S1 | `"Overlay/Indicator"` **koda gömülü İngilizce bir sabit**; hem menü etiketi hem sayfa başlığı olarak kullanılıyor. | `settings_ui.py:507`, `ui/pages/overlay.py:59` |
 | L3 | S2 | Kenar çubuğu alt bilgisi `"Local"` ve `"Ready"` metinlerini gömülü tutuyor. Tabloda yalnızca `"Ready: {model}"` var. | `i18n.t("Ready") == "Ready"`, `i18n.t("Local") == "Local"` |
 | L4 | S2 | Çevrilmemiş metinler arasında **çalışma durumları ve yıkıcı onaylar** var: `Checking…`, `Downloading…`, `Download stopped.`, `Fetching the model list…`, `Delete model`, `Delete {name} from this machine?`. Bunlar tam olarak kullanıcının veri kaybetmeden önce anlaması gereken metinler. | ölçüm çıktısı |
-| L5 | S2 | **Mevcut Türkçe karşılıklar kötü ya da tutarsız.** `"Runs on" → "Şunun üstünde çalışır"` form etiketi olarak kullanılan bir cümle parçası. `"Prompts" → "Promptlar"` iken ekran görüntülerinde `Promtlar`/`Promptlar` karışık. `"Local"` çipi çevrilmemiş, hemen yanında `"Local dictation" → "Yerel dikte"` var. | `i18n.py:531,993,897` |
+| L5 | S2 | **Mevcut Türkçe karşılıklar kötü.** `"Runs on" → "Şunun üstünde çalışır"` üç sayfada (Ajan, Toplantı, API) form etiketi olarak kullanılan bir cümle parçasıydı; artık `"Çalıştığı yer"`. `"Local"` çipi çevrilmemişti, hemen yanında `"Local dictation" → "Yerel dikte"` vardı; artık `"Yerel"`. **Düzeltme:** tarama ayrıca `Promtlar`/`Promptlar` yazım ikiliği iddia ediyordu — `Promtlar` depoda hiçbir yerde geçmiyor, ekran görüntüsünün yanlış okunmasıydı. Tablo baştan beri `Promptlar` diyor. | `i18n.py:531,993`; 2026-09-12'de düzeltildi |
 | L6 | S1 | **i18n korkuluğu küme değil sayaçtı.** `test_user_visible_strings_reach_t` 102 ölçen bir tarama üzerinde `len(missing) <= 104` doğruluyordu — iki birim gevşeklik, yeni bir boşluğu eskisinden ayırmanın imkânı yok (bir çevrilmemiş metni başkasıyla değiştirmek sayıyı korur), boşluk kapandığında sıkma yok ve `_t` takma adı kapsam dışı — her sayfanın kenar çubuğunda görünen `Local` ve `Ready` tam da bu yüzden görünmez kaldı. Faz 0'da tam-küme kaydıyla değiştirildi. | `tests/test_i18n.py`, `tests/i18n_untranslated.json` |
-| L7 | S3 | Yerel sayı/tarih biçimlendirmesi yok: süreler Türkçede `3.2s` / `2.0 sn` (nokta ondalık) çıkıyor, geçmiş satırları ISO `2026-08-21 12:05:00` gösteriyor. | `blue_tr_page00.png`, `blue_tr_page09.png` |
+| L7 | S3 | Yerel sayı/tarih biçimlendirmesi yok: süreler Türkçede `3.2s` / `2.0 sn` (nokta ondalık) çıkıyordu, geçmiş satırları ISO `2026-08-21 12:05:00` gösteriyordu. **Faz 1'de düzeltildi**, `ui/format.py` ile. | `blue_tr_page00.png`, `blue_tr_page09.png` |
+| L8 | S2 | **Çeviri tablosu, kimsenin sormadığı girdiler taşıyor.** İki statik ölçüm ayrışıyor, çünkü anahtar sık sık bir değişken üzerinden geliyor: çağrı yerlerini taramak 131 anahtarın `t("literal")` çağıranı olmadığını söylüyor, ürün kodundaki tüm string sabitlerini taramak 69 diyor. Beşi değiştirilmiş (superseded) oldukları kanıtlanıp Faz 1'de silindi (`"No KDE shortcut installed."` ×3, `"Registered in KDE: {shortcut}"`, `{retry}` öncesi tutanak mesajı). Kalanlar çalışma zamanı kapsaması gerektiriyor — statik tarama bunu cevaplayamaz ve iki sayı da fazla rapor ediyor. | Faz 1 silmesi; ölçüm aracı Faz 6'da öneriliyor |
+| L9 | S2 | **Bir kaynak metin İngilizce değil Türkçe yazılmıştı.** `ui/pages/dashboard.py` `t("Genel bakış — son dikte ve toplantılarınız")` çağırıyordu ve tabloda bu Türkçe metni kendine eşleyen bir girdi vardı — yani *İngilizce* pencere Türkçe gösteriyordu, Türkçe pencere doğru görünüyordu ve boşluk korkuluğu bunu göremiyordu (girdi var mı diye soruyor, vardı). Çağrı yerinde düzeltildi; ardından yeni korkuluk, düzeltmenin kaçırdığı **aynı girdinin ikinci ve önceden var olan bir kopyasını** hemen buldu. | `tests/test_i18n.py::test_no_source_string_is_already_turkish` |
 
 ### 2.3 Arayüz ve görsel (U)
 
@@ -85,7 +87,7 @@ Aşağıdaki bulgular alınan 60 kareden, yüzey yüzey incelenerek çıkarıld�
 |---|---|---|---|
 | X1 | S1 | **Hiçbir platform için dağıtılabilir bir yapı yok.** Kurulum, kaynak kopyası + geliştirici Python'u gerektiriyor: `install.sh` kısayol yazıyor ve `dikte`'nin `PATH`'te olmasını bekliyor; `install.ps1` Başlat menüsü girdisi ekliyor ama yine `pythonw dikte.py` çalıştırıyor. `.exe`, `.dmg`/`.app`, AppImage veya Flatpak yok. Günlük kullanılan bir araç için bu, benimsemedeki en büyük engel. | `install.sh`, `install.ps1`, paketleme yapılandırması yok |
 | X2 | S1 | **Linux tarafındaki overlay XWayland'e bağımlı.** `dikte.py:41` göstergeyi ekran köşesine yerleştirebilmek için `QT_QPA_PLATFORM=xcb` ayarlıyor. Yalnızca Wayland çalışan, XWayland'siz bir oturumda gösterge hiç görünemez; kesirli ölçekleme de bu yolda güvenilir değil. | `dikte.py:41`, `README.md:236` |
-| X3 | S1 | **Kısayol etiketleri platformdan bağımsız, yardım metinleri ise ters yönde platforma özel.** Arayüz her platformda `Meta+A` / `Meta+M` öneriyor; yardım metinleri ise KDE (`KDE kısayolu olarak kur`) veya macOS ifadelerini gömüyor. Windows `Win`, macOS `Cmd`/`⌘` ister; KDE metni Windows'ta anlamsız. | `ui/pages/agent.py`, `ui/pages/shortcuts.py`, `i18n.py:386` |
+| X3 | S3 | **2026-09-12'de düzeltildi: bu bulgu büyük ölçüde yanlıştı.** Kısayol alanı zaten platforma göre öneri listesi seçiyor (`SHORTCUTS` / `WIN_SHORTCUTS` / `MAC_SHORTCUTS`, `hotkey.desktop_name()` ile), iki kısayol varsayılanı da boş yani yeni kurulumda hiç ipucu görünmüyor, ve KDE'ye özel açıklama `hotkey.shortcut_needs_restart()` ile koşullu, macOS için ayrı bir dal var. Taramanın itiraz ettiği `Meta+A`, ürünün değil `tools/shoot_ui.py`'nin kendi test verisinden geliyordu — **bir ekran görüntüsü aracı, ürün hakkında bir bulgu uydurdu.** Ayakta kalan tek şey L8: kimsenin sormadığı üç KDE'ye özel anahtar. | `settings_ui.py:127-141`, `hotkey.py:desktop_name`, `tools/shoot_ui.py:CHANGED` |
 | X4 | S2 | **Hiçbir işletim sisteminde donmuş bir yapı derlenmiyor veya başlatılmıyor.** CI test takımını Linux, Windows **ve macOS** üzerinde çalıştırıyor (3.11–3.13; 3.14 Faz 0'da eklendi), yani macOS kod yolları gerçekten koşuyor — hiçbir işin yapmadığı şey dağıtılabilir bir yapı üretmek veya başlatmak; X1'in açık kalmasının sebebi bu. | `.github/workflows/tests.yml` |
 | X5 | S2 | Takımın Windows'a özel kod yolu daha önce Linux'ta çalıştırılıyordu (`ctypes.windll`); şu an CI'da gerçekten koşturmak yerine mock'lanıyor. | `docs/ai/VERIFICATION.md` |
 
@@ -236,19 +238,21 @@ hataların üçte biri tek dosyada) ve H5 (kontrol paneli sayfası
 `AppShell.add_page()`'i tamamen atlıyor; sayfa sayısının tek bir çağrı biçiminden
 değil iki tanesinden türetilmek zorunda kalmasının sebebi bu).
 
-### Faz 1 — Yerelleştirmeyi kapatma (2–3 g)
+### Faz 1 — Yerelleştirmeyi kapatma — **UYGULANDI 2026-09-12**
 
-| Görev | Ne | Dosyalar |
+| Görev | Teslim edilen | Nasıl çalıştığı gösterildi |
 |---|---|---|
-| T1.1 | 103 metnin tamamını çevir; çalışma durumları ve yıkıcı onaylar dahil (L4) | `i18n.py` |
-| T1.2 | Gömülü `"Overlay/Indicator"` sabitini sil; sayfaya gerçek çevrilmiş bir ad ver (L2) | `settings_ui.py`, `ui/pages/overlay.py`, `i18n.py` |
-| T1.3 | Kenar çubuğu çipleri `Local` / `Ready`'yi çevir, sürümü etiketle (L3, U7) | `ui/shell.py`, `i18n.py` |
-| T1.4 | **Türkçeyi sadece doldurma, gözden geçir.** `"Şunun üstünde çalışır"`ı etiket olarak düzelt, *prompt* için tek biçim seç, çip ile ismi uyumlu hâle getir (L5) | `i18n.py` |
-| T1.5 | Yerel biçimlendirme yardımcısı: ondalık/binlik ayırıcı, süre, ISO→yerel tarih. Tek modül, tek kural (L7) | yeni `ui/format.py`, `ui/pages/history.py`, `ui/pages/dashboard.py` |
-| T1.6 | Platforma göre kısayol etiketleri ve yardım metni: `Win` / `Cmd ⌘` / `Ctrl` ve KDE'ye özel metin yalnızca KDE'de (X3) | `ui/pages/agent.py`, `ui/pages/shortcuts.py`, `hotkey.py`, `i18n.py` |
+| T1.1 | 104 metnin tamamı çevrildi; tablonun sonunda, kaynak modüle göre gruplanmış tarihli bir blok olarak. Blok, yeni metinlerin buraya değil yukarıdaki konusal bölümlere gitmesi gerektiğini yazıyor. | `python tools/i18n_gaps.py` → **`0 strings reach t() with no Turkish entry`**; kayıt boş ve korkuluk yeniden dolarsa kırmızı oluyor |
+| T1.2 | İngilizce kaynak artık eğik çizgili `"Overlay/Indicator"` değil `"Indicator"`; hem menü etiketinde hem sayfa başlığında. Türkçesi `"Gösterge"`. | `settings_ui.py:507`, `ui/pages/overlay.py:59`; yeniden çekilen karede doğrulandı |
+| T1.3 | `"Local"` → `"Yerel"`, `"Ready"` → `"Hazır"`, ve etiketsiz `1.0` artık `"Sürüm"` tooltip'i taşıyor. | yeniden çekilen karede kenar çubuğu alt bilgisi: `whisper-1 · Yerel · ● Hazır · 1.0` |
+| T1.4 | `"Runs on" → "Çalıştığı yer"` (üç sayfada cümle değil form etiketi). *prompt* alt maddesi yanlış bir öncül çıktı — bkz. §9. | `i18n.py:531` |
+| T1.5 | Yeni `ui/format.py` (`decimal_separator`, `number`, `seconds`, `when`) ve `meeting.format_when`'in saniyeli damgaları da okuyacak şekilde genişletilmesi; böylece ay adları ikinci kez yazılmadı. Geçmiş listesi, geçmiş detay penceresi ve kontrol panelinde uygulandı. | yeniden çekilen kareler `21 Ağu 2026 12:05 (2,0 sn)`, `3,2 sn`, `10 dk` okuyor — öncesi `2026-08-21 12:05:00`, `3.2s` |
+| T1.6 | **Yapılacak bir şey yoktu** — bulgu yanlıştı. Düzeltilmiş X3'e bakın. | `settings_ui.py:127-141` |
+| — | İş yapılırken iki kusur daha bulundu: **L8** (ölü girdiler) ve **L9** (İngilizce kaynak yerine Türkçe metin). L9 kalıcı bir korkuluk kazandı. | `tests/test_i18n.py::test_no_source_string_is_already_turkish`, düzeltme inmeden önce kırmızı kanıtlandı |
 
-**Doğrulama:** T0.3 korkuluğu boş istisna listesiyle geçer; ekran turu `tr` ile
-yeniden alınır ve her kare Türkçe okunur; `python -m unittest discover` yeşil.
+**Doğrulama:** boşluk kaydı boş; tur `tr` ve `en` ile yeniden alındı ve kare kare
+okundu — o karelerde kalan her İngilizce metin arayüz değil veri (bir model
+kimliği, bir sağlayıcı kimliği, fixture'ın kendi toplantı başlığı).
 
 ### Faz 2 — Tasarım sistemi (4–6 g) — *Q2'ye bağlı*
 
@@ -431,7 +435,63 @@ yüzey denetimi, boş:     ['blank: blue_tr_overlay_rec.png']
 
 Grafik: `5372 nodes, 9509 edges, 311 communities`, `Built from commit: ffe8a5c7`.
 
-### Faz 0 sırasında bu belgede düzeltilenler
+### 2026-09-12 — Faz 1 uygulandı
+
+Dokunulan dosyalar (9 değişti, 1 eklendi):
+
+| Dosya | Değişiklik |
+|---|---|
+| `i18n.py` | tarihli bir blokta 105 girdi eklendi; `"Runs on"` yeniden etiketlendi; beş ölü girdi silindi |
+| `ui/format.py` | yeni — `decimal_separator`, `number`, `seconds`, `when` |
+| `meeting.py` | `format_when` artık saniye taşıyan damgaları da okuyor; geçmiş satırları ve toplantı satırları tek uygulamayı paylaşıyor |
+| `settings_ui.py` | geçmiş listesi ve geçmiş detay penceresi `ui/format` üzerinden geçiyor; gösterge sayfasının adı `"Indicator"` |
+| `ui/pages/dashboard.py` | alt başlık yeniden İngilizce (bkz. L9); süreler ve damgalar biçimlendirildi; `t("—")` sarmalı kaldırıldı |
+| `ui/pages/overlay.py` | sayfa başlığı `"Indicator"` olarak yeniden adlandırıldı |
+| `ui/shell.py` | sürüm numarası `"Sürüm"` tooltip'i taşıyor |
+| `tests/test_i18n.py` | yeni korkuluk: bir kaynak metin Türkçe harf içeremez |
+| `tests/i18n_untranslated.json` | kayıt artık boş |
+
+Ham sonuçlar:
+
+```
+$ python3.14 tools/i18n_gaps.py
+0 strings reach t() with no Turkish entry:
+
+$ python3.14 tools/shoot_ui.py --out /tmp/dikte-p1 --themes blue --langs tr,en --check
+wrote 60 PNGs to /tmp/dikte-p1
+surface check OK: 30 surfaces x 2 theme-and-language runs, all drawn
+```
+
+Kırmızı kanıt, düzeltme inmeden önce:
+
+```
+$ python3.14 -m unittest tests.test_i18n.Table.test_no_source_string_is_already_turkish
+AssertionError: Lists differ: [] != ['Genel bakış — son dikte ve toplantılarınız']
+```
+
+Korkuluk ilk tam koşusunda hakkını verdi: takım `1478 tests, FAILED (failures=1)`
+döndü, çünkü tabloda o Türkçe anahtarın *ikinci* bir kopyası vardı — Türkçe metni
+kendine eşleyen ve taramadan çok önce orada olan bir kopya. Yalnızca çağrı yerini
+düzeltmek onu bırakırdı. Bir kerelik temizlik yerine korkuluk yazmanın bütün
+gerekçesi bu.
+
+Faz sonrası tam takım: `Ran 1478 tests in 90.237s — OK` (önce 1473).
+
+Yeniden çekilen Türkçe karelerden okundu, varsayılmadı:
+
+```
+geçmiş satırı     21 Ağu 2026 12:05 (2,0 sn)      öncesi  2026-08-21 12:05:00 (2.0 sn)
+panel kartı       3,2 sn ort.  ·  10 dk           öncesi  3.2s avg  ·  10 min
+kenar çubuğu      whisper-1 · Yerel · ● Hazır     öncesi  whisper-1 · Local · ● Ready
+menü öğesi        Gösterge                        öncesi  Overlay/Indicator
+```
+
+O karelerde hâlâ görünen her İngilizce metin arayüz değil veri: `whisper-1` (bir
+model kimliği), `openai` / `ask` (halka grafiğin lejantındaki sağlayıcı
+kimlikleri) ve fixture'ın kendi `Shot meeting` ile `What is the capital of
+Turkey?` metinleri.
+
+### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
 gösterenden daha kötüdür:
@@ -450,7 +510,27 @@ gösterenden daha kötüdür:
   bunu yasaklıyor. Bunun yerine, gerekçesi aracın içine yazılarak
   varlık-ve-boş-olmama denetimi teslim edildi.
 
+Faz 1 sırasında:
+
+- **X3 büyük ölçüde yanlıştı** ve yanlışlığı taramanın kendi yönteminden
+  geliyordu. Arayüzün her platformda `Meta+A` önerdiğini iddia ediyordu; kısayol
+  alanı baştan beri listesini platforma göre seçiyor, iki varsayılan da boş ve
+  KDE'ye özel metin koşullu. `Meta+A`, `tools/shoot_ui.py`'nin fixture sözlüğünden
+  geliyordu; yani aracın kendisi bir ürün bulgusu uydurdu. Düzeltildi. Ders:
+  bir ekran görüntüsü, *fixture'ın* ne çizdiğini kanıtlar, kullanıcının ne
+  gördüğünü değil.
+- **L5'in `Promtlar` yarısı yanlış okumaydı.** `Promtlar` depoda hiçbir yerde
+  geçmiyor. Görüntü analizi `Promptlar`ı yanlış okudu ve tarama bunu bir kusur
+  olarak tekrarladı. Düzeltildi.
+- **T1.4'ün *prompt* alt maddesi yanlış bir öncüldü** — aynı sebeple: tablo
+  baştan beri `Promptlar` diyordu. Hiçbir şey standartlaştırılmadı, çünkü hiçbir
+  şey tutarsız değildi.
+- **T1.6 incelemede buharlaştı** — bkz. X3.
+- **Planın L1 çerçevelemesi doğruydu, sayısı düşüktü**: `_t` takma adı izlenince
+  103 değil 104.
+
 ---
 
 *2026-09-12'de `master @ ffe8a5c` üzerinde salt-okunur bir incelemeyle
-başlandı; Faz 0 aynı gün uygulandı. İngilizce aslı: [`ROADMAP.md`](ROADMAP.md).*
+başlandı; Faz 0 ve Faz 1 aynı gün uygulandı. İngilizce aslı:
+[`ROADMAP.md`](ROADMAP.md).*
