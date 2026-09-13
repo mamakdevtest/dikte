@@ -320,7 +320,7 @@ Zaten açık olan turu kendi bağımlılık sırasıyla kapat:
 | **T4.5 ✅** | F1/R6 | Geçmiş/Tutanak kurtarma detayları, açık silme, yeniden deneme arayüzü — *doğrulandı; kurtarma kartı Faz 3 yüzey 5'te düzeltildi (kurtarılacak bir şey yokken de çiziliyordu)* |
 | **T4.6 ✅** | F1/R7 | Düzenleme seviyesi göçünün tamamlanması + EN/TR eşitliği — *doğrulandı: emekli kaydırıcı yalnızca onu silen `pop`'ta yaşıyor, çevrilmemiş küme boş, ve Faz 3 son eşitlik açığını kapattı (düşünme panelinin hiç i18n'i yoktu)* |
 | **T4.7 ✅** | F1/R8 | Yukarıdaki her kusur için deterministik regresyon kapsamı — *doğrulandı: Faz 0–3'te eklenen korkulaklar, her biri yeşile güvenilmeden önce kırmızı kanıtlandı* |
-| **T4.8 ◐** | F2 | `except Exception` istisna listesini yak: kalan her yer ya hatasını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 18'i bildiriyor, 294'ü sessiz** (175'i çıplak `pass`). İlk dilim bitti, aşağıya bak* |
+| **T4.8 ◐** | F2 | `except Exception` istisna listesini yak: kalan her yer ya hatasını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 18'i bildiriyor, 293'ü hiçbir şey söylemiyor** (174'ü çıplak `pass`, 63'ü yedek değer atıyor, 32'si `return`; 96'sı `settings_ui.py`, 37'si `dikte.py`, 15'i `overlay.py`). Mandal var ve iki yönde de kırmızı kanıtlandı; veri yolundaki ilk üç yer düzeltildi. Kalan 293 için yer başına *gerekçe* hâlâ borç — aşağıya bak* |
 | T4.9 | F3 | `OverlayCoordinator.update` tetikleyicisi; `Config.data` okuma yarışını kapat; süreçler arası kilide karar ver |
 
 **Doğrulama:** `docs/ai/TASKS.md` R1–R8 işaretli; son diff üzerinde taze bir
@@ -354,13 +354,32 @@ baseline anlık görüntüsünün `except Exception: pass`'i de aynı yoldan git
 olmadan pencere düzenlenmiş bir sayfayı dokunulmamıştan ayıramaz, yani
 "kaydedilmemiş değişiklik" uyarısı düzenlemeleri sessizce kaçırabilirdi.
 
-T4.8'in bundan sonra ihtiyacı olan, ölçülebilir hâle geldiğine göre: 294 sessiz handler;
-97'si `settings_ui.py`'de ve 63'ü bir yedek değer atıyor. Geri kalanı için dürüst şekil,
-bir süpürme değil i18n'deki gibi bir mandal — büyüdüğünde kırmızı olan kayıtlı bir küme —
-çünkü yerler türce farklı: hiçbir şey bulmayan bir Qt öznitelik yoklaması ile
-gerçekleşmemiş bir kalıcı yazma aynı arıza değil. Bugün düzeltilen ikisi veri yolunda
-oldukları için seçildi; orada yutulan bir başarısızlık, eksik bir incelik değil
-kullanıcıya söylenmiş bir yalandır.
+T4.8'in bundan sonra ihtiyacı olan, ölçülebilir hâle geldiğine göre: i18n'deki gibi
+bir mandal — sessiz küme büyüdüğünde kırmızı olan bir kayıt — ve sonra da temizliğin
+kendisi, çünkü yerler türce farklı: hiçbir şey bulmayan bir Qt öznitelik yoklaması ile
+gerçekleşmemiş bir kalıcı yazma aynı arıza değil.
+
+**Mandal aynı fazda indi** (`tests/test_except_ratchet.py` +
+`tests/except_silent.json`, üstüne `tools/except_audit.py --silent/--write`).
+"Hiçbir şey söylemiyor" tanımı korkulakta yaşıyor ve aracı onu import ediyor; yani
+ikisi neyi saydıkları konusunda çelişemez. Kayıt, satır yerine `module:function`
+anahtarlı: satır numarası, bir handler'ın üstündeki her düzenlemeyi değişiklik gibi
+gösterir; çıplak bir sayaç ise bir sessiz handler'ın bir başkasıyla değiştirilmesine
+izin verir — sayı hiç kıpırdamadan, ki bu L6'nın i18n sayacında bulduğu delik. Güvenilir
+sayılmadan önce iki yön de kırmızı kanıtlandı:
+
+```
+yeni bir sessiz handler      zz_probe_new.py:swallow: 1 silent handler(s)
+düzelen bir handler          ui/icons.py:_default_color: recorded 2, now 1
+```
+
+İkinci yön, bunun bir sayı değil kayıt olmasının sebebi: zemin kıpırdamadan inen bir
+temizlik, temizlik değil commit'tir. Henüz yapılmayan, keşfedilmeyi beklemek yerine
+açıkça yazılıyor: 293 yer bir **şekille** listeleniyor, her biri için gerekçeyle değil.
+Düzeltilen ilk üçü veri yolundaydı (`SettingsWindow._save` içindeki uygulama hatası
+bildirimi ve baseline anlık görüntüsü, ve koordinatördeki widget'sız yuva) ve geri
+kalanı da bu sırayı izlemeli — bir yazma yolunda yutulan başarısızlık kullanıcıya
+söylenmiş bir yalandır, yutulan bir Qt öznitelik yoklaması ise eksik bir incelik.
 
 ### Faz 5 — Dağıtım ve platformlar arası (15–20 g)
 

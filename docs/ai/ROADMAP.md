@@ -316,7 +316,7 @@ Close the pass that is already open, in its own dependency order:
 | **T4.5 ✅** | F1/R6 | History/Minutes recovery details, explicit deletion, retry UX — *verified, and the recovery card was fixed in Phase 3 surface 5 (it rendered in every state, including when there was nothing to recover)* |
 | **T4.6 ✅** | F1/R7 | Editing-level migration completion + EN/TR parity — *verified: the retired slider survives only in the `pop` that removes it, the untranslated set is empty, and Phase 3 closed the last parity gap (the thinking panel had no i18n at all)* |
 | **T4.7 ✅** | F1/R8 | Deterministic regression coverage for every defect above — *verified: the guards added in Phases 0–3, each proved red before it was trusted green* |
-| **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 18 report, 294 silent** (175 of them a bare `pass`). First slice done, see below* |
+| **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 18 report, 293 report nothing** (174 a bare `pass`, 63 assigning a fallback, 32 returning; 96 in `settings_ui.py`, 37 in `dikte.py`, 15 in `overlay.py`). The ratchet exists and is proved red in both directions; the first three data-path sites are fixed. A per-site *reason* for the remaining 293 is still owed — see below* |
 | T4.9 | F3 | `OverlayCoordinator.update` trigger; close the `Config.data` read race; decide on cross-process locking |
 
 **Verification:** `docs/ai/TASKS.md` R1–R8 all `[x]`; a fresh reviewer on the
@@ -350,13 +350,33 @@ baseline snapshot's `except Exception: pass` beside it went the same way — wit
 baseline the window cannot tell an edited page from an untouched one, so the
 unsaved-changes prompt would let edits go silently.
 
-What T4.8 still needs, now that it is measurable: the 294 silent handlers, 97 of them
-in `settings_ui.py` and 63 assigning a fallback value. The honest shape for the rest is
-a ratchet like the i18n one — a recorded set that fails when it grows — rather than a
-sweep, because the sites differ in kind: a Qt attribute probe that finds nothing is
-not the same failure as a persistence write that did not happen. The two fixed today
-were picked because they are on the data path, where a swallowed failure is a lie to
-the user rather than a missing nicety.
+What T4.8 still needs, now that it is measurable: a ratchet like the i18n one — a
+record that fails when the silent set grows — and then the burn-down itself, because
+the sites differ in kind: a Qt attribute probe that finds nothing is not the same
+failure as a persistence write that did not happen.
+
+**The ratchet landed in the same phase** (`tests/test_except_ratchet.py` +
+`tests/except_silent.json`, with `tools/except_audit.py --silent/--write` on top of
+it). The definition of "reports nothing" lives in the guard and the tool imports it, so
+the two cannot disagree about what they count. The record is keyed by
+`module:function` rather than by line — a line number makes every edit above a handler
+look like a change, and a bare count would let one silent handler be swapped for
+another with the number never moving, which is the hole L6 found in the i18n counter.
+Both directions were proved red before it was trusted:
+
+```
+a new silent handler        zz_probe_new.py:swallow: 1 silent handler(s)
+a fixed one that improved   ui/icons.py:_default_color: recorded 2, now 1
+```
+
+The second direction is why it is a record and not a number: a burn-down that lands
+without the floor moving is not a burn-down, it is a commit. What is *not* yet done,
+stated plainly rather than left to be discovered: the 293 sites are listed with a
+**shape**, not with a reason each. The first three fixed were on the data path (the
+apply-failure report and the baseline snapshot in `SettingsWindow._save`, and the
+widget-less slot in the coordinator), which is the order the rest should follow — a
+swallowed failure on a write path is a lie to the user, while a swallowed Qt attribute
+probe is a missing nicety.
 
 ### Phase 5 — Distribution & cross-platform (15–20 d)
 
