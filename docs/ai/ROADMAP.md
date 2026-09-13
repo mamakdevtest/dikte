@@ -468,6 +468,14 @@ Non-negotiable for every phase, inherited from `ai/workflows.md`:
 - Targeted modules → full suite → `git diff --check`.
 - Every phase records its real command output in `docs/ai/VERIFICATION.md`.
   No predicted PASS.
+- **A silent failure is a defect until it is named.** `except Exception: pass` is allowed
+  only where the reason is derivable from the code or written beside it, and the four
+  standing guards are: the `except` ratchet (`tests/test_except_ratchet.py` +
+  `tools/except_audit.py`), the i18n gap set (`tests/i18n_gaps.py`), the surface tour
+  (`tools/shoot_ui.py --check`), and the Qt API contract
+  (`tests/test_qt_api_contract.py` — every `Qt.<name>` the product names must exist in the
+  PyQt6 it runs on; the guard that would have caught `Qt.UniqueConnection`, which cost
+  `settings_ui` an unsaved-edits guard that had never run).
 - The screenshot tour is re-captured and reviewed, not assumed.
   - The two READMEs embed eight frames — the settings window's pages and the first-run
     wizard — and they are **generated,

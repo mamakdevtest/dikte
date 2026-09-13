@@ -470,6 +470,14 @@ Her faz için pazarlıksız, `ai/workflows.md`'den devralınmış:
 - Hedefli modüller → tam takım → `git diff --check`.
 - Her faz gerçek komut çıktısını `docs/ai/VERIFICATION.md`'ye yazar.
   Tahmini PASS yok.
+- **Sessiz bir başarısızlık, adlandırılana kadar kusurdur.** `except Exception: pass` yalnızca
+  gerekçesi koddan türetilebiliyorsa ya da yanına yazılmışsa kabul edilir; dört sürekli
+  korkulak şunlardır: `except` mandalı (`tests/test_except_ratchet.py` +
+  `tools/except_audit.py`), i18n açık kümesi (`tools/i18n_gaps.py`), yüzey turu
+  (`tools/shoot_ui.py --check`) ve Qt API sözleşmesi (`tests/test_qt_api_contract.py` —
+  ürünün andığı her `Qt.<ad>` koştuğu PyQt6'da var olmalı; `Qt.UniqueConnection`'ı
+  yakalayacak olan korkulak, ki o hata `settings_ui`'ye hiç çalışmamış bir
+  kaydedilmemiş-değişiklik korumasına mal oldu).
 - Ekran turu yeniden alınır ve incelenir; varsayılmaz.
   - İki README sekiz kare gömüyor — ayar penceresinin sayfaları ve ilk-kurulum
     sihirbazı — ve bunlar **üretiliyor, elle yapılmıyor**:
