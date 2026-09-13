@@ -130,5 +130,86 @@ class OverlayRefinement(DikteTest):
         self.assertEqual(widget._reveal_progress, 1.0)
 
 
+class RegionNames(DikteTest):
+    """Every interactive region of the pill answers to a name.
+
+    The pill is one custom-painted widget, so there are no per-region widgets for
+    Qt to label: a region is named only if the code says so, and only the meeting
+    toggle ever did. The live-transcript button carries no text anywhere, so
+    without this it is a control with no name in any form, and Pause and Stop were
+    in the same position.
+    """
+
+    # region -> the hover flag that means "the pointer is over this one"
+    FLAGS = {
+        "live": "_hover_live_button",
+        "expand": "_hover_expand",
+        "pause": "_hover_pause",
+        "stop": "_hover_stop",
+        "meeting": "_hover_meeting_toggle",
+    }
+
+    def overlay(self):
+        widget = overlay_module.Overlay(interactive_live=True)
+        self.addCleanup(widget.deleteLater)
+        self.addCleanup(widget.close)
+        widget.show_recording()
+        return widget
+
+    def hover_only(self, widget, region):
+        for flag in self.FLAGS.values():
+            setattr(widget, flag, False)
+        if region is not None:
+            setattr(widget, self.FLAGS[region], True)
+
+    def test_every_region_has_a_name(self):
+        widget = self.overlay()
+        for region in sorted(self.FLAGS):
+            self.hover_only(widget, region)
+            widget._apply_region_accessibility()
+            with self.subTest(region=region):
+                self.assertTrue(widget.toolTip(),
+                                f"the {region} region has no name")
+                self.assertEqual(widget.toolTip(), widget.accessibleDescription())
+
+    def test_no_region_clears_the_name_rather_than_leaving_a_stale_one(self):
+        widget = self.overlay()
+        self.hover_only(widget, "stop")
+        widget._apply_region_accessibility()
+        self.assertTrue(widget.toolTip())
+        self.hover_only(widget, None)
+        widget._apply_region_accessibility()
+        self.assertEqual("", widget.toolTip())
+        self.assertEqual("", widget.accessibleDescription())
+
+    def test_pause_is_named_for_what_pressing_it_does(self):
+        """A paused pill's button resumes, so it must not still say Pause."""
+        widget = self.overlay()
+        self.hover_only(widget, "pause")
+        widget._apply_region_accessibility()
+        while_running = widget.toolTip()
+        widget.show_paused()
+        # The state change drops the hover flags, so put the pointer back where it
+        # was: the question is whether the name follows the state, not whether a
+        # stale hover survives it.
+        self.hover_only(widget, "pause")
+        widget._apply_region_accessibility()
+        self.assertNotEqual(while_running, widget.toolTip())
+        self.assertTrue(widget.toolTip())
+
+    def test_every_hover_flag_in_the_source_is_one_of_these_regions(self):
+        """A new hover region must be given a name, not silently skipped."""
+        import pathlib
+        import re
+
+        source = pathlib.Path(overlay_module.__file__).read_text(encoding="utf-8")
+        declared = set(re.findall(r"self\.(_hover_[a-z_]+)\s*=", source))
+        known = set(self.FLAGS.values())
+        self.assertEqual(
+            set(), declared - known,
+            "these hover flags exist in overlay.py and are named by nothing: "
+            f"{sorted(declared - known)}")
+
+
 if __name__ == "__main__":
     unittest.main()

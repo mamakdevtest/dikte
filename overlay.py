@@ -458,6 +458,9 @@ class Overlay(QWidget):
             self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
             self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # A name for the widget itself, for when the pointer is over none of the
+        # labelled regions. Without it a screen reader gets an unnamed window.
+        self.setAccessibleName(t("Recording indicator"))
         self.resize(MIN_WIDTH, HEIGHT)
 
         self._anim = QTimer(self)
@@ -611,12 +614,46 @@ class Overlay(QWidget):
     def toggle_meeting_collapsed(self):
         self.set_meeting_collapsed(not self._meeting_collapsed)
 
+    def _hovered_region(self):
+        """Which named region the pointer is over, or None.
+
+        The pill is one custom-painted widget, so Qt has no per-region widgets to
+        label: hover feedback and assistive technology both read whatever this
+        decides. Only the meeting toggle ever set a name, which left the
+        live-transcript button — a control with no visible text anywhere — and
+        Pause and Stop with no name at all.
+        """
+        for flag, region in (("_hover_live_button", "live"),
+                             ("_hover_expand", "expand"),
+                             ("_hover_pause", "pause"),
+                             ("_hover_stop", "stop"),
+                             ("_hover_meeting_toggle", "meeting")):
+            if getattr(self, flag, False):
+                return region
+        return None
+
+    def _region_name(self, region):
+        """The label for one region, in the state it is in right now."""
+        if region is None:
+            return ""
+        resuming = self._paused or self.state == PAUSED_STATE
+        return {
+            "live": t("Live transcript"),
+            "expand": t("Collapse") if self._live_expanded else t("Expand"),
+            "pause": t("Resume") if resuming else t("Pause"),
+            "stop": t("Stop"),
+            "meeting": t("Expand") if self._meeting_collapsed else t("Collapse"),
+        }.get(region, "")
+
+    def _apply_region_accessibility(self):
+        name = self._region_name(self._hovered_region())
+        self.setToolTip(name)
+        self.setAccessibleDescription(name)
+
     def _set_meeting_toggle_accessibility(self):
         if self.state != "meeting":
             return
-        label = t("Expand") if self._meeting_collapsed else t("Collapse")
-        self.setToolTip(label)
-        self.setAccessibleDescription(label)
+        self._apply_region_accessibility()
 
     @property
     def meeting_collapsed(self):
@@ -1033,6 +1070,10 @@ class Overlay(QWidget):
             if hover_toggle != self._hover_meeting_toggle:
                 self._hover_meeting_toggle = hover_toggle
                 self.update(meeting_toggle.toRect())
+        # The regions are named once, from whatever the pointer ended up over:
+        # four separate call sites is how the live button and Pause/Stop were
+        # missed in the first place.
+        self._apply_region_accessibility()
         event.accept()
 
     def mouseReleaseEvent(self, event):

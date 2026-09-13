@@ -1178,6 +1178,7 @@ TR = {
     "Local": "Yerel",
     "Ready": "Hazır",
     "Indicator": "Gösterge",
+    "Recording indicator": "Kayıt göstergesi",
     "Version": "Sürüm",
     # ui/pages/*.py — the one-line introductions
     "Every dictation and agent command, kept on this computer.": "Her dikte ve ajan komutu bu bilgisayarda saklanır.",
