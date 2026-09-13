@@ -15,6 +15,65 @@ from PyQt6.QtWidgets import (
 
 from . import theme as _theme
 from . import icons as _icons
+from i18n import t
+
+
+class Spinner(QWidget):
+    """A small arc that turns while work is happening.
+
+    The panel called this a spinner and repainted it on every tick, but it was a
+    bare `QLabel` with a fixed size and nothing to draw: "Cleaning up…" arrived
+    with no activity cue at all, which is the half of U11 that was true. It paints
+    itself from the live palette, in the same ``info`` tone the panel's dot and the
+    busy pill already use, so the three read as one product.
+    """
+
+    def __init__(self, parent=None, size=14):
+        super().__init__(parent)
+        self.setObjectName("thinkingSpinner")
+        self.setFixedSize(size, size)
+        self._phase = 0.0
+        self._paused = False
+
+    def advance(self, phase):
+        """Turn to `phase`. Called from the panel's tick."""
+        if self._paused:
+            return
+        self._phase = phase
+        self.update()
+
+    def set_paused(self, paused):
+        paused = bool(paused)
+        if paused != self._paused:
+            self._paused = paused
+            self.update()
+
+    def paintEvent(self, _event):
+        try:
+            colour = QColor(_theme.palette().get("info", "#8FB4C6"))
+        except Exception:
+            colour = QColor("#8FB4C6")
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        box = QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5)
+        track = QColor(colour)
+        track.setAlpha(80)
+        pen = QPen(track, 2.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(box)
+        head = QColor(colour)
+        if self._paused:
+            # A frozen arc, dimmed: the panel still says what it is doing, it is
+            # just not doing it any more.
+            head.setAlpha(120)
+        arc = QPen(head, 2.0)
+        arc.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(arc)
+        start = int((self._phase * 180) % 360)
+        painter.drawArc(box, start * 16, 90 * 16)
+        painter.end()
 
 
 class ThinkingPopup(QWidget):
@@ -64,7 +123,7 @@ class ThinkingPopup(QWidget):
         self.dot.setFixedSize(8, 8)
         self.dot.setProperty("dot", "info")
         head.addWidget(self.dot)
-        self.title = QLabel("Dusunuyor…", self.card)
+        self.title = QLabel(t("Thinking…"), self.card)
         self.title.setObjectName("thinkingTitle")
         _title_font = QFont(self.title.font())
         _title_font.setPointSizeF(13.0)
@@ -75,9 +134,8 @@ class ThinkingPopup(QWidget):
         self.elapsed_lbl.setObjectName("meta")
         self.elapsed_lbl.setProperty("mono", "true")
         head.addWidget(self.elapsed_lbl)
-        # spinner placeholder
-        self.spinner = QLabel(self.card)
-        self.spinner.setFixedSize(14, 14)
+        # the activity cue: an arc that turns with the tick
+        self.spinner = Spinner(self.card, 14)
         head.addWidget(self.spinner)
         card_l.addLayout(head)
 
@@ -107,14 +165,14 @@ class ThinkingPopup(QWidget):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
         self.pause_btn = QPushButton(self.card)
-        self.pause_btn.setText("Duraklat")
+        self.pause_btn.setText(t("Pause"))
         self.pause_btn.setProperty("variant", "ghost")
         self.pause_btn.setProperty("size", "sm")
         self.pause_btn.clicked.connect(self._toggle_pause)
         self.pause_btn.setIcon(_icons.icon("pause", 13))
         btn_row.addWidget(self.pause_btn)
         self.stop_btn = QPushButton(self.card)
-        self.stop_btn.setText("Durdur")
+        self.stop_btn.setText(t("Stop"))
         self.stop_btn.setProperty("variant", "danger")
         self.stop_btn.setProperty("size", "sm")
         self.stop_btn.clicked.connect(self.stopRequested.emit)
@@ -122,7 +180,7 @@ class ThinkingPopup(QWidget):
         btn_row.addWidget(self.stop_btn)
         btn_row.addStretch(1)
         self.close_btn = QPushButton(self.card)
-        self.close_btn.setText("Kapat")
+        self.close_btn.setText(t("Close"))
         self.close_btn.setProperty("variant", "secondary")
         self.close_btn.setProperty("size", "sm")
         self.close_btn.clicked.connect(self.hide_popup)
@@ -183,11 +241,11 @@ class ThinkingPopup(QWidget):
             pass
 
     # ---- public API ----
-    def show_thinking(self, initial_stage="Dusunuyor…"):
+    def show_thinking(self, initial_stage=None):
         self._log.clear()
         self._start_ts = time.monotonic()
-        self.stage_lbl.setText(initial_stage)
-        self.title.setText("Dusunuyor…")
+        self.stage_lbl.setText(initial_stage or t("Thinking…"))
+        self.title.setText(t("Thinking…"))
         self._paused = False
         try:
             self.dot.setProperty("dot", "info")
@@ -195,8 +253,9 @@ class ThinkingPopup(QWidget):
             self.style().polish(self.dot)
         except Exception:
             pass
-        self.pause_btn.setText("Duraklat")
+        self.pause_btn.setText(t("Pause"))
         self.pause_btn.setIcon(_icons.icon("pause", 13))
+        self.spinner.set_paused(False)
         self._update_log()
         self._appear()
 
@@ -215,9 +274,10 @@ class ThinkingPopup(QWidget):
 
     def set_paused(self, paused):
         self._paused = paused
-        self.pause_btn.setText("Devam" if paused else "Duraklat")
+        self.pause_btn.setText(t("Resume") if paused else t("Pause"))
         self.pause_btn.setIcon(_icons.icon("play" if paused else "pause", 13))
-        self.title.setText("Duraklatildi" if paused else "Dusunuyor…")
+        self.title.setText(t("Paused") if paused else t("Thinking…"))
+        self.spinner.set_paused(paused)
         try:
             self.dot.setProperty("dot", "idle" if paused else "info")
             self.style().unpolish(self.dot)
@@ -273,8 +333,8 @@ class ThinkingPopup(QWidget):
             secs = int(time.monotonic() - self._start_ts)
             self.elapsed_lbl.setText(f"{secs//60:02d}:{secs%60:02d}")
         # dot keeps its themed QLabel[dot="info"] tone (no per-tick QSS churn);
-        # spinner repaint preserves the tick-driven activity cue.
-        self.spinner.update()
+        # the spinner turns under the tick, and holds still while paused.
+        self.spinner.advance(self._phase)
 
     def paintEvent(self, ev):
         # card handles background, no extra

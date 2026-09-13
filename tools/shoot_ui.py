@@ -549,8 +549,10 @@ def main():
                 live.close()
 
                 think = ThinkingPopup()
-                think.show_thinking("Transcribing…")
-                think.push_stage("Cleaning up…")
+                # Through t(), like the pipeline: the frame has to show what a
+                # user of this language actually sees, not an English fixture.
+                think.show_thinking(i18n.t("Transcribing…"))
+                think.push_stage(i18n.t("Cleaning up…"))
                 shoot(app, think, os.path.join(args.out, f"{tag}_thinking.png"))
                 count += 1
                 think.set_paused(True)

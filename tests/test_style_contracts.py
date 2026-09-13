@@ -14,8 +14,8 @@ Qt in the way, and it points at the line that is wrong.
 Two allowlists, each of which has to keep proving itself:
 
 - `UNSTYLED` — names that need no rule, each with the reason it does not.
-- `SELF_PAINTED` — windows that never use the application sheet at all: they are
-  translucent, they paint their own surface, and they colour their children from
+- `SELF_PAINTED` — widgets and windows that never use the application sheet: they
+  are translucent, they paint their own surface, and they colour their children from
   the palette in code. Their names are not missing rules, they are outside the
   sheet's jurisdiction.
 
@@ -46,6 +46,7 @@ SELF_PAINTED = {
     "LivePopup": "ui/live_popup.py uses inline styling, not the app sheet",
     "ResultOverlay": "ui/result_overlay.py paints itself in code",
     "ThinkingPopup": "ui/thinking.py paints itself in code",
+    "Spinner": "ui/thinking.py's activity cue paints its own arc from the palette",
 }
 
 
