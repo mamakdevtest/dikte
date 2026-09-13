@@ -21,8 +21,11 @@ try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
+except Exception as exc:
+    # ASCII-only on purpose: this line exists because the streams may not be able to carry
+    # anything else, and a message that garbles itself is not a message.
+    print(f"dikte: could not switch the console streams to UTF-8 "
+          f"({type(exc).__name__}), so non-ASCII output may be garbled", file=sys.stderr)
 
 
 def _win32_message_box(title, text):
@@ -1759,8 +1762,11 @@ class Dikte:
                 idx = mapping.get(page, None)
                 if idx is not None and hasattr(self.dashboard_window, "shell"):
                     self.dashboard_window.shell.set_page(idx)
-            except Exception:
-                pass
+            except Exception as exc:
+                # `dikte settings --page api` asked for a page: landing on the dashboard
+                # without saying why is how a deep link looks like it worked.
+                print(f"dikte: could not open the requested settings page {page!r} ({exc})",
+                      file=sys.stderr)
         self.dashboard_window.show()
         self.dashboard_window.raise_()
         self.dashboard_window.activateWindow()

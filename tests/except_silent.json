@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 273,
+  "count": 265,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -12,13 +12,10 @@
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 1,
     "chunked_session.py:ChunkedLiveRecorder._pump": 1,
     "chunked_session.py:ChunkedLiveRecorder.stop": 2,
-    "cli.py:<module>": 1,
     "cli.py:_safe_print": 1,
-    "config.py:<module>": 1,
     "config.py:Config._clamped_ai_levels": 1,
     "config.py:Config._clamped_edit_level": 1,
     "config.py:Config.cleanup_prompt": 1,
-    "dikte.py:<module>": 1,
     "dikte.py:Dikte.__init__": 3,
     "dikte.py:Dikte._apply_settings": 3,
     "dikte.py:Dikte._build_tray": 3,
@@ -32,7 +29,7 @@
     "dikte.py:Dikte._retire_activity": 1,
     "dikte.py:Dikte._toggle_live_popup": 1,
     "dikte.py:Dikte._tray_icon": 1,
-    "dikte.py:Dikte.open_dashboard": 2,
+    "dikte.py:Dikte.open_dashboard": 1,
     "dikte.py:Dikte.open_settings": 1,
     "dikte.py:Dikte.restart": 1,
     "dikte.py:Dikte.retry_agent_from_job": 1,
@@ -68,7 +65,7 @@
     "providers.py:test_provider": 1,
     "settings_ui.py:<module>": 1,
     "settings_ui.py:HistoryDetailsDialog.__init__._val_label": 1,
-    "settings_ui.py:SettingsWindow.__init__": 5,
+    "settings_ui.py:SettingsWindow.__init__": 4,
     "settings_ui.py:SettingsWindow._after_theme_change": 4,
     "settings_ui.py:SettingsWindow._ai_edit_changed": 2,
     "settings_ui.py:SettingsWindow._cleanup_provider_changed": 1,
@@ -87,8 +84,6 @@
     "settings_ui.py:SettingsWindow._minutes_style_key": 2,
     "settings_ui.py:SettingsWindow._on_assistant_gateway_models_loaded": 1,
     "settings_ui.py:SettingsWindow._on_audio_defaults_loaded": 1,
-    "settings_ui.py:SettingsWindow._on_audio_monitors_loaded": 1,
-    "settings_ui.py:SettingsWindow._on_audio_sources_loaded": 1,
     "settings_ui.py:SettingsWindow._on_meeting_models_loaded": 1,
     "settings_ui.py:SettingsWindow._on_models_loaded": 1,
     "settings_ui.py:SettingsWindow._on_opencode_go_models_loaded": 2,
@@ -103,7 +98,7 @@
     "settings_ui.py:SettingsWindow._retry_voice_job": 4,
     "settings_ui.py:SettingsWindow._save": 4,
     "settings_ui.py:SettingsWindow._save_minutes_md": 1,
-    "settings_ui.py:SettingsWindow._shortcut_row": 2,
+    "settings_ui.py:SettingsWindow._shortcut_row": 1,
     "settings_ui.py:SettingsWindow._show_minutes": 3,
     "settings_ui.py:SettingsWindow._snapshot_settings": 6,
     "settings_ui.py:SettingsWindow._update_ai_descriptions": 4,
@@ -201,14 +196,8 @@
       "worker that is gone": 1,
       "teardown that is already done": 1
     },
-    "cli.py:<module>": {
-      "optional widget": 1
-    },
     "cli.py:_safe_print": {
       "unclassified": 1
-    },
-    "config.py:<module>": {
-      "optional widget": 1
     },
     "config.py:Config._clamped_ai_levels": {
       "value of the wrong shape": 1
@@ -218,9 +207,6 @@
     },
     "config.py:Config.cleanup_prompt": {
       "value of the wrong shape": 1
-    },
-    "dikte.py:<module>": {
-      "optional widget": 1
     },
     "dikte.py:Dikte.__init__": {
       "optional import": 2,
@@ -266,8 +252,7 @@
       "optional import": 1
     },
     "dikte.py:Dikte.open_dashboard": {
-      "optional import": 1,
-      "optional widget": 1
+      "optional import": 1
     },
     "dikte.py:Dikte.open_settings": {
       "value of the wrong shape": 1
@@ -378,7 +363,7 @@
     },
     "settings_ui.py:SettingsWindow.__init__": {
       "optional import": 1,
-      "optional widget": 3,
+      "optional widget": 2,
       "view refreshed after the fact": 1
     },
     "settings_ui.py:SettingsWindow._after_theme_change": {
@@ -442,12 +427,6 @@
     "settings_ui.py:SettingsWindow._on_audio_defaults_loaded": {
       "optional widget": 1
     },
-    "settings_ui.py:SettingsWindow._on_audio_monitors_loaded": {
-      "optional widget": 1
-    },
-    "settings_ui.py:SettingsWindow._on_audio_sources_loaded": {
-      "optional widget": 1
-    },
     "settings_ui.py:SettingsWindow._on_meeting_models_loaded": {
       "value of the wrong shape": 1
     },
@@ -496,7 +475,7 @@
       "value of the wrong shape": 1
     },
     "settings_ui.py:SettingsWindow._shortcut_row": {
-      "optional widget": 2
+      "optional widget": 1
     },
     "settings_ui.py:SettingsWindow._show_minutes": {
       "optional import": 2,

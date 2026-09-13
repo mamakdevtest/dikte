@@ -6,6 +6,8 @@ save, so a setting added to one half and not the other is silently reset the
 next time anybody presses Save. That is the failure this catches.
 """
 
+import contextlib
+import io
 import sys
 import time
 import unittest
@@ -183,6 +185,26 @@ class Settings(DikteTest):
         window = settings_ui.SettingsWindow(conf)
         self.addCleanup(release, window)
         return window
+
+    def test_a_picker_the_list_could_not_fill_is_not_left_blocked(self):
+        """A combo left signal-blocked is a control that does nothing.
+
+        `blockSignals(False)` used to sit inside the `try`, so a failure while filling the
+        device list left every picker that had not been reached yet unable to report a
+        change: the user chose a device and nothing happened, with nothing on screen to say
+        why. The unblocking belongs in a `finally`, which is what this checks.
+        """
+        window = self.window(cfg.Config())
+        picker = window.mic
+        self.assertFalse(picker.signalsBlocked())
+        with mock.patch.object(picker, "addItem", side_effect=RuntimeError("boom")):
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                window._on_audio_sources_loaded([("mic0", "Built-in microphone")])
+        # The handler really did fail on its way through: with the old code that failure
+        # skipped the unblocking, which is the defect this asserts.
+        self.assertIn("could not be filled in", err.getvalue())
+        self.assertFalse(picker.signalsBlocked(),
+                         "the picker has to report the user's choice")
 
     def test_the_window_opens_with_every_tab_on_it(self):
         window = self.window(cfg.Config())

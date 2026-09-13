@@ -574,8 +574,11 @@ class SettingsWindow(QDialog):
         try:
             self.tabs.currentChanged.connect(
                 self._on_tab_change_requested, Qt.UniqueConnection)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Without this connection a tab change goes unguarded: the unsaved-edits
+            # question is never asked and the edit is simply lost.
+            print(f"dikte: the settings tabs are not guarded against unsaved changes "
+                  f"({exc})", file=sys.stderr)
         # Apply persisted sidebar compact (manual preference) — auto responsive overrides at <920
         try:
             initial_compact = bool(self.conf.get("sidebar_compact", False)) or self.width() < 920
@@ -2724,8 +2727,11 @@ class SettingsWindow(QDialog):
             try:
                 canonical_box.currentTextChanged.connect(_sync_from_canonical)
                 box.currentTextChanged.connect(_sync_to_canonical)
-            except Exception:
-                pass
+            except Exception as exc:
+                # The row would still save, but the template box and the key box would stop
+                # following each other — one of them silently keeping a stale value.
+                print(f"dikte: the shortcut row's two boxes are not kept in step ({exc})",
+                      file=sys.stderr)
             # Also sync status labels via refresh
             # Keep canonical in dict, store extra for refresh
             if not hasattr(self, "_shortcut_rows_extra"):
@@ -3021,7 +3027,6 @@ class SettingsWindow(QDialog):
                 idx = self.mic.findData(cur)
                 if idx >= 0:
                     self.mic.setCurrentIndex(idx)
-                self.mic.blockSignals(False)
             # Meeting mic
             if hasattr(self, "meeting_mic"):
                 cur = cur_meet_mic
@@ -3033,9 +3038,17 @@ class SettingsWindow(QDialog):
                 idx = self.meeting_mic.findData(cur)
                 if idx >= 0:
                     self.meeting_mic.setCurrentIndex(idx)
-                self.meeting_mic.blockSignals(False)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"dikte: the microphone list could not be filled in ({exc})",
+                  file=sys.stderr)
+        finally:
+            # Both pickers go back to reporting their own changes, whether or not the list
+            # could be filled. The `blockSignals(False)` calls used to sit inside the try,
+            # so a failure left a combo whose selections went nowhere — a control that does
+            # nothing, which is a worse thing to hand the user than an empty list.
+            for picker in ("mic", "meeting_mic"):
+                if hasattr(self, picker):
+                    getattr(self, picker).blockSignals(False)
 
     def _on_audio_monitors_loaded(self, monitors):
         try:
@@ -3050,9 +3063,13 @@ class SettingsWindow(QDialog):
             idx = self.meeting_system.findData(cur)
             if idx >= 0:
                 self.meeting_system.setCurrentIndex(idx)
-            self.meeting_system.blockSignals(False)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"dikte: the system-audio list could not be filled in ({exc})",
+                  file=sys.stderr)
+        finally:
+            # Same as the microphones above: a blocked picker is a control that does nothing.
+            if hasattr(self, "meeting_system"):
+                self.meeting_system.blockSignals(False)
 
     def _save(self):
         conf = self.conf

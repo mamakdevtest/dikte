@@ -12,8 +12,11 @@ try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
+except Exception as exc:
+    # ASCII-only on purpose: this line exists because the streams may not be able to carry
+    # anything else, and a message that garbles itself is not a message.
+    print(f"dikte: could not switch the console streams to UTF-8 "
+          f"({type(exc).__name__}), so non-ASCII output may be garbled", file=sys.stderr)
 
 import api
 # ---- meeting summary styles -------------------------------------------
