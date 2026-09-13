@@ -21,18 +21,12 @@ from . import tokens as _tokens
 # Re-exported token tables — same keys, same dict objects as ui.tokens.
 DARK = _tokens.DARK
 LIGHT = _tokens.LIGHT
-BLUE = _tokens.BLUE
-GREEN = _tokens.GREEN
-VIOLET = _tokens.VIOLET
-ORANGE = _tokens.ORANGE
-PINK = _tokens.PINK
-TEAL = _tokens.TEAL
 THEMES = _tokens.THEMES
 TOKENS = _tokens.TOKENS
 RADII = _tokens.RADII
 SHADOWS = _tokens.SHADOWS
 
-_current = "blue"
+_current = _tokens.DEFAULT_THEME
 _fonts_loaded = False
 
 
@@ -212,7 +206,7 @@ def apply(theme=None):
 
 
 def toggle():
-    """Cycle the six colour themes only (no dark/light)."""
+    """Swap between the two themes this product has."""
     names = list(THEMES)
     current = _current if _current in names else names[0]
     index = names.index(current)
@@ -220,5 +214,5 @@ def toggle():
 
 
 def normalize(name):
-    """Map legacy dark/light (and unknowns) onto a colour theme key."""
+    """Map legacy room names (and unknowns) onto one of the two themes."""
     return _tokens.normalize(name)

@@ -11,29 +11,29 @@ from ..widgets import (
     CornerPicker, InfoNote, MiniScreen, SectionCard, SettingRow,
     gate, switch_row,
 )
+from ..tokens import DEFAULT_THEME as _DEFAULT_THEME
+from .. import theme
 from . import page, scrolled
 
 def _theme_label(key):
-    return {
-        "blue": "Blue", "green": "Green", "violet": "Violet",
-        "orange": "Orange", "pink": "Pink", "teal": "Teal",
-        "dark": "Terracotta (dark)", "light": "Light",
-    }.get(key, key)
+    return {"light": "Light theme", "dark": "Dark theme"}.get(key, key)
+
 
 class _ThemePicker(QWidget):
     """A row of colour circles; picking one applies that theme at once.
 
-    The swatch shows each theme's accent — the colour the whole application
-    takes on — so the choice is made by eye, not by name.
+    The swatch shows the theme's own canvas, which is what the choice actually
+    changes, and each one carries an outline so a warm stone circle is still
+    visible on a warm sand sidebar. There are two, because there are two themes:
+    the six saturated colour rooms this used to offer were all the same dark
+    interface wearing a different coloured button.
     """
 
     changed = pyqtSignal(str)
 
-    # (key, swatch colour) — the six colour themes. Appearance is only
-    # chosen here in Settings → General; there is no sidebar theme toggle.
+    # (key, swatch colour) — the two themes, light first.
     _CHOICES = [
-        ("blue", "#4468B8"), ("green", "#3E9E6E"), ("violet", "#6F55B8"),
-        ("orange", "#C2763B"), ("pink", "#B85A82"), ("teal", "#3B9E9E"),
+        ("light", "#F4F1EA"), ("dark", "#1C1A17"),
     ]
 
     def __init__(self, parent=None):
@@ -49,17 +49,18 @@ class _ThemePicker(QWidget):
             row.addWidget(swatch)
             self._buttons[key] = swatch
         row.addStretch(1)
-        self._current = "blue"
+        self._current = _DEFAULT_THEME
 
     def _pick(self, key):
         self.set_theme(key)
         self.changed.emit(key)
 
     def set_theme(self, key):
-        # A theme outside the six (dark/light/unknown) clears the selection:
-        # no swatch may claim to be the picked colour when it is not.
+        # A name that is no longer a theme (a retired room, or an unknown one)
+        # clears the selection: no swatch may claim to be the picked colour when
+        # it is not.
         if key not in self._buttons:
-            self._current = key if key else "blue"
+            self._current = key if key else _DEFAULT_THEME
             for swatch in self._buttons.values():
                 swatch.set_selected(False)
             return
@@ -103,15 +104,24 @@ class _ThemeSwatch(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        ink = QColor(theme.palette()["fg"])
         centre = QPointF(self.width() / 2, self.height() / 2)
         if self._selected:
-            ring = QPen(QColor(self._colour))
+            # The ring is the palette's ink, not the swatch's own colour: a ring
+            # in the swatch colour is invisible exactly when it matters, because
+            # the theme just picked is the one drawn behind it.
+            ring = QPen(ink)
             ring.setWidthF(2.0)
             painter.setPen(ring)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(centre, 12.0, 12.0)
         radius = 9.0 if (self._hover or self._selected) else 8.0
-        painter.setPen(Qt.PenStyle.NoPen)
+        # The edge comes from the palette too, so it reads on either sidebar:
+        # warm stone on warm sand would otherwise be an invisible circle, and so
+        # would the dark canvas on a dark one.
+        edge = QColor(ink)
+        edge.setAlpha(90)
+        painter.setPen(QPen(edge, 1.0))
         painter.setBrush(QColor(self._colour))
         painter.drawEllipse(centre, radius, radius)
         painter.end()

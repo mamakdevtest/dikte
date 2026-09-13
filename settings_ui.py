@@ -471,7 +471,7 @@ class SettingsWindow(QDialog):
         super().__init__(parent)
         self.conf = conf
         self.meetings = meetings
-        self._theme = _theme.normalize(conf.get("ui_theme", "blue") or "blue")
+        self._theme = _theme.normalize(conf.get("ui_theme", "dark") or "dark")
         self._shortcut_rows = {}
         self._models = dict.fromkeys(cfg.TRANSCRIBERS, "")
         self._key_fields = {}
@@ -512,7 +512,9 @@ class SettingsWindow(QDialog):
             pass
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save)
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText(t("Save"))
+        save_button = buttons.button(QDialogButtonBox.StandardButton.Save)
+        save_button.setText(t("Save"))
+        save_button.setProperty("variant", "primary")
         buttons.accepted.connect(self._save)
 
         bar = QWidget()
@@ -2264,7 +2266,7 @@ class SettingsWindow(QDialog):
         out = {}
         try:
             out["ui_language"] = (self.ui_language.currentData() or "auto") if hasattr(self, "ui_language") else "auto"
-            out["ui_theme"] = getattr(self, "_theme", "blue")
+            out["ui_theme"] = getattr(self, "_theme", "dark")
             out["mic_target"] = (self.mic.currentData() or "") if hasattr(self, "mic") else ""
             out["language"] = (self.language.currentData() or "auto") if hasattr(self, "language") else "auto"
             out["auto_paste"] = bool(self.auto_paste.isChecked()) if hasattr(self, "auto_paste") else False

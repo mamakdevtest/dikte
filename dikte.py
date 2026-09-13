@@ -1975,7 +1975,7 @@ def run_app(args):
     try:
         from ui import theme as _theme
         conf0 = cfg.Config()
-        _theme.apply(conf0.get("ui_theme", "blue") or "blue")
+        _theme.apply(conf0.get("ui_theme", "dark") or "dark")
     except Exception:
         pass
     # Before Dikte is built, because building it is what may start a server, and

@@ -7,15 +7,7 @@ needs an inline ``setStyleSheet``.
 """
 
 from .tokens import FONTS
-
-
-def mix(hex_a, hex_b, share_a):
-    """A hex colour that is `share_a` parts of a, the rest b (0.0..1.0)."""
-    a = tuple(int(hex_a[i:i + 2], 16) for i in (1, 3, 5))
-    b = tuple(int(hex_b[i:i + 2], 16) for i in (1, 3, 5))
-    return "#%02x%02x%02x" % tuple(
-        round(a[i] * share_a + b[i] * (1 - share_a)) for i in range(3)
-    )
+from .tokens import mix
 
 
 def rgba(hex_color, alpha):
@@ -38,8 +30,8 @@ def stylesheet(tokens, theme_name="blue", chevron="", chevron_disabled=""):
     accent_deep = c.get("accentDeep", c.get("terraDeep"))
     sage = c.get("sage", accent)
     sage_dark = c.get("sageDark", accent)
-    ink_btn = c.get("inkBtn", "#0C1315")
-    on_ink = c.get("onInk", "#F2F7F4")
+    ink_btn = c.get("inkBtn") or c["fg"]
+    on_ink = c.get("onInk") or c["surface"]
     sans = FONTS["sans"]
     display = FONTS.get("display", sans)
     mono = FONTS["mono"]
@@ -141,9 +133,9 @@ QFrame[chip="gray"] {{ background: {c["surface2"]}; color: {c["fg2"]};
                        border: 1px solid {c["border"]}; border-radius: 11px; }}
 QFrame[chip="gray"] QLabel {{ font-size: 11.5px; color: {c["fg2"]}; }}
 QFrame[chip="tan"]  {{ background: {mix(c["warn"], c["surface"], 0.14)};
-                       color: "#8A6A14"; border: 1px solid {mix(c["warn"], c["canvas"], 0.34)};
+                       color: {c["warn"]}; border: 1px solid {mix(c["warn"], c["canvas"], 0.34)};
                        border-radius: 11px; }}
-QFrame[chip="tan"] QLabel {{ font-size: 11.5px; color: "#8A6A14"; }}
+QFrame[chip="tan"] QLabel {{ font-size: 11.5px; color: {c["warn"]}; }}
 QFrame[chip="red"]  {{ background: {mix(c["err"], c["surface"], 0.10)};
                        color: {c["err"]}; border: 1px solid {mix(c["err"], c["canvas"], 0.28)};
                        border-radius: 11px; }}
@@ -200,13 +192,18 @@ QPushButton {{ min-height: 32px; padding: 0 13px; border-radius: 6px;
                font-size: 13px; font-weight: 500; border: 1px solid transparent; }}
 QPushButton:focus {{ border-color: {sage_dark}; }}
 QPushButton[size="sm"] {{ min-height: 26px; padding: 0 9px; font-size: 12px; }}
-QPushButton[variant="primary"] {{ background: {accent_deep}; color: "#FFF8F5"; }}
-QPushButton[variant="primary"]:hover {{ background: {accent}; }}
-QPushButton[variant="primary"]:pressed {{ background: {accent_deep}; }}
-QPushButton[variant="primary"]:focus {{ border: 1px solid {sage_dark}; }}
-QPushButton[variant="ink"] {{ background: {ink_btn}; color: {on_ink}; }}
-QPushButton[variant="ink"]:hover {{ background: {mix(ink_btn, c["surface2"], 0.78)}; }}
-QPushButton[variant="ink"]:pressed {{ background: {ink_btn}; }}
+/* The one filled button, and the only place a solid fill carries text. It is
+   ink, not terracotta: the reference says so, and terracotta cannot do it —
+   the button text measures 3.5:1 on `accent` in the light theme and 2.6:1 in
+   the dark, both under AA. Terracotta stays what it is for: recording. */
+QPushButton[variant="primary"], QPushButton[variant="ink"] {{
+    background: {ink_btn}; color: {on_ink}; }}
+QPushButton[variant="primary"]:hover, QPushButton[variant="ink"]:hover {{
+    background: {mix(ink_btn, c["surface2"], 0.78)}; }}
+QPushButton[variant="primary"]:pressed, QPushButton[variant="ink"]:pressed {{
+    background: {ink_btn}; }}
+QPushButton[variant="primary"]:focus, QPushButton[variant="ink"]:focus {{
+    border: 1px solid {sage_dark}; }}
 QPushButton[variant="secondary"] {{ background: {c["field"]};
     border-color: {c["border"]}; color: {c["fg"]}; }}
 QPushButton[variant="secondary"]:hover {{ background: {c["surface2"]};
@@ -234,14 +231,15 @@ QPushButton[variant="seg"]:hover {{ background: {c["surface2"]}; color: {c["fg"]
     border-color: {c["borderStrong"]}; }}
 QPushButton[variant="seg"]:focus {{ border-color: {sage_dark}; }}
 QPushButton[variant="seg"]:checked, QPushButton[variant="seg"][active="true"] {{
-    background: {accent_deep}; border-color: {accent_deep}; color: "#FFF8F5"; }}
+    background: {ink_btn}; border-color: {ink_btn}; color: {on_ink}; }}
 QPushButton[variant="seg"]:checked:hover, QPushButton[variant="seg"][active="true"]:hover {{
-    background: {accent}; border-color: {accent}; color: "#FFF8F5"; }}
-QPushButton[variant="seg"]:pressed {{ background: {accent_deep}; }}
+    background: {mix(ink_btn, c["surface2"], 0.78)}; border-color: {ink_btn};
+    color: {on_ink}; }}
+QPushButton[variant="seg"]:pressed {{ background: {ink_btn}; }}
 QPushButton[variant="seg"]:disabled {{ background: {c["surface2"]};
     color: {c["fg3"]}; border-color: {c["border"]}; }}
 QPushButton[variant="seg"]:checked:disabled, QPushButton[variant="seg"][active="true"]:disabled {{
-    background: {mix(accent_deep, c["surface2"], 0.45)}; color: {c["fg3"]};
+    background: {mix(ink_btn, c["surface2"], 0.45)}; color: {c["fg3"]};
     border-color: {c["border"]}; }}
 
 /* ---- checkboxes (toggles) --------------------------------------------- */

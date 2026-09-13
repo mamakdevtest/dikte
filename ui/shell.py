@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 from . import icons as _icons
 from . import theme
 from .tokens import (
+    DEFAULT_THEME as _DEFAULT_THEME,
     ENGINE_CARD_MAX_CHARS as _ENGINE_MAX,
     SIDEBAR_COMPACT_WIDTH as _SIDEBAR_COMPACT,
     SIDEBAR_WIDTH as _SIDEBAR_W,
@@ -304,7 +305,7 @@ class AppShell(QWidget):
             from ui import theme as _theme
             self._theme_name = name if name in _theme.THEMES else _theme.normalize(name)
         except Exception:
-            self._theme_name = name if name else "blue"
+            self._theme_name = name if name else _DEFAULT_THEME
         self._apply_theme_text()
 
 
