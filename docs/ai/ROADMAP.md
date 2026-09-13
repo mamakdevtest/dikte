@@ -390,8 +390,8 @@ probe is a missing nicety.
 
 | Task | What |
 |---|---|
-| T5.1 | PyInstaller spec per OS; the frozen app must not require a developer Python |
-| T5.2 | Per-OS CI build jobs that **launch the frozen artifact** and assert it starts — the current CI only runs tests (X4) |
+| **T5.1 ✅** | PyInstaller spec per OS; the frozen app must not require a developer Python — *`packaging/dikte.spec` (one executable, four asset trees, a conservative Qt exclusion list) and `packaging/build.py`. **Built and launched on Linux 7.2.2 / Python 3.14.7 / PyInstaller 6.22.3: 315.3 MB, all three start-up checks green.** The "developer Python" half was real: three callers built `sys.executable + script_path()` by hand, which in a bundle names a file that is not on the disk. They now go through `ipc.launch_command()`, and the shortcut string is quoted (it was not — a checkout in a path with a space arrived in a `.desktop` file as two words). macOS and Windows are built by the same spec and **unverified here** — the CI job has not run, because nothing has been pushed* |
+| **T5.2 ◐** | Per-OS CI build jobs that **launch the frozen artifact** and assert it starts — the current CI only runs tests (X4) — *`.github/workflows/build.yml`: Ubuntu + macOS + Windows, each building and then running `packaging/build.py --check`, which starts the artifact and asserts three things (`--help`, a parsed `doctor --json`, and a window that listens on its own socket). Written and proven on Linux; **the other two platforms' verdicts do not exist until a push runs the job**, and the roadmap says so rather than assuming them* |
 | T5.3 | Linux: AppImage + Flatpak (+ `.desktop`, icons, PipeWire/portal permissions) |
 | T5.4 | Windows: ship the frozen app through the existing `install.ps1`; optional portable zip |
 | T5.5 | macOS: `.app`/`.dmg`, signing + notarisation, `NSMicrophoneUsageDescription`, and an explicit Accessibility-permission flow — the hotkey path needs it and nothing documents it today |
@@ -401,6 +401,25 @@ probe is a missing nicety.
 **Verification:** a downloaded artifact from each OS starts, records, transcribes,
 pastes and quits; each run recorded in `docs/ai/VERIFICATION.md` with the OS and
 version it was observed on.
+
+**Two findings from T5.1's first bundle, both mine to fix and both recorded:**
+
+- **N8 — a second launch stole the running instance's socket.** `QLocalServer` needs
+  `removeServer()` before `listen()` to clear a socket left by a crash, and that same pair
+  takes the name from a *live* instance: the first Dikte keeps recording, unreachable,
+  while every terminal, shortcut and tray command now reaches the second. Nothing to do
+  with packaging in theory — except that a frozen bundle on a desktop entry puts a double
+  click one gesture away. It now asks `ipc.running_instance()` first and forwards
+  `dashboard` to the process that already owns the name. Proven end to end on the frozen
+  bundle: the second launch exits 0 with "already running", the first stays alive, its
+  socket is unchanged, and a real instance's socket in `/tmp` is untouched.
+- **N9 — a frozen application's stdout does not reach a pipe.** The start-up line
+  ("no system tray found, running anyway") stayed in the block buffer, and
+  `PYTHONUNBUFFERED=1` did not change it, so a check that read the pipe waited for a line
+  that only arrives when the process exits. It matters beyond the check: the bundle is
+  started from a desktop entry with no terminal, so **anything the application prints on
+  failure goes nowhere the user can look**. That is packaging's problem to answer in T5.4–
+  T5.5 (a log file, or `dikte doctor` in the UI), and it is a reason `doctor` exists.
 
 ### Phase 6 — Product depth (optional, ranked)
 

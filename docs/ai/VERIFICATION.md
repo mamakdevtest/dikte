@@ -1,3 +1,60 @@
+# VERIFICATION — Phase 5 begins: the frozen bundle (T5.1, T5.2)
+
+Date of record: 2026-09-13 (UTC+03) | Linux 7.2.2-1-cachyos, Python 3.14.7, PyQt6,
+PyInstaller 6.22.3, offscreen Qt
+
+Observed here, by running it. Nothing in this section is predicted.
+
+## The bundle is built and started (Linux only)
+
+- `.venv-build/bin/python packaging/build.py` → **`PyInstaller failed with 1`** on the
+  first attempt: `NameError: name 'sys' is not defined` in `packaging/dikte.spec`, which
+  assumed PyInstaller injects `sys` into the spec namespace. It does not. Fixed by
+  importing it; the failure is recorded because a spec that fails at all is the kind of
+  thing a "spec exists" claim would have hidden.
+- After the fix: **`bundle size: 315.3 MB`**, and the three checks:
+
+      ok    --help: usage printed, 4/4 verbs present
+      ok    doctor: doctor reported ok, 7/7 programs found
+      ok    window: listening as itself on dikte-1000, still running
+      all checks passed: the bundle starts, diagnoses and runs
+
+- `dist/` and `build/` are gitignored: 315 MB is built, never committed.
+
+## The second launch steps aside (N8)
+
+The frozen bundle started twice in one sandbox (`/tmp/dikte-double-*`, with `TMPDIR`,
+`HOME` and the XDG directories inside it, so it cannot reach the real application):
+
+    real instance socket exists before: True
+    first instance alive: True sockets: ['dikte-1000']
+    second exited within 30 s with code: 0
+    first instance still alive after the second launch: True
+    sockets in the sandbox now: ['dikte-1000']
+    real instance socket still there: True
+    second launch output: dikte: already running; asked it to open the dashboard
+
+Before the fix the second launch removed the first one's socket and took its name. The
+same run with `--gui` and no guard is what put "open the settings window" on a real
+running instance during development of these checks, which is why `sandbox_env()` sets
+`TMPDIR` and why the check asserts on the socket rather than on process liveness.
+
+## What is *not* verified, and why
+
+- **macOS and Windows builds**: the spec has a `darwin` bundle step and the same code
+  path otherwise, but no run was observed on either. `.github/workflows/build.yml` is
+  written to build and start the artifact on all three; **its macOS and Windows verdicts
+  do not exist until a push runs it**, and nothing has been pushed.
+- **A frozen install used by hand**: record → transcribe → paste has not been exercised
+  from the bundle. There is no microphone or display on this machine; the checks above
+  prove the bundle starts and listens, not that it dictates.
+- **`dikte doctor` from the bundle on a machine without the tools** was observed to exit 0
+  on this machine with 7/7 programs found; on a bare runner the same command is expected
+  to report the missing ones and still exit 0 (the command's own design), which the CI job
+  will confirm or contradict.
+
+---
+
 # VERIFICATION — Phases 0–4 (2026-09-12 → 2026-09-13)
 
 Date of record: 2026-09-13 (UTC+03) | Linux 7.2.2-1-cachyos, Python 3.14.7, PyQt6, offscreen Qt

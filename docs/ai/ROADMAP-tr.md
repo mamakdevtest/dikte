@@ -392,8 +392,8 @@ söylenmiş bir yalandır, yutulan bir Qt öznitelik yoklaması ise eksik bir in
 
 | Görev | Ne |
 |---|---|
-| T5.1 | İşletim sistemi başına PyInstaller spec'i; donmuş uygulama geliştirici Python'u istememeli |
-| T5.2 | Donmuş ürünü **başlatan** ve açılışı doğrulayan işletim sistemi başına CI derleme işleri — mevcut CI yalnızca test çalıştırıyor (X4) |
+| T5.1 ✅ | İşletim sistemi başına PyInstaller spec'i; donmuş uygulama geliştirici Python'u istememeli — *`packaging/dikte.spec` (tek çalıştırılabilir, dört varlık ağacı, ölçülü bir Qt dışlama listesi) ve `packaging/build.py`. **Linux 7.2.2 / Python 3.14.7 / PyInstaller 6.22.3 üzerinde kuruldu ve başlatıldı: 315.3 MB, üç açılış kontrolü de yeşil.** "Geliştirici Python'u" yarısı gerçekti: üç çağıran `sys.executable + script_path()`'i elle kuruyordu; dondurulmuş pakette bu, diskte olmayan bir dosyayı adlandırır. Artık `ipc.launch_command()` üzerinden geçiyorlar ve kısayol dizesi tırnaklanıyor (tırnaklanmıyordu — boşluklu bir yoldaki kopya, `.desktop` dosyasına iki kelime olarak yazılıyordu). macOS ve Windows aynı spec ile kurulur ve **burada doğrulanmadı** — CI işi hiç koşmadı, çünkü hiçbir şey push edilmedi* |
+| T5.2 ◐ | Donmuş ürünü **başlatan** ve açılışı doğrulayan işletim sistemi başına CI derleme işleri — mevcut CI yalnızca test çalıştırıyor (X4) — *`.github/workflows/build.yml`: Ubuntu + macOS + Windows, her biri kuruyor ve ardından `packaging/build.py --check`'i koşuyor; yani ürün başlatılıp üç şey doğrulanıyor (`--help`, ayrıştırılmış bir `doctor --json`, ve kendi soketinde dinleyen bir pencere). Yazıldı ve Linux'ta kanıtlandı; **diğer iki platformun hükmü, bir push işi koşturana kadar yok** ve yol haritası bunu varsaymak yerine söylüyor* |
 | T5.3 | Linux: AppImage + Flatpak (+ `.desktop`, ikonlar, PipeWire/portal izinleri) |
 | T5.4 | Windows: donmuş uygulamayı mevcut `install.ps1` üzerinden dağıt; isteğe bağlı taşınabilir zip |
 | T5.5 | macOS: `.app`/`.dmg`, imzalama + notarization, `NSMicrophoneUsageDescription` ve açık bir Erişilebilirlik-izni akışı — kısayol yolu buna ihtiyaç duyuyor ve bugün hiçbir yerde yazılı değil |
@@ -403,6 +403,26 @@ söylenmiş bir yalandır, yutulan bir Qt öznitelik yoklaması ise eksik bir in
 **Doğrulama:** her işletim sisteminden indirilen bir yapı açılır, kaydeder,
 yazıya çevirir, yapıştırır ve kapanır; her koşu gözlemlendiği işletim sistemi ve
 sürümüyle `docs/ai/VERIFICATION.md`'ye yazılır.
+
+**T5.1'in ilk paketinden çıkan iki bulgu — ikisi de düzeltilecek ve ikisi de kayıtlı:**
+
+- **N8 — ikinci başlatma, çalışan örneğin soketini çalıyordu.** `QLocalServer`, bir
+  çökmeden kalan soketi temizlemek için `listen()`'den önce `removeServer()` ister; aynı
+  ikili, adı **çalışan** bir örnekten de alır: ilk Dikte kaydetmeye devam eder ama
+  erişilemez olur, terminal, kısayol ve tepsi komutlarının hepsi artık ikinciye gider.
+  Kâğıt üzerinde paketlemeyle ilgisi yok — ta ki dondurulmuş paket bir masaüstü girdisine
+  oturana kadar: orada çift tıklama tek bir jest. Artık önce `ipc.running_instance()`'a
+  soruyor ve adı zaten tutan sürece `dashboard` iletiliyor. Dondurulmuş pakette uçtan uca
+  kanıtlandı: ikinci başlatma "already running" ile 0 koduyla çıkıyor, birinci canlı
+  kalıyor, soketi değişmiyor ve `/tmp`'deki gerçek örneğin soketine dokunulmuyor.
+- **N9 — dondurulmuş uygulamanın stdout'u bir boruya ulaşmıyor.** Açılış satırı
+  ("no system tray found, running anyway") blok arabellekte kaldı ve `PYTHONUNBUFFERED=1`
+  bunu değiştirmedi; yani borudan okuyan bir kontrol, ancak süreç çıkarken gelen bir satırı
+  bekledi. Önemi kontrolün ötesinde: paket, terminali olmayan bir masaüstü girdisinden
+  başlatılıyor, dolayısıyla **uygulamanın başarısızlıkta bastığı her şey kullanıcının
+  bakabileceği bir yere gitmiyor**. Bu, paketlemenin T5.4–T5.5'te cevaplaması gereken bir
+  sorun (bir günlük dosyası ya da arayüzde `dikte doctor`) ve `doctor`'ın var olma
+  sebeplerinden biri.
 
 ### Faz 6 — Ürün derinliği (isteğe bağlı, sıralı)
 
