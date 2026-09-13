@@ -979,6 +979,23 @@ kaydedilmemiş düzenlemelerini sessizce atardı. Dürüst çözüm bir arayüz 
 ayarlar bu pencerenin dışında değişti"), ki bu bir güvenilirlik değil ürün kararı; bu
 yüzden bir güvenilirlik görevinde icat edilmek yerine buraya kaydedildi.
 
+**O karar, alınması ucuz hâle getirildi (13.09.2026).** Pencerede artık en ucuz seçeneğin
+ihtiyaç duyduğu altyapı var: `_baseline` ve `_is_dirty()` widget-başına değişimi görüyor ve
+ikisi de test edilmiş — kaydedilmemiş-değişiklik sekme koruması ancak T4.8'in altıncı diliminde
+çalışmaya başladı, yani o zamana kadar "kullanıcının kaydedilmemiş düzenlemesi var" sorusu
+cevaplanamıyordu bile.
+
+| seçenek | pencerenin gösterdiği bir anahtar dışarıda değiştiğinde | maliyeti | riski |
+|---|---|---|---|
+| **1. Hiçbir şey** (bugün) | pencere kendi değerini korur; sonraki Kaydet dışarıdaki değişimin üzerine yazar | sıfır | bir ayar sessizce kaybolur ve kullanıcıya söylenmez |
+| **2. Yüklemede tazele** | gelen değeri her widget'a alır | küçük | **kullanıcının kaydedilmemiş düzenlemeleri atılır** — daha kötü kayıp; reddedilmesinin nedeni bu |
+| **3. Yalnız dokunulmamışları tazele** | kirli widget'lar kullanıcının değerini korur, gerisi yenisini alır; hangilerinin bırakıldığı bir satırla söylenir | `_baseline`/`_is_dirty()` üzerine bir yeniden-yükleme işleyicisi ve bir test | kirli-kontrolü widget'ı okuyamazsa — ki artık sessizce düşmek yerine bildiriyor |
+| **4. Dışarıdaki değişimin üzerine yazmayı reddet** | pencere dosyanın altında değiştiğini fark eder (yüklemede hash) ve sorar: *benimkini tut* mu, *onunkini al* mı | bir diyalog ve saklanan bir hash | beklenmedik bir diyalog; hiç kayıp yok |
+
+Dördü en dürüstü — bir düzenlemeyi kaybetmeden önce sorar, ki sekme korumasının gezinme için
+yaptığı zaten bu ✓; üçü ise sessiz kaybı ortadan kaldıran en ucuzu ✓. Bir, kodun bugün yaptığı ✓.
+Aralarında seçmek bir ürün kararı ✓; bu tablo, kararın önce bir sabah okumayla başlamaması için var.
+
 ### 2026-09-12 — Faz 4, T4.8 temizliği, iki dilim
 
 İki dilim de veri yolundan dışa doğru alındı. Doğru sıra bu: bir yazma yolunda yutulan

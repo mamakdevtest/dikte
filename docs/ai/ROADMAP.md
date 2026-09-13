@@ -981,6 +981,23 @@ The honest fix is a UI affordance ("these settings changed outside this window")
 is a product decision rather than a reliability one, so it is recorded here instead of
 being invented in a reliability task.
 
+**That decision, made cheap to take (2026-09-13).** The window now has the machinery the
+cheapest option needs: `_baseline` plus `_is_dirty()` see per-widget changes, and both are
+tested — the unsaved-edits tab guard only started working in T4.8's sixth slice, so until
+then "the user has unsaved edits" was itself unanswerable.
+
+| option | what it does when a key the window shows changed outside it | what it costs | what it risks |
+|---|---|---|---|
+| **1. Nothing** (today) | the window keeps its value; its next Save writes over the outside change | zero | one setting lost silently, and the user never told |
+| **2. Refresh on reload** | takes the incoming value into every widget | small | **the user's unsaved edits are discarded** — the worse loss, and why this was rejected rather than done |
+| **3. Refresh only untouched widgets** | dirty widgets keep the user's value; the rest take the new one; a line says which were left | a reload handler over `_baseline`/`_is_dirty()` plus a test | a widget whose dirty check cannot read it — which now reports instead of failing quietly |
+| **4. Refuse to write over an outside change** | the window notices the file changed under it (hash on load) and asks: *keep mine* or *take theirs* | a dialog and a stored hash | a dialog the user did not expect; none of the loss |
+
+Four is the most honest — it asks before losing an edit, which is what the tab guard already
+does for navigation — and three is the cheapest that removes the silent loss. One is what the
+code does today. Deciding between them is a product call; this table is so the call does not
+start with a morning of reading.
+
 ### 2026-09-12 — Phase 4, T4.8's burn-down, two slices
 
 Both slices were taken from the data path outwards. That is the order that matters: a
