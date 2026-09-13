@@ -134,6 +134,8 @@ basıp bir cümle söyle; sayfa onu bekliyor ve 90 saniyede bir şey gelmezse ba
 sayıları ve günlüğün sonunu tek dosyaya yazar; hata raporuna eklemeden önce okuyabilirsin —
 anahtar yok, ses yok, transkript yok.
 
+<img src="docs/setup.webp" width="820" alt="Dikte'nin ilk-kurulum sihirbazı, birinci adım: mikrofon kontrolü">
+
 ## Kullanım
 
 | Ne | Nasıl |

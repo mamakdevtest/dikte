@@ -139,6 +139,8 @@ wrong, `dikte doctor --bundle dikte-diagnostics.zip` writes the report, the envi
 settings (keys masked), the counts and the end of the log into one file you can read before
 attaching it to a bug report — no keys, no audio, no transcripts.
 
+<img src="docs/setup.webp" width="820" alt="Dikte's first-run wizard, step one: the microphone check">
+
 ## Using it
 
 | What | How |

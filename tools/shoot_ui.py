@@ -23,6 +23,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
@@ -63,6 +64,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+import audio
 import config as cfg
 import ggml
 import hotkey
@@ -335,6 +337,36 @@ def shoot(app, widget, path, width=None, height=None, quality=None):
     return path
 
 
+def shoot_setup(app, conf, out_dir, size=README_SIZE):
+    """The first-run wizard's first step, drawn with microphones in the list.
+
+    The device list is a fixture for the same reason the history rows are: the tour runs in
+    a sandbox with no sound server, and a screenshot that says "no microphone was found"
+    would be a picture of the sandbox rather than of the product.
+    """
+    from ui.welcome import WelcomeWizard
+
+    devices = [{"name": "mic0", "description": "Built-in microphone", "target": "mic0"},
+               {"name": "mic1", "description": "USB headset", "target": "mic1"}]
+    with mock.patch.object(audio, "cached_list_sources", lambda: [dict(d) for d in devices]), \
+            mock.patch.object(audio, "default_input", lambda: "mic0"):
+        wizard = WelcomeWizard(conf)
+        wizard.resize(*size)
+        wizard.show()
+        # The listing arrives on a worker thread; the frame should not be shot before it.
+        for _ in range(200):
+            app.processEvents()
+            if wizard.mic_combo.count():
+                break
+            time.sleep(0.01)
+        path = shoot(app, wizard, os.path.join(out_dir, "setup.webp"),
+                     size[0], size[1], quality=WEBP_QUALITY)
+        wizard.close()
+        wizard.deleteLater()
+        app.processEvents()
+    return path
+
+
 def shoot_readme(app, conf, out_dir, size=README_SIZE):
     """Write the images the READMEs embed, at the size they embed them.
 
@@ -359,6 +391,7 @@ def shoot_readme(app, conf, out_dir, size=README_SIZE):
     window.close()
     window.deleteLater()
     app.processEvents()
+    written.append(shoot_setup(app, conf, out_dir, size))
     return written
 
 
