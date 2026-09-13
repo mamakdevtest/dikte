@@ -101,6 +101,21 @@ M_IDLE, M_RECORDING, M_WORKING = "idle", "recording", "working"
 ECHO_MS = 2000
 
 
+def ask_tray_state(ask_state, agent):
+    """(icon, tooltip) for the tray while the assistant has the microphone.
+
+    Named, because the assistant can be any of them. Both of these tooltips used
+    to say "Claude" whatever the provider was, a couple of lines under a
+    `display_name(self.conf)` that had already worked out the right one — so a
+    Codex or a local model user was told the wrong program was listening.
+    """
+    if ask_state in (RECORDING, PAUSED):
+        tip = (t("Dikte: paused") if ask_state == PAUSED
+               else t("Dikte: recording for {name}", name=agent))
+        return "media-record", tip
+    return "view-refresh", t("Dikte: talking to {name}", name=agent)
+
+
 def meeting_remote_silent(recording_seconds, since_sound_seconds):
     """Has the other side's channel gone suspiciously quiet?
 
@@ -654,11 +669,7 @@ class Dikte:
         # The agent speaks through the icon only when dictation has nothing to
         # say, since dictation is the one being waited on in front of a screen.
         if self.state == IDLE and self.ask_state != IDLE:
-            if self.ask_state in (RECORDING, PAUSED):
-                icon = "media-record"
-                tip = t("Dikte: paused") if self.ask_state == PAUSED else "Dikte: recording for Claude"
-            else:
-                icon, tip = "view-refresh", "Dikte: talking to Claude"
+            icon, tip = ask_tray_state(self.ask_state, agent)
 
         meeting_labels = {
             M_IDLE: "Record a meeting",

@@ -6,6 +6,7 @@ import tests  # noqa: F401  (offscreen Qt + sandbox)
 from tests.support import DikteTest
 
 import dikte
+import i18n
 
 
 class MeetingMeta(DikteTest):
@@ -59,6 +60,51 @@ class HintMenu(DikteTest):
         self.assertFalse(pixmap.isNull())
         self.assertGreater(pixmap.width(), 40)
         self.assertGreater(pixmap.height(), 40)
+
+
+class TheAssistantInTheTray(DikteTest):
+    """What the tray says while the assistant has the microphone.
+
+    Both of these used to name a fixed assistant — "Dikte: recording for Claude",
+    "Dikte: talking to Claude" — a couple of lines below a `display_name(self.conf)`
+    that had already worked out the right one, so a Codex or a local model user was
+    told the wrong program was listening. The Turkish entries had quietly dropped the
+    name altogether, which is the tell: the name was never the translator's to drop.
+    """
+
+    def test_the_tooltip_names_the_assistant_you_configured(self):
+        for agent in ("Claude", "Codex", "Antigravity", "qwen3:8b", "OpenCode Go"):
+            with self.subTest(agent=agent):
+                _icon, tip = dikte.ask_tray_state(dikte.RECORDING, agent)
+                self.assertIn(agent, tip)
+                self.assertNotIn("Claude", tip.replace(agent, ""),
+                                 "a tooltip naming somebody else")
+
+    def test_a_paused_assistant_says_paused(self):
+        icon, tip = dikte.ask_tray_state(dikte.PAUSED, "Codex")
+        self.assertEqual("media-record", icon)
+        self.assertEqual(dikte.t("Dikte: paused"), tip)
+
+    def test_a_working_assistant_wears_the_working_icon(self):
+        icon, tip = dikte.ask_tray_state(dikte.BUSY, "Codex")
+        self.assertEqual("view-refresh", icon)
+        self.assertIn("Codex", tip)
+
+    def test_recording_and_working_look_different(self):
+        """One is a red record dot, the other a refresh — not the same cue twice."""
+        self.assertNotEqual(dikte.ask_tray_state(dikte.RECORDING, "Codex")[0],
+                            dikte.ask_tray_state(dikte.BUSY, "Codex")[0])
+
+    def test_the_tooltips_are_translated(self):
+        i18n.set_language("en")
+        english = dikte.ask_tray_state(dikte.RECORDING, "Codex")[1]
+        i18n.set_language("tr")
+        turkish = dikte.ask_tray_state(dikte.RECORDING, "Codex")[1]
+        self.assertNotEqual(english, turkish, "the tooltip is not translated")
+        self.assertIn("Codex", turkish, "the name has to survive the translation")
+        self.assertEqual("Dikte: duraklatıldı",
+                         dikte.ask_tray_state(dikte.PAUSED, "Codex")[1])
+        self.assertIn("konuşuyor", dikte.ask_tray_state(dikte.BUSY, "Codex")[1])
 
 
 if __name__ == "__main__":
