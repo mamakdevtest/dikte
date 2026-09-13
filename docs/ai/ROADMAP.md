@@ -303,25 +303,60 @@ U10), and all three were written from the old screenshots.
 **Verification:** every captured frame reviewed against the locked direction;
 the golden-image manifest updated deliberately in each commit, never blindly.
 
-### Phase 4 — Reliability closure (7–10 d)
+### Phase 4 — Reliability closure (7–10 d) — *in progress: T4.1–T4.7 verified, T4.8 begun*
 
 Close the pass that is already open, in its own dependency order:
 
 | Task | Source | What |
 |---|---|---|
-| T4.1 | F1/R1 | Dynamic activity-session registry; coordinator-owned geometry |
-| T4.2 | F1/R2 | Independent meeting/dictation/agent/result views; bounded detail surface |
-| T4.3 | F1/R3 | Safe concurrent-capture policy; non-destructive "this device is busy" UX |
-| T4.4 | F1/R4 | Audio persisted before any classification; crash-discoverable capture |
-| T4.5 | F1/R6 | History/Minutes recovery details, explicit deletion, retry UX |
-| T4.6 | F1/R7 | Editing-level migration completion + EN/TR parity |
-| T4.7 | F1/R8 | Deterministic regression coverage for every defect above |
-| T4.8 | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason |
+| **T4.1 ✅** | F1/R1 | Dynamic activity-session registry; coordinator-owned geometry — *verified against live source; one defect fixed (a widget-less slot was 72 px whether collapsed or not, so a collapsed slot pushed its neighbour 44 px too high)* |
+| **T4.2 ✅** | F1/R2 | Independent meeting/dictation/agent/result views; bounded detail surface — *verified: four widget instances, one per kind, and the bounds are real numbers (`EXPANDED_MAX_HEIGHT = 180`, `MAX_AREA_FRACTION = 0.6`)* |
+| **T4.3 ✅** | F1/R3 | Safe concurrent-capture policy; non-destructive "this device is busy" UX — *verified: two refusals, each naming a way out, neither stopping what already runs* |
+| **T4.4 ✅** | F1/R4 | Audio persisted before any classification; crash-discoverable capture — *verified: `save_voice_job` precedes the transcription branch, a failed write stops the worker with "Could not preserve recording safely", and an interrupted run stays visible in Minutes* |
+| **T4.5 ✅** | F1/R6 | History/Minutes recovery details, explicit deletion, retry UX — *verified, and the recovery card was fixed in Phase 3 surface 5 (it rendered in every state, including when there was nothing to recover)* |
+| **T4.6 ✅** | F1/R7 | Editing-level migration completion + EN/TR parity — *verified: the retired slider survives only in the `pop` that removes it, the untranslated set is empty, and Phase 3 closed the last parity gap (the thinking panel had no i18n at all)* |
+| **T4.7 ✅** | F1/R8 | Deterministic regression coverage for every defect above — *verified: the guards added in Phases 0–3, each proved red before it was trusted green* |
+| **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 18 report, 294 silent** (175 of them a bare `pass`). First slice done, see below* |
 | T4.9 | F3 | `OverlayCoordinator.update` trigger; close the `Config.data` read race; decide on cross-process locking |
 
 **Verification:** `docs/ai/TASKS.md` R1–R8 all `[x]`; a fresh reviewer on the
 final diff (V4); full suite green with the new regression tests named in
 `docs/ai/VERIFICATION.md`.
+
+### 2026-09-12 — Phase 4, T4.1–T4.7 verified and T4.8 begun
+
+The R-checklist in `docs/ai/TASKS.md` was written on 2026-08-30 and had not been
+re-read since; R1–R8 had landed in between. Each was therefore verified against live
+source rather than ticked, and the evidence for all eight is recorded in place. One
+defect came out of it (T4.1's 72 px slot) and one serious hazard came out of T4.8:
+
+**An exception in a Qt slot aborts the process.** Measured: PyQt6 calls `qFatal` when
+an exception escapes a slot, so a single bad handler took Dikte down — with whatever
+was being recorded. `dikte.py` has had the cure since before the phase, a
+`sys.excepthook` that prints the traceback and *returns*, and nothing said that the
+return is the load-bearing part. It is now `dikte.report_crash` with a docstring that
+says why, and `tests/test_reliability.py` runs both halves in their own processes: no
+hook → the interpreter dies with no trace; hook → `ZeroDivisionError` on stderr and
+the app keeps running. The test asserts the abort deliberately, so a future PyQt that
+stops aborting makes the comment fail rather than rot.
+
+**A save that was written but not applied claimed success.** `_save` distinguished the
+two outcomes in its logic — a failed write warns and returns — but the apply failure
+only reached stderr, so the user was told "Saved successfully." while looking at a
+window that had not changed. `i18n.py` had carried the sentence for exactly this case
+since the beginning and no code had ever shown it: *"Settings were saved, but some
+settings could not be applied"*. Now shown, and the success dialogue is not. The
+baseline snapshot's `except Exception: pass` beside it went the same way — without a
+baseline the window cannot tell an edited page from an untouched one, so the
+unsaved-changes prompt would let edits go silently.
+
+What T4.8 still needs, now that it is measurable: the 294 silent handlers, 97 of them
+in `settings_ui.py` and 63 assigning a fallback value. The honest shape for the rest is
+a ratchet like the i18n one — a recorded set that fails when it grows — rather than a
+sweep, because the sites differ in kind: a Qt attribute probe that finds nothing is
+not the same failure as a persistence write that did not happen. The two fixed today
+were picked because they are on the data path, where a swallowed failure is a lie to
+the user rather than a missing nicety.
 
 ### Phase 5 — Distribution & cross-platform (15–20 d)
 

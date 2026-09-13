@@ -307,25 +307,60 @@ ekran görüntülerinden yazılmıştı.
 **Doğrulama:** alınan her kare kilitlenen yöne karşı incelenir; altın-görüntü
 manifestosu her commit'te bilinçli güncellenir, asla körlemesine değil.
 
-### Faz 4 — Güvenilirliği kapatma (7–10 g)
+### Faz 4 — Güvenilirliği kapatma (7–10 g) — *sürüyor: T4.1–T4.7 doğrulandı, T4.8 başladı*
 
 Zaten açık olan turu kendi bağımlılık sırasıyla kapat:
 
 | Görev | Kaynak | Ne |
 |---|---|---|
-| T4.1 | F1/R1 | Dinamik aktivite-oturum kaydı; koordinatör sahipli geometri |
-| T4.2 | F1/R2 | Bağımsız toplantı/dikte/ajan/sonuç görünümleri; sınırlı detay yüzeyi |
-| T4.3 | F1/R3 | Güvenli eşzamanlı yakalama politikası; "bu cihaz meşgul" için yıkıcı olmayan arayüz |
-| T4.4 | F1/R4 | Ses, herhangi bir sınıflandırmadan önce kalıcı yazılır; çökmede bulunabilir kayıt |
-| T4.5 | F1/R6 | Geçmiş/Tutanak kurtarma detayları, açık silme, yeniden deneme arayüzü |
-| T4.6 | F1/R7 | Düzenleme seviyesi göçünün tamamlanması + EN/TR eşitliği |
-| T4.7 | F1/R8 | Yukarıdaki her kusur için deterministik regresyon kapsamı |
-| T4.8 | F2 | `except Exception` istisna listesini yak: kalan her yer ya hatasını bildirir ya da gerekçesiyle açıkça listelenir |
+| **T4.1 ✅** | F1/R1 | Dinamik aktivite-oturum kaydı; koordinatör sahipli geometri — *canlı kaynağa karşı doğrulandı; bir kusur düzeltildi (widget'sız bir yuva, collapsed olsun olmasın 72 px'ti, yani collapsed bir yuva komşusunu 44 px yukarı itiyordu)* |
+| **T4.2 ✅** | F1/R2 | Bağımsız toplantı/dikte/ajan/sonuç görünümleri; sınırlı detay yüzeyi — *doğrulandı: her tür için bir widget örneği, dört tane; sınırlar da gerçek sayılar (`EXPANDED_MAX_HEIGHT = 180`, `MAX_AREA_FRACTION = 0.6`)* |
+| **T4.3 ✅** | F1/R3 | Güvenli eşzamanlı yakalama politikası; "bu cihaz meşgul" için yıkıcı olmayan arayüz — *doğrulandı: iki reddetme, ikisi de bir çıkış yolu gösteriyor ve ikisi de koşanı durdurmuyor* |
+| **T4.4 ✅** | F1/R4 | Ses, herhangi bir sınıflandırmadan önce kalıcı yazılır; çökmede bulunabilir kayıt — *doğrulandı: `save_voice_job` transkripsiyon dalından önce, başarısız yazma worker'ı "Could not preserve recording safely" ile durduruyor ve kesilen koşu Tutanak'ta görünür kalıyor* |
+| **T4.5 ✅** | F1/R6 | Geçmiş/Tutanak kurtarma detayları, açık silme, yeniden deneme arayüzü — *doğrulandı; kurtarma kartı Faz 3 yüzey 5'te düzeltildi (kurtarılacak bir şey yokken de çiziliyordu)* |
+| **T4.6 ✅** | F1/R7 | Düzenleme seviyesi göçünün tamamlanması + EN/TR eşitliği — *doğrulandı: emekli kaydırıcı yalnızca onu silen `pop`'ta yaşıyor, çevrilmemiş küme boş, ve Faz 3 son eşitlik açığını kapattı (düşünme panelinin hiç i18n'i yoktu)* |
+| **T4.7 ✅** | F1/R8 | Yukarıdaki her kusur için deterministik regresyon kapsamı — *doğrulandı: Faz 0–3'te eklenen korkulaklar, her biri yeşile güvenilmeden önce kırmızı kanıtlandı* |
+| **T4.8 ◐** | F2 | `except Exception` istisna listesini yak: kalan her yer ya hatasını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 18'i bildiriyor, 294'ü sessiz** (175'i çıplak `pass`). İlk dilim bitti, aşağıya bak* |
 | T4.9 | F3 | `OverlayCoordinator.update` tetikleyicisi; `Config.data` okuma yarışını kapat; süreçler arası kilide karar ver |
 
 **Doğrulama:** `docs/ai/TASKS.md` R1–R8 işaretli; son diff üzerinde taze bir
 gözden geçiren (V4); yeni regresyon testleri adlarıyla
-`docs/ai/VERIFICATION.md`'de, tam takım yeşil.
+`docs/ai/VERIFICATION.md`'de anılmış olarak tam takım yeşil.
+
+### 2026-09-12 — Faz 4, T4.1–T4.7 doğrulandı ve T4.8 başladı
+
+`docs/ai/TASKS.md`'deki R listesi 2026-08-30'da yazılmıştı ve o günden beri yeniden
+okunmamıştı; R1–R8 arada inmişti. Bu yüzden her biri işaretlenmek yerine canlı
+kaynağa karşı doğrulandı ve sekizinin kanıtı yerinde kayıtlı. Buradan bir kusur çıktı
+(T4.1'in 72 px'lik yuvası), T4.8'den de ciddi bir tehlike:
+
+**Qt slot'undaki bir istisna süreci düşürüyor.** Ölçüldü: PyQt6, bir slot'tan kaçan
+istisnada `qFatal` çağırıyor; yani tek bir bozuk handler Dikte'yi — ve o sırada
+kaydedilmekte olanı — götürüyordu. `dikte.py`'de tedavi fazdan önce de vardı: izi basıp
+*geri dönen* bir `sys.excepthook`. Yük taşıyan kısmın o dönüş olduğunu hiçbir şey
+söylemiyordu. Artık `dikte.report_crash`, gerekçesini söyleyen bir docstring'le, ve
+`tests/test_reliability.py` iki yarıyı da kendi süreçlerinde koşuyor: hook yok → yorumlayıcı
+hiç iz bırakmadan ölüyor; hook var → `ZeroDivisionError` stderr'de ve uygulama koşmaya
+devam ediyor. Test, abort'u bilerek doğruluyor; böylece abort etmeyi bırakan bir PyQt
+yorumu çürütmek yerine testi düşürür.
+
+**Yazılan ama uygulanmayan bir kaydetme başarı iddia ediyordu.** `_save` iki sonucu
+mantığında ayırıyordu — başarısız yazma uyarıp geri dönüyor — ama uygulama hatası
+yalnızca stderr'e ulaşıyordu; yani kullanıcıya, değişmemiş bir pencereye bakarken
+"Saved successfully." deniyordu. `i18n.py` tam bu durumun cümlesini baştan beri
+taşıyordu ve hiçbir kod onu göstermemişti: *"Settings were saved, but some settings
+could not be applied"*. Artık gösteriliyor, başarı diyaloğu gösterilmiyor. Yanındaki
+baseline anlık görüntüsünün `except Exception: pass`'i de aynı yoldan gitti — baseline
+olmadan pencere düzenlenmiş bir sayfayı dokunulmamıştan ayıramaz, yani
+"kaydedilmemiş değişiklik" uyarısı düzenlemeleri sessizce kaçırabilirdi.
+
+T4.8'in bundan sonra ihtiyacı olan, ölçülebilir hâle geldiğine göre: 294 sessiz handler;
+97'si `settings_ui.py`'de ve 63'ü bir yedek değer atıyor. Geri kalanı için dürüst şekil,
+bir süpürme değil i18n'deki gibi bir mandal — büyüdüğünde kırmızı olan kayıtlı bir küme —
+çünkü yerler türce farklı: hiçbir şey bulmayan bir Qt öznitelik yoklaması ile
+gerçekleşmemiş bir kalıcı yazma aynı arıza değil. Bugün düzeltilen ikisi veri yolunda
+oldukları için seçildi; orada yutulan bir başarısızlık, eksik bir incelik değil
+kullanıcıya söylenmiş bir yalandır.
 
 ### Faz 5 — Dağıtım ve platformlar arası (15–20 g)
 
