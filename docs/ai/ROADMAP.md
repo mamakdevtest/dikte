@@ -282,7 +282,7 @@ cannot carry button text at any size the design uses (N2), a style rule that
 matches nothing fails silently in two more ways (N3), and the tour was photographing
 only the top of every page (N4).
 
-### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 1 of 7 delivered*
+### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 2 of 7 delivered*
 
 Rebuild in this order — most-visible first, and each surface has its own
 verification frame from T0.5. Each finding is re-checked against the code and a
@@ -293,8 +293,8 @@ U10), and all three were written from the old screenshots.
 | Order | State | Surface | What it settled |
 |---|---|---|---|
 | 1 | **done** | Recording pill + paused/busy/warning/error states | U10 re-checked claim by claim: the timer *does* carry recording context (red dot, timer, Pause/Stop read as one control), Pause and Stop are *not* cramped, and the "missing drag affordance" contradicts documented behaviour — `i18n.py:887` tells the user the indicator "sürüklenemez", and Settings places it by corner. The one real defect was that the live-transcript button, Pause and Stop had **no name in any form**: the pill is a single custom-painted widget, only the meeting toggle ever set a tooltip or accessible description. Fixed, and the new region-name contract fails when a `_hover_*` flag is added without one. U11's busy-pill comparison is the next surface's job, since it needs both frames. |
-| 2 | next | Result overlay + live popup (content-sizing, empty state) | U6 |
-| 3 | | Thinking panel — same visual family as the pill | U11 |
+| 2 | **done** | Result overlay + live popup (content-sizing, empty state) | U6's first half held — the card really was a fixed 260 px box with three lines in it — and is fixed: it is now as tall as its text, 124 px for three lines, with the expanded state carrying a 24-line transcript at 460×460. Its second half was stale: the "no empty state" claim predates the placeholder the text area has always had. Sizing the card properly then exposed two defects that were hiding behind the fixed height: the card was a line short of its own text (the application stylesheet's 8 px padding on text areas was invisible to a margins-only count, so the last line scrolled out of sight while the card still had room), and the disabled expand arrow drew in the enabled colour (a palette colour does not reach a QToolButton whose text Qt resolves through QStyleSheetStyle). Both fixed and guarded. |
+| 3 | next | Thinking panel — same visual family as the pill | U11 |
 | 4 | | Tray menu — icons, separators, toggle state | U12 |
 | 5 | | Dashboard (stat semantics, empty states) | U4 |
 | 6 | | The nine settings pages | U2–U5, U9 |
@@ -595,6 +595,25 @@ Proven red before green: with naming restored to meeting-only, the contract name
 the gap — `the expand region has no name`, `the live region has no name`, `the
 meeting region has no name`.
 
+### 2026-09-12 — Phase 3, surface 2 (the live card)
+
+| File | Change |
+|---|---|
+| `ui/live_popup.py` | the card is as tall as its text, between `MIN_HEIGHT` and the compact cap; the expanded state raises the cap instead of forcing a size; the chrome is measured rather than counted; the arrow takes its disabled colour where Qt will actually read it |
+| `tests/test_live_popup.py` | the sizing contract: three lines do not fill a card, the card grows with the text, the compact card caps and scrolls, the arrow is offered only when there is more to reveal, a card below its cap never scrolls, the empty state exists, the disabled arrow is a different colour |
+| `tools/shoot_ui.py` | the live popup is shown before it is fed (it sizes itself, and a hidden popup has no viewport to measure); the expanded frame carries a transcript long enough for the state to mean something |
+
+Measured on the frames:
+
+```
+live card, three lines      before  460x260, one line visible, the rest dead
+                            after   460x124, all three lines, no scrollbar
+live card, expanded         before  460x260, the same three lines
+                            after   460x460, 24 lines (the fixture now has some)
+the disabled expand arrow            #585953 (fg3), was drawn in fg
+arrow disabled / enabled    active on three lines (nothing more to reveal)
+```
+
 ### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
@@ -679,6 +698,23 @@ where it was wrong:
   about the current product**; the survey's screenshots are from an older
   generation, and this plan should stop trusting any finding that has not been
   re-checked against source.
+
+- **N6 — U6 was half right, and the half that was wrong was wrong for a reason
+  worth recording.** "The live card does not size to its content" held: 260 px of
+  fixed card with three lines in it. "It has no empty state" did not — the text
+  area has carried a placeholder since it was written, and the survey read the
+  absence of an empty-*looking* frame as the absence of an empty state, because it
+  had no frame of an empty card to look at. That is the same mechanism as N5:
+  a claim about what is missing, made from a screenshot of a case that happens to
+  be populated. **Four UI findings in a row have now been partly or wholly wrong**,
+  and every one of them from a screenshot. Fixing the sizing then found two defects
+  *nobody had reported*, both of which had been invisible precisely because the card
+  was a fixed height: the card was always one line short of its own text (the sheet's
+  8 px text padding is invisible to a count made from the layout margins), and the
+  disabled expand arrow drew in the enabled colour (a palette colour never reaches a
+  QToolButton whose text Qt resolves through QStyleSheetStyle). The lesson is the
+  converse of N4's: a wrong size hides other faults, so correcting one is worth a
+  fresh look at everything that renders through it.
 
 And during Phase 1:
 

@@ -286,7 +286,7 @@ düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kural�
 daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
 fotoğraflıyordu (N4).
 
-### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 1'i teslim edildi*
+### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 2'si teslim edildi*
 
 Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi
 var. Her bulgu, hiçbir şey değiştirilmeden önce koda ve güncel bir kareye karşı
@@ -297,8 +297,8 @@ ekran görüntülerinden yazılmıştı.
 | Sıra | Durum | Yüzey | Neyi çözdüğü |
 |---|---|---|---|
 | 1 | **bitti** | Kayıt pili + duraklatılmış/meşgul/uyarı/hata durumları | U10 iddia iddia kontrol edildi: zamanlayıcı kayıt bağlamını **taşıyor** (kırmızı nokta, zamanlayıcı ve Duraklat/Durdur tek bir kontrol olarak okunuyor), Duraklat ile Durdur **sıkışık değil**, ve "sürükleme tutamacı yok" belgelenmiş davranışa aykırı — `i18n.py:887` kullanıcıya göstergenin "sürüklenemez" olduğunu söylüyor ve onu Ayarlar köşeye göre yerleştiriyor. Tek gerçek kusur, canlı-yazı düğmesi ile Duraklat ve Durdur'un **hiçbir biçimde adı olmamasıydı**: pil tek bir elle çizilen widget ve yalnızca toplantı anahtarı hiç tooltip ya da erişilebilir açıklama kurmuştu. Düzeltildi; yeni bölge-adı sözleşmesi, bölge adı olmadan eklenen bir `_hover_*` bayrağında kırmızı oluyor. U11'in meşgul-pil karşılaştırması sıradaki yüzeyin işi, çünkü iki kareyi birden gerektiriyor. |
-| 2 | sıradaki | Sonuç overlay'i + canlı popup (içeriğe göre boyutlanma, boş durum) | U6 |
-| 3 | | Düşünme paneli — pille aynı görsel aile | U11 |
+| 2 | **bitti** | Sonuç overlay'i + canlı popup (içeriğe göre boyutlanma, boş durum) | U6'nın ilk yarısı tuttu — kart gerçekten 260 px sabit bir kutu ve içinde üç satır vardı — ve düzeltildi: artık metni kadar uzun, üç satır için 124 px; genişletilmiş hâli 24 satırlık bir transkripti 460×460'ta taşıyor. İkinci yarısı eskimişti: "boş durum yok" iddiası, metin alanının baştan beri taşıdığı placeholder'dan önceye ait. Kartı doğru boyutlandırmak, sabit yüksekliğin arkasına saklanmış iki kusuru ortaya çıkardı: kart her zaman kendi metninden bir satır kısaydı (uygulama stil sayfasının metin alanlarına verdiği 8 px dolgu, yalnızca kenar boşluklarından yapılan bir sayıma görünmez, bu yüzden son satır kartın hâlâ yeri varken kayıp gidiyordu) ve pasif genişletme oku etkin renginde çiziliyordu (Qt bir QToolButton'ın metnini QStyleSheetStyle üzerinden çözdüğü için palet rengi oraya ulaşmıyor). İkisi de düzeltildi ve korkuluk altında. |
+| 3 | sıradaki | Düşünme paneli — pille aynı görsel aile | U11 |
 | 4 | | Tepsi menüsü — ikonlar, ayırıcılar, aç/kapat durumu | U12 |
 | 5 | | Kontrol paneli (istatistik anlamı, boş durumlar) | U4 |
 | 6 | | Dokuz ayar sayfası | U2–U5, U9 |
@@ -600,6 +600,25 @@ Yeşilden önce kırmızı kanıtlandı: adlandırma yalnızca toplantı hâline
 sözleşme boşluğu adıyla söylüyor — `the expand region has no name`, `the live region
 has no name`, `the meeting region has no name`.
 
+### 2026-09-12 — Faz 3, yüzey 2 (canlı kart)
+
+| Dosya | Değişiklik |
+|---|---|
+| `ui/live_popup.py` | kart metni kadar uzun, `MIN_HEIGHT` ile kompakt tavan arasında; genişletilmiş hâl boy zorlamak yerine tavanı yükseltiyor; çevre yüksekliği sayılmıyor ölçülüyor; ok, pasif rengini Qt'nin gerçekten okuyacağı yerden alıyor |
+| `tests/test_live_popup.py` | boyutlanma sözleşmesi: üç satır kartı doldurmuyor, kart metinle büyüyor, kompakt kart tavanda durup kaydırıyor, ok yalnızca gösterecek bir şey varken sunuluyor, tavanın altındaki bir kart hiç kaydırmıyor, boş durum var, pasif ok farklı renkte |
+| `tools/shoot_ui.py` | canlı popup beslenmeden önce gösteriliyor (kendini boyutlandırıyor ve gizli bir popup'ın ölçecek viewport'u yok); genişletilmiş kare, durumun anlam taşıması için yeterince uzun bir transkript taşıyor |
+
+Kareler üzerinde ölçülen:
+
+```
+canlı kart, üç satır   önce  460x260, tek satır görünüyor, gerisi ölü
+                       sonra 460x124, üç satırın hepsi, kaydırma çubuğu yok
+canlı kart, genişletilmiş  önce  460x260, aynı üç satır
+                           sonra 460x460, 24 satır (fixture'ın artık metni var)
+pasif genişletme oku          #585953 (fg3); eskiden fg ile çiziliyordu
+ok pasif / etkin              üç satırda etkin değil (gösterecek bir şey yok)
+```
+
 ### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
@@ -687,6 +706,22 @@ gösterenden daha kötüdür:
   **Üst üste üçüncü arayüz bulgusu güncel ürün hakkında büyük ölçüde yanlış**;
   taramanın ekran görüntüleri eski bir nesle ait ve bu plan kaynağa karşı yeniden
   kontrol edilmemiş hiçbir bulguya güvenmeyi bırakmalı.
+
+- **N6 — U6 yarı yarıya doğruydu ve yanlış olan yarısı kayda değer bir sebepten
+  yanlıştı.** "Canlı kart içeriğine göre boyutlanmıyor" tuttu: içinde üç satır olan
+  260 px sabit kart. "Boş durumu yok" tutmadı — metin alanı yazıldığından beri bir
+  placeholder taşıyor ve tarama, boş *görünen* bir kare olmadığı için boş durumun
+  olmadığı sonucuna vardı; çünkü bakacak boş bir kart karesi yoktu. Mekanizma N5'le
+  aynı: dolu olan bir durumun ekran görüntüsünden, neyin eksik olduğuna dair bir
+  iddia. **Üst üste dört arayüz bulgusu artık kısmen ya da tamamen yanlış** ve
+  hepsi bir ekran görüntüsünden. Boyutlandırmayı düzeltmek sonra *kimsenin
+  bildirmediği* iki kusur buldu; ikisi de tam da kart sabit yükseklikte olduğu için
+  görünmezdi: kart her zaman kendi metninden bir satır kısaydı (stil sayfasının
+  metin alanlarına verdiği 8 px dolgu, kenar boşluklarından yapılan bir sayıma
+  görünmez) ve pasif genişletme oku etkin renginde çiziliyordu (Qt bir
+  QToolButton'ın metnini QStyleSheetStyle üzerinden çözdüğünde palet rengi oraya
+  hiç ulaşmıyor). Ders N4'ün tersi: yanlış bir boy başka kusurları saklıyor, yani
+  birini düzeltmek onun üzerinden çizilen her şeye yeniden bakmaya değer.
 
 Faz 1 sırasında:
 
