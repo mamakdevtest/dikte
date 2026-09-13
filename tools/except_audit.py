@@ -3,21 +3,28 @@
     python tools/except_audit.py              # per-module counts, worst first
     python tools/except_audit.py --list       # every site, as file:line
     python tools/except_audit.py --allowlist  # print the list to fill in
+    python tools/except_audit.py --silent     # the handlers that report nothing
+    python tools/except_audit.py --write      # record the silent set (the ratchet)
 
 `ai/workflows.md` requires that "a persistence failure and a runtime-apply
 failure are distinct outcomes and must be reported honestly", and AGENTS.md says
 adding a broad `except Exception` does not fix a crash. Neither rule is
 checkable while nobody knows how many sites there are, so this counts them.
-It changes nothing: the burn-down is Phase 4 of docs/ai/ROADMAP.md, and this is
-what makes it measurable.
+
+"Reports nothing" is the half that matters, and it is defined once, in
+`tests/test_except_ratchet.py`, so this tool and the guard cannot disagree about
+what is being counted.
 """
 
 import ast
+import json
 import os
 import pathlib
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 DIRECTIVES = {"allowlist": False, "list": False}
 
 # `except Exception` and its siblings: everything that can catch a failure the
@@ -63,6 +70,36 @@ def audit():
 
 
 def main(argv):
+    if "--silent" in argv or "--write" in argv:
+        from tests.test_except_ratchet import RECORD, silent_handlers
+        found = silent_handlers()
+        total = sum(found.values())
+        if "--write" in argv:
+            payload = {
+                "why": (
+                    "Broad handlers that report nothing: they neither print, raise "
+                    "nor warn, so the caller cannot tell the swallowed failure apart "
+                    "from success. Recorded per module:function — a line number would "
+                    "move on every unrelated edit, and a bare count would let one "
+                    "silent handler be swapped for another (the hole L6 found in the "
+                    "i18n counter). This is a floor: it may only shrink, and every "
+                    "step of the burn-down rewrites it with "
+                    "`python tools/except_audit.py --write`."
+                ),
+                "burn_down": "docs/ai/ROADMAP.md T4.8",
+                "recorded": time.strftime("%Y-%m-%d"),
+                "count": total,
+                "silent": dict(sorted(found.items())),
+            }
+            RECORD.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                              encoding="utf-8")
+            print(f"recorded {total} silent handlers in {RECORD}")
+            return 0
+        for key, count in sorted(found.items(), key=lambda kv: (-kv[1], kv[0])):
+            print(f"  {count:>3}  {key}")
+        print(f"\n{total} broad handlers report nothing at all. "
+              "The record is tests/except_silent.json; the burn-down is T4.8.")
+        return 0
     show_all = "--list" in argv or "--allowlist" in argv
     found = audit()
     total = sum(len(v) for v in found.values())
