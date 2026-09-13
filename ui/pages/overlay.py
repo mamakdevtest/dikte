@@ -60,12 +60,15 @@ def build(window):
         t("The indicator shows recording, work and result states at a glance. The tray menu keeps the same actions reachable outside the window."),
     )
 
+    # The empty state is the whole page. It used to sit under the title with a
+    # void beneath it — `EmptyState` centres its own contents, but nothing centred
+    # `EmptyState`, and the trailing stretch pushed it up out of the middle.
+    outer.addStretch(1)
     outer.addWidget(EmptyState(
         "monitor",
         t("No overlay preview"),
         t("The live indicator appears on its own while recording; "
           "there is nothing to configure here."),
     ))
-
     outer.addStretch(1)
     return scrolled(body)

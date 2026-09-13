@@ -2187,6 +2187,11 @@ class SettingsWindow(QDialog):
             self.voice_jobs_list.addItem(item)
         if hasattr(self, "voice_jobs_retry_btn"):
             self.voice_jobs_retry_btn.setEnabled(bool(jobs))
+        # Nothing to recover, so the card is a large empty box with a dead Retry
+        # button: it says nothing while holding the best space on the page. U4
+        # called it oversized; it is worse than oversized, it is pointless.
+        if hasattr(self, "_voice_jobs_group"):
+            self._voice_jobs_group.setVisible(bool(jobs))
 
     def _retry_voice_job(self):
         """Retry the selected failed voice job via the controller if available."""

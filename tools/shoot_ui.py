@@ -421,6 +421,21 @@ def main():
         cfg.save_meeting({"base": "20260821-120000", "ts": "2026-08-21 12:00:00",
                           "title": "Shot meeting", "status": "done",
                           "duration": 600})
+        # One retryable voice job, so the History page's recovery card is
+        # photographed with something in it. With none, the card was an empty box
+        # in every frame — which is how U4 came to call it merely oversized.
+        try:
+            import voice_jobs as _vj
+            _vj.save_voice_job({
+                "id": "shoot-failed-job",
+                "ts": "2026-08-21 12:06:00",
+                "kind": _vj.KIND_DICTATION,
+                "status": _vj.STATUS_FAILED_RETRYABLE,
+                "error_stage": "cleanup",
+                "error_message": "the cleanup provider refused the request",
+            })
+        except Exception:
+            pass
 
         count = 0
         for thm in themes:
