@@ -7,6 +7,7 @@ as before.
 """
 
 import os
+import sys
 
 from PyQt6.QtCore import QEasingCurve, Qt, QSize, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
@@ -245,8 +246,11 @@ class AppShell(QWidget):
                 for child in self._engine_chip.findChildren(QLabel):
                     child.setText(provider_label or _t("Local"))
                     break
-        except Exception:
-            pass
+        except Exception as exc:
+            # The sidebar's engine name is a claim about what is running; a failure here
+            # leaves the previous name on screen looking like the current one.
+            print(f"dikte: the engine name on the shell could not be updated ({exc})",
+                  file=sys.stderr)
 
     # ---- pages -----------------------------------------------------------
 

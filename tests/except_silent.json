@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 237,
+  "count": 232,
   "silent": {
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 1,
     "chunked_session.py:ChunkedLiveRecorder._pump": 1,
@@ -114,8 +114,6 @@
     "ui/pages/agent.py:_provider_card._title": 1,
     "ui/pages/dashboard.py:DailyBarChart.mouseMoveEvent": 1,
     "ui/pages/dashboard.py:DailyBarChart.paintEvent": 1,
-    "ui/pages/dashboard.py:_goto_tab": 1,
-    "ui/pages/dashboard.py:_make_handler._fn": 1,
     "ui/pages/dashboard.py:_quick_actions": 1,
     "ui/pages/dashboard.py:build.refresh": 1,
     "ui/pages/general.py:build._on_picker_changed": 2,
@@ -127,7 +125,6 @@
     "ui/pages/providers.py:_CardForm.isRowVisible": 2,
     "ui/pages/providers.py:_CardForm.setRowVisible": 2,
     "ui/result_overlay.py:<module>": 1,
-    "ui/result_overlay.py:ResultOverlay._copy": 2,
     "ui/result_overlay.py:ResultOverlay._sync_expanded_property": 1,
     "ui/result_overlay.py:_palette_colors": 2,
     "ui/shell.py:AppShell._apply_collapse_icon": 1,
@@ -137,7 +134,7 @@
     "ui/shell.py:AppShell._toggle_compact": 1,
     "ui/shell.py:AppShell.setCompact": 2,
     "ui/shell.py:AppShell.setCompact._on_val": 1,
-    "ui/shell.py:AppShell.set_engine_model": 2,
+    "ui/shell.py:AppShell.set_engine_model": 1,
     "ui/shell.py:AppShell.set_theme": 1,
     "ui/shell.py:_t": 1,
     "ui/stats.py:_parse_ts": 1,
@@ -515,12 +512,6 @@
     "ui/pages/dashboard.py:DailyBarChart.paintEvent": {
       "value of the wrong shape": 1
     },
-    "ui/pages/dashboard.py:_goto_tab": {
-      "optional widget": 1
-    },
-    "ui/pages/dashboard.py:_make_handler._fn": {
-      "optional widget": 1
-    },
     "ui/pages/dashboard.py:_quick_actions": {
       "optional widget": 1
     },
@@ -555,10 +546,6 @@
     "ui/result_overlay.py:<module>": {
       "optional import": 1
     },
-    "ui/result_overlay.py:ResultOverlay._copy": {
-      "optional import": 1,
-      "optional widget": 1
-    },
     "ui/result_overlay.py:ResultOverlay._sync_expanded_property": {
       "optional widget": 1
     },
@@ -589,7 +576,7 @@
       "value of the wrong shape": 1
     },
     "ui/shell.py:AppShell.set_engine_model": {
-      "optional widget": 2
+      "optional widget": 1
     },
     "ui/shell.py:AppShell.set_theme": {
       "optional import": 1

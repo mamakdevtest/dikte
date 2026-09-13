@@ -274,11 +274,14 @@ class ResultOverlay(QWidget):
         try:
             import paste
             paste.copy(self._text)
-        except Exception:
+        except Exception as exc:
             try:
                 QApplication.clipboard().setText(self._text)
-            except Exception:
-                pass
+            except Exception as exc2:
+                # The card goes on to show its "copied" state either way, so without this
+                # line the user is told the text is on the clipboard when it is not.
+                print(f"dikte: the transcript could not be copied to the clipboard "
+                      f"({exc}; {exc2})", file=sys.stderr)
         self.copyRequested.emit(self._text)
         # brief feedback: show copied state via tooltip? For now keep visible
         # auto-hide after copy? Keep 1.2s then hide if not expanded

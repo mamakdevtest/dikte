@@ -222,8 +222,14 @@ def _make_handler(window, slot):
             fn = getattr(ctrl, slot, None) or getattr(ctrl, f"_{slot}", None)
             if fn:
                 fn()
-        except Exception:
-            pass
+            else:
+                # A quick action wired to a name the controller does not have is a button
+                # that does nothing, and nothing about it looks wrong on screen.
+                print(f"dikte: the dashboard's quick action {slot!r} is wired to nothing, "
+                      f"so pressing it does nothing", file=sys.stderr)
+        except Exception as exc:
+            print(f"dikte: the dashboard's quick action {slot!r} failed ({exc})",
+                  file=sys.stderr)
     return _fn
 
 
@@ -363,5 +369,11 @@ def _goto_tab(window, needles):
                 if any(n in text for n in needles):
                     window.tabs.setCurrentIndex(i)
                     break
-    except Exception:
-        pass
+            else:
+                # The recent list is built from the same names, so no match means the two
+                # have drifted apart — and the click does nothing at all.
+                print(f"dikte: no tab matches {needles!r}, so this shortcut went nowhere",
+                      file=sys.stderr)
+    except Exception as exc:
+        print(f"dikte: the tab shortcut {needles!r} could not be followed ({exc})",
+              file=sys.stderr)
