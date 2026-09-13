@@ -155,3 +155,29 @@ class ThePanelIsTranslatedTest(_WithQt):
         popup.show_thinking()
         self.assertEqual(i18n.t("Thinking…"), popup.stage_lbl.text())
         self.assertNotEqual("Thinking…", popup.stage_lbl.text())
+
+
+class ThePanelDoesNotDecideTheLanguageTest(_WithQt):
+    """N7: placing the panel read a *fresh* `Config`, and a fresh `Config` applies the saved
+    language to the whole process — so a language the user had just picked in the settings
+    window and not yet saved was put back to the stored one."""
+
+    def test_placing_the_panel_does_not_overrule_an_unsaved_language(self):
+        self.speak("en")                        # the settings file says English
+        popup = ThinkingPopup(conf=self.config())
+        self.addCleanup(popup.deleteLater)
+        i18n.set_language("tr")                 # the user picks Turkish, and has not saved yet
+        popup._reposition()                     # the panel is placed
+        self.assertEqual("tr", i18n.language(),
+                         "placing the panel put the stored language back")
+
+    def test_a_fresh_config_is_what_makes_that_a_risk(self):
+        """The mechanism behind the guard above, pinned.
+
+        If reading a config ever stops applying the language, this test fails and the guard
+        above becomes belt and braces — that is a fine thing to be told.
+        """
+        self.speak("en")
+        i18n.set_language("tr")
+        cfg.Config()
+        self.assertEqual("en", i18n.language())

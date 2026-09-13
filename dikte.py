@@ -339,7 +339,7 @@ class Dikte:
         # Thinking popup for AI stages (pause/stop) — separate from audio pause
         try:
             from ui.thinking import ThinkingPopup
-            self.thinking = ThinkingPopup()
+            self.thinking = ThinkingPopup(conf=self.conf)
             self.thinking.pauseToggled.connect(self._on_thinking_pause)
             self.thinking.stopRequested.connect(self.cancel_ask)
         except Exception:

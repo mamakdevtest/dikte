@@ -5,6 +5,7 @@ pause / stop controls. Frameless, always on top, click-through
 only when idle; during work the pause/stop buttons are hit-testable.
 """
 
+import sys
 import time
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRectF, QPointF
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPainterPath
@@ -82,9 +83,10 @@ class ThinkingPopup(QWidget):
     pauseToggled = pyqtSignal(bool)  # True = paused
     stopRequested = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, conf=None):
         super().__init__(None)
         self.setObjectName("ThinkingPopup")
+        self._conf = conf
         self._paused = False
         self._log = []
         self._start_ts = None
@@ -305,13 +307,16 @@ class ThinkingPopup(QWidget):
 
     def _reposition(self):
         # place near overlay corner but slightly offset so both visible
-        # try to find overlay corner from config if available, default bottom-left
+        # Read the corner from the settings this process already holds. Building a fresh
+        # `Config` here re-applied the *saved* language to the whole process, so a language
+        # the user had picked in the settings window and not yet saved was thrown away.
         corner = "bottom-left"
-        try:
-            import config as cfg
-            corner = cfg.Config().get("overlay_corner", "bottom-left")
-        except Exception:
-            pass
+        if self._conf is not None:
+            try:
+                corner = self._conf.get("overlay_corner", "bottom-left")
+            except Exception as exc:
+                print(f"dikte: the overlay corner could not be read, so the thinking panel "
+                      f"is placed as if it were bottom-left ({exc})", file=sys.stderr)
         screen = QApplication.screenAt(self.pos()) or QApplication.primaryScreen()
         if screen is None:
             return

@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 228,
+  "count": 227,
   "silent": {
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 1,
     "chunked_session.py:ChunkedLiveRecorder._pump": 1,
@@ -144,7 +144,6 @@
     "ui/theme.py:_chevron_path": 3,
     "ui/thinking.py:Spinner.paintEvent": 1,
     "ui/thinking.py:ThinkingPopup._apply_theme": 3,
-    "ui/thinking.py:ThinkingPopup._reposition": 1,
     "ui/thinking.py:ThinkingPopup.set_paused": 1,
     "ui/thinking.py:ThinkingPopup.show_thinking": 1,
     "ui/widgets.py:SettingRow.setNarrow": 1,
@@ -604,9 +603,6 @@
     "ui/thinking.py:ThinkingPopup._apply_theme": {
       "presentation that may not resolve": 2,
       "view refreshed after the fact": 1
-    },
-    "ui/thinking.py:ThinkingPopup._reposition": {
-      "optional import": 1
     },
     "ui/thinking.py:ThinkingPopup.set_paused": {
       "optional widget": 1
