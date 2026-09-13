@@ -1108,16 +1108,17 @@ where it was wrong:
   fresh look at everything that renders through it.
 
 - **N7 — reading a config value re-applies the interface language to the whole
-  process.** `Config.__init__` ends by calling `i18n.set_language(self.data["ui_language"])`,
-  so *constructing* a `Config` is not a read: it is a global side effect. `ThinkingPopup._reposition()`
-  builds one to look up `overlay_corner`, which means showing the panel quietly resets the
-  language to whatever is stored. Nothing is visibly wrong in the running app — the stored
-  language and the applied one are the same by construction — which is exactly why it went
-  unnoticed until a test set a language without storing it and watched it revert the moment
-  the panel appeared. Left unfixed on purpose: the fix is to move the call to the two places
-  that actually change the language, and that touches every caller of `Config` in a codebase
-  where `Config` is constructed freely, including on paint paths. Recorded so that the next
-  person who writes a language-sensitive test does not spend an hour on it.
+  process. Fixed (2026-09-13).** `Config.__init__` ends by calling
+  `i18n.set_language(self.data["ui_language"])`, so *constructing* a `Config` is not a read: it
+  is a global side effect. `ThinkingPopup._reposition()` builds one to look up
+  `overlay_corner`, which means showing the panel quietly resets the language to whatever is
+  stored. This note used to say "nothing is visibly wrong in the running app — the stored
+  language and the applied one are the same by construction", and that was wrong in the one
+  place it mattered: the settings window, where a language can be picked and not yet saved,
+  and which can be open at the same moment as the panel. The fix moves nothing out of
+  `Config` — every caller relies on that side effect, the tests and the CLI included — and
+  hands the panel the `conf` the process already holds instead. See
+  `tests/test_thinking.py`.
 
 - **A static check for "strings that never reach `t()`" cannot work here, and its first
   output was 182 false positives.** The tray tooltips looked like untranslated literals and

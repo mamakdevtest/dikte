@@ -782,11 +782,13 @@ Kontrol ederken bulunan, ikisi de bildirilmemiş iki kusur:
 - **Panelin hiç i18n'i yoktu.** `ui/thinking.py` `t`'yi hiç import etmiyordu, yani İngilizce
   arayüz "Dusunuyor…" ve altında "Duraklat / Durdur / Kapat" gösteriyordu — her dilde,
   ASCII'ye katlanmış Türkçe. Düzeltildi; doğru yazım da beraberinde geldi.
-- **N7 — paneli göstermek arayüz dilini sıfırlıyor.** `_reposition()` tek bir değer okumak
-  için `cfg.Config` kuruyor ve `Config.__init__` kayıtlı `ui_language`'ı tüm sürece yeniden
-  uyguluyor. Çalışan uygulamada ikisi aynı olduğu için zararsız; bir test dili kaydetmeden
-  ayarlayana kadar görünmez kaldı: panel göründüğü anda dil geri döndü. Düzeltilmedi —
-  `Config`'ten bir yan etkiyi kaldırmak onun bütün çağıranlarına ulaşır.
+- **N7 — paneli göstermek arayüz dilini sıfırlıyor. Düzeltildi (13.09.2026).**
+  `_reposition()` tek bir değer okumak için `cfg.Config` kuruyordu ve `Config.__init__` kayıtlı
+  `ui_language`'ı tüm sürece yeniden uyguluyor. Bu not eskiden "çalışan uygulamada ikisi aynı
+  olduğu için zararsız" diyordu; değil — ayar penceresi, dilin seçilip henüz kaydedilmediği tek
+  yerdir ve panel o sırada görünebilir. Düzeltme `Config`'ten hiçbir şey kaldırmıyor (yan
+  etkisine testler ve CLI dahil her çağıran dayanıyor): panele sürecin zaten tuttuğu `conf`
+  veriliyor ve köşe oradan okunuyor. Bkz. `tests/test_thinking.py`.
 
 Tur da panele artık İngilizce aşama literali vermiyor, böylece Türkçe kare bir Türkçe
 kullanıcının gördüğünü gösteriyor.
