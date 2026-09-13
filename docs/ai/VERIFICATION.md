@@ -1,4 +1,49 @@
-# VERIFICATION — T4.8's ninth slice: a class checked and found clean
+# VERIFICATION — T4.8's tenth slice: the buttons that did nothing
+
+## The number
+
+    237 silent handlers -> 232. Five out, all of them controls the user presses.
+
+## The Copy button
+
+    try:
+        import paste
+        paste.copy(self._text)
+    except Exception:
+        try:
+            QApplication.clipboard().setText(self._text)
+        except Exception:
+            pass
+
+Both paths fail and the card goes on to show its "copied" state, because the emit below it runs
+either way. The user is told the text is on the clipboard when it is not — and the card is where
+the user *copies from*, so this is the control whose failure matters most. It now says so, with
+both exceptions, since knowing which of the two paths failed is the whole diagnosis.
+
+## The quick actions wired to nothing
+
+`_make_handler` looked the controller's slot up by name and, when neither `slot` nor `_slot`
+existed, returned in silence: a button on the dashboard that does nothing and looks exactly like
+one that works. That is not an optional widget — it is a wiring bug, and a typo in a slot name
+would have been invisible for as long as nobody pressed it. It now names the slot.
+
+And `_goto_tab`, which walks the tabs looking for the names the recent list was built from: a
+loop that finds nothing means the two lists have drifted apart, and the click went nowhere. It
+reports that as well as its own exception, using the `for … else` that was already available.
+
+## The stale name
+
+`shell.set_engine_model` sets the provider name the sidebar shows. A failure there leaves the
+*previous* engine on screen, where it reads as the current one — the same claim-versus-fact
+problem as the engine card two slices ago, on the other half of the window.
+
+## The four that are correctly silent
+
+The palette/geometry fallbacks, the tooltip, the chip label and the page constructors are left
+alone: their bodies do the right thing already, and adding reports there would be counting for
+the sake of counting.
+
+1628 tests, `git diff --check` clean.
 
 ## The number
 
