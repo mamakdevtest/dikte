@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 251,
+  "count": 247,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -11,7 +11,7 @@
     "assistant.py:_ask_plain_http._watch_abort": 1,
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 1,
     "chunked_session.py:ChunkedLiveRecorder._pump": 1,
-    "chunked_session.py:ChunkedLiveRecorder.stop": 2,
+    "chunked_session.py:ChunkedLiveRecorder.stop": 1,
     "cli.py:_safe_print": 1,
     "config.py:Config._clamped_ai_levels": 1,
     "config.py:Config._clamped_edit_level": 1,
@@ -80,11 +80,11 @@
     "settings_ui.py:SettingsWindow._on_models_loaded": 1,
     "settings_ui.py:SettingsWindow._on_opencode_go_models_loaded": 2,
     "settings_ui.py:SettingsWindow._on_sidebar_compact_toggled": 2,
-    "settings_ui.py:SettingsWindow._on_tab_change_requested": 2,
+    "settings_ui.py:SettingsWindow._on_tab_change_requested": 1,
     "settings_ui.py:SettingsWindow._on_transcribe_models_loaded": 1,
     "settings_ui.py:SettingsWindow._open_prompt_creator": 1,
     "settings_ui.py:SettingsWindow._polish_minutes": 2,
-    "settings_ui.py:SettingsWindow._provider_changed": 2,
+    "settings_ui.py:SettingsWindow._provider_changed": 1,
     "settings_ui.py:SettingsWindow._refresh_engine_card": 3,
     "settings_ui.py:SettingsWindow._refresh_shortcut_status": 1,
     "settings_ui.py:SettingsWindow._retry_voice_job": 4,
@@ -94,7 +94,6 @@
     "settings_ui.py:SettingsWindow._show_minutes": 3,
     "settings_ui.py:SettingsWindow._snapshot_settings": 6,
     "settings_ui.py:SettingsWindow._update_ai_descriptions": 4,
-    "settings_ui.py:SettingsWindow.closeEvent": 1,
     "settings_ui.py:SettingsWindow.preview_overlay_corner": 2,
     "settings_ui.py:SettingsWindow.resizeEvent": 4,
     "ui/app_window.py:<module>": 2,
@@ -184,7 +183,6 @@
       "unclassified": 1
     },
     "chunked_session.py:ChunkedLiveRecorder.stop": {
-      "worker that is gone": 1,
       "teardown that is already done": 1
     },
     "cli.py:_safe_print": {
@@ -407,7 +405,7 @@
       "presentation that may not resolve": 1
     },
     "settings_ui.py:SettingsWindow._on_tab_change_requested": {
-      "view refreshed after the fact": 2
+      "view refreshed after the fact": 1
     },
     "settings_ui.py:SettingsWindow._on_transcribe_models_loaded": {
       "value of the wrong shape": 1
@@ -420,7 +418,7 @@
       "optional widget": 1
     },
     "settings_ui.py:SettingsWindow._provider_changed": {
-      "view refreshed after the fact": 2
+      "view refreshed after the fact": 1
     },
     "settings_ui.py:SettingsWindow._refresh_engine_card": {
       "unclassified": 1,
@@ -454,9 +452,6 @@
     "settings_ui.py:SettingsWindow._update_ai_descriptions": {
       "value of the wrong shape": 2,
       "optional widget": 2
-    },
-    "settings_ui.py:SettingsWindow.closeEvent": {
-      "view refreshed after the fact": 1
     },
     "settings_ui.py:SettingsWindow.preview_overlay_corner": {
       "view refreshed after the fact": 1,

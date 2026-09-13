@@ -186,6 +186,22 @@ class Settings(DikteTest):
         self.addCleanup(release, window)
         return window
 
+    def test_changing_tab_with_an_unsaved_edit_asks_first(self):
+        """The guard the window has always claimed to have, wired the way PyQt6 wants it.
+
+        `Qt.UniqueConnection` does not exist in PyQt6 — the attribute lives on
+        `Qt.ConnectionType` — so this `connect` raised every time a settings window was
+        built, the failure went into `except: pass`, and the unsaved-edits question was
+        never asked. Found by making that failure speak (T4.8's burn-down).
+        """
+        window = self.window(cfg.Config())
+        window.tabs.setCurrentIndex(1)
+        with mock.patch.object(window, "_is_dirty", return_value=True), \
+                mock.patch.object(window, "_prompt_unsaved", return_value="cancel") as asked:
+            window.tabs.setCurrentIndex(3)
+        self.assertTrue(asked.called, "the edit has to be asked about before it is lost")
+        self.assertEqual(1, window.tabs.currentIndex(), "cancel means stay where you were")
+
     def test_a_picker_the_list_could_not_fill_is_not_left_blocked(self):
         """A combo left signal-blocked is a control that does nothing.
 

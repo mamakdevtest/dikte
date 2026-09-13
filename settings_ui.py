@@ -573,10 +573,12 @@ class SettingsWindow(QDialog):
         self._prev_index = self.tabs.currentIndex()
         try:
             self.tabs.currentChanged.connect(
-                self._on_tab_change_requested, Qt.UniqueConnection)
+                self._on_tab_change_requested, Qt.ConnectionType.UniqueConnection)
         except Exception as exc:
             # Without this connection a tab change goes unguarded: the unsaved-edits
-            # question is never asked and the edit is simply lost.
+            # question is never asked and the edit is simply lost. It used to say nothing,
+            # and the failure was real: `Qt.UniqueConnection` does not exist in PyQt6, so
+            # this connect raised on every window ever opened.
             print(f"dikte: the settings tabs are not guarded against unsaved changes "
                   f"({exc})", file=sys.stderr)
         # Apply persisted sidebar compact (manual preference) — auto responsive overrides at <920
@@ -979,6 +981,8 @@ class SettingsWindow(QDialog):
             try:
                 self._refresh_engine_card()
             except Exception:
+                # Expected while the window is still being built: the card's widgets are made
+                # after this runs, and the refresh below covers it.
                 pass
             return
         self.transcribe_model.clear()
@@ -987,8 +991,11 @@ class SettingsWindow(QDialog):
         self.transcribe_status.setText("")
         try:
             self._refresh_engine_card()
-        except Exception:
-            pass
+        except Exception as exc:
+            # Not expected here: the provider just changed, so a card that could not be
+            # refreshed keeps describing the engine the user has already moved away from.
+            print(f"dikte: the engine card still describes the previous provider ({exc})",
+                  file=sys.stderr)
 
     def _conf_view(self, pid):
         """What the registry should read: the stored settings, plus the key
@@ -2448,8 +2455,11 @@ class SettingsWindow(QDialog):
             self._save()
             try:
                 self._baseline = self._snapshot_settings()
-            except Exception:
-                pass
+            except Exception as exc:
+                # The baseline is the guard's memory: left un-refreshed after a save, the
+                # next tab change compares against values the user has already moved past.
+                print(f"dikte: the saved-state baseline could not be refreshed, so the next "
+                      f"unsaved-changes question may be wrong ({exc})", file=sys.stderr)
             self._navigating = False
             self._prev_index = prev
             # now allow the requested navigation
@@ -2507,8 +2517,12 @@ class SettingsWindow(QDialog):
                 self._save()
                 try:
                     self._baseline = self._snapshot_settings()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Same baseline as the tab-change path: a stale one makes the next
+                    # question about unsaved changes answer itself wrongly.
+                    print(f"dikte: the saved-state baseline could not be refreshed, so the "
+                          f"next unsaved-changes question may be wrong ({exc})",
+                          file=sys.stderr)
                 event.accept()
             elif choice == "discard":
                 self._revert_theme_preview()

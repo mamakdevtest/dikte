@@ -146,8 +146,11 @@ class ChunkedLiveRecorder(QObject):
         if self._timer is not None:
             try:
                 self._timer.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                # A timer that will not stop keeps firing after the session ends, so the
+                # recording can carry on past the point the user stopped it.
+                print(f"dikte: the chunk timer would not stop ({exc}), so chunks may keep "
+                      f"arriving", file=sys.stderr)
         # flush final partial chunk if any
         self._emit_chunk(is_final=True)
         # terminate recorder
