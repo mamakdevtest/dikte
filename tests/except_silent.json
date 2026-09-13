@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 232,
+  "count": 228,
   "silent": {
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 1,
     "chunked_session.py:ChunkedLiveRecorder._pump": 1,
@@ -56,7 +56,7 @@
     "settings_ui.py:SettingsWindow._cleanup_provider_changed": 1,
     "settings_ui.py:SettingsWindow._deferred_load": 1,
     "settings_ui.py:SettingsWindow._is_dirty": 1,
-    "settings_ui.py:SettingsWindow._load": 8,
+    "settings_ui.py:SettingsWindow._load": 7,
     "settings_ui.py:SettingsWindow._load_assistant_gateway_models.work": 1,
     "settings_ui.py:SettingsWindow._load_audio_devices.work": 4,
     "settings_ui.py:SettingsWindow._load_history": 1,
@@ -84,7 +84,7 @@
     "settings_ui.py:SettingsWindow._save_minutes_md": 1,
     "settings_ui.py:SettingsWindow._shortcut_row": 1,
     "settings_ui.py:SettingsWindow._show_minutes": 3,
-    "settings_ui.py:SettingsWindow._snapshot_settings": 6,
+    "settings_ui.py:SettingsWindow._snapshot_settings": 4,
     "settings_ui.py:SettingsWindow._update_ai_descriptions": 4,
     "settings_ui.py:SettingsWindow.preview_overlay_corner": 2,
     "settings_ui.py:SettingsWindow.resizeEvent": 4,
@@ -148,7 +148,6 @@
     "ui/thinking.py:ThinkingPopup.set_paused": 1,
     "ui/thinking.py:ThinkingPopup.show_thinking": 1,
     "ui/widgets.py:SettingRow.setNarrow": 1,
-    "worker.py:Pipeline._discard": 1,
     "worker.py:Pipeline._retry_cleanup_only": 3,
     "worker.py:Pipeline._work": 3
   },
@@ -318,7 +317,7 @@
       "optional widget": 1
     },
     "settings_ui.py:SettingsWindow._load": {
-      "value of the wrong shape": 2,
+      "value of the wrong shape": 1,
       "optional widget": 5,
       "unclassified": 1
     },
@@ -411,8 +410,7 @@
       "optional widget": 1
     },
     "settings_ui.py:SettingsWindow._snapshot_settings": {
-      "optional widget": 4,
-      "value of the wrong shape": 2
+      "optional widget": 4
     },
     "settings_ui.py:SettingsWindow._update_ai_descriptions": {
       "value of the wrong shape": 2,
@@ -618,9 +616,6 @@
     },
     "ui/widgets.py:SettingRow.setNarrow": {
       "unclassified": 1
-    },
-    "worker.py:Pipeline._discard": {
-      "value of the wrong shape": 1
     },
     "worker.py:Pipeline._retry_cleanup_only": {
       "clipboard restore that is best effort": 2,

@@ -2388,13 +2388,21 @@ class SettingsWindow(QDialog):
             out["meeting_provider"] = (self.meeting_provider.currentData() or "local") if hasattr(self, "meeting_provider") else "local"
             out["ai_edit_level"] = 3
             if hasattr(self, "ai_edit_spin"):
-                try: out["ai_edit_level"] = int(self.ai_edit_spin.value())
-                except Exception: pass
+                try:
+                    out["ai_edit_level"] = int(self.ai_edit_spin.value())
+                except Exception as exc:
+                    # The dirty check compares against this snapshot, so a widget it cannot
+                    # read is a change in that widget the guard will not see.
+                    print(f"dikte: the editing level could not be read for the "
+                          f"unsaved-changes check ({exc})", file=sys.stderr)
             elif hasattr(self, "ai_edit_level"):
                 for b in getattr(self.ai_edit_level, "buttons", []):
                     if b.isChecked():
-                        try: out["ai_edit_level"] = int(b.property("value") or 3)
-                        except Exception: pass
+                        try:
+                            out["ai_edit_level"] = int(b.property("value") or 3)
+                        except Exception as exc:
+                            print(f"dikte: the editing level could not be read for the "
+                                  f"unsaved-changes check ({exc})", file=sys.stderr)
                         break
             out["history_limit"] = int(self.history_limit.value()) if hasattr(self, "history_limit") else 200
         except Exception:
@@ -2862,7 +2870,11 @@ class SettingsWindow(QDialog):
         # AI Text Processing — single Editing Level (shortening folded into level)
         try:
             edit_level = max(1, min(5, int(conf.get("ai_edit_level", 3))))
-        except Exception:
+        except Exception as exc:
+            # The page is then built around level 3, and saving writes the widget's value —
+            # so a level that cannot be read silently becomes the user's new setting.
+            print(f"dikte: the saved editing level could not be read, so the page shows the "
+                  f"default and saving will write it back ({exc})", file=sys.stderr)
             edit_level = 3
         try:
             if hasattr(self, "ai_edit_level") and hasattr(self.ai_edit_level, "set_active"):

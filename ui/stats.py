@@ -49,6 +49,7 @@ def history_stats(limit=200):
     # last 7 days: count rows whose ts date within last 7 days (if ts parseable)
     today = datetime.now().date()
     last_7d = 0
+    undated = 0
     by_provider = Counter()
     durations = []
     success = 0
@@ -72,10 +73,15 @@ def history_stats(limit=200):
             if dur > 0:
                 durations.append(dur)
         except Exception:
-            pass
+            # The average is a number the user reads as a fact about their own dictation; a
+            # row left out of it silently makes that number describe fewer recordings.
+            undated += 1
         # success: presence of text
         if (r.get("text") or "").strip():
             success += 1
+    if undated:
+        print(f"dikte: {undated} history row(s) have a duration that could not be read, so "
+              f"the average leaves them out", file=sys.stderr)
     avg_duration = sum(durations) / len(durations) if durations else 0
     success_rate = (success / total * 100) if total else 0
     return {
@@ -99,19 +105,25 @@ def meetings_stats():
     by_status = Counter()
     total_duration = 0
     last_30d = 0
+    undated = 0
     today = datetime.now().date()
     for r in rows:
         by_status[r.get("status", "unknown") or "unknown"] += 1
         try:
             total_duration += float(r.get("duration", 0) or 0)
         except Exception:
-            pass
+            # Same as the history average: a total that quietly omits rows is a smaller
+            # number than the truth, presented as the truth.
+            undated += 1
         ts = _parse_ts(r.get("ts", ""))
         if ts:
             # Same contract, same deletion: `_parse_ts` verified it before returning it.
             d = datetime.strptime(ts, "%Y-%m-%d").date()
             if (today - d).days < 30 and (today - d).days >= 0:
                 last_30d += 1
+    if undated:
+        print(f"dikte: {undated} meeting row(s) have a duration that could not be read, so "
+              f"the total leaves them out", file=sys.stderr)
     return {
         "total": total,
         "by_status": dict(by_status),

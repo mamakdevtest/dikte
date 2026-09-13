@@ -12,6 +12,23 @@ from ui import stats
 
 
 class StatsTests(DikteTest):
+    def test_a_row_with_an_unreadable_duration_is_named_not_left_out_silently(self):
+        """The average is a number the user reads as a fact about their own recordings.
+
+        A row whose duration will not parse is left out of it — correct — but it used to be
+        left out in silence, so the average quietly described fewer recordings than the count
+        beside it. This pins both halves: the row is still excluded, and the omission is said.
+        """
+        cfg.append_history({"ts": "2026-09-13 10:00:00", "text": "one", "duration": 10.0})
+        cfg.append_history({"ts": "2026-09-13 11:00:00", "text": "two",
+                            "duration": "not a number"})
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            got = stats.history_stats()
+        self.assertEqual(2, got["total"], "both rows are still counted")
+        self.assertEqual(10.0, got["avg_duration"], "only the readable one is averaged")
+        self.assertIn("duration that could not be read", err.getvalue(),
+                      "and the number says what it left out")
+
     def test_the_date_parser_promises_a_date_or_nothing(self):
         """What makes the dashboard's counts safe without a defensive handler each.
 

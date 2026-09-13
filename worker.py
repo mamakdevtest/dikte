@@ -801,8 +801,12 @@ class Pipeline(QObject):
                         except OSError:
                             pass
                         return
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Falling through keeps the durable recording, which is the safe
+                    # direction — but the user asked for it to be discarded, so the request
+                    # silently not being honoured is worth a line.
+                    print(f"dikte: the discard could not read what it needed, so the audio "
+                          f"was kept ({exc})", file=sys.stderr)
             # wav_path is temp distinct from durable — delete temp, keep durable
             if wav_path and durable and wav_path != durable:
                 if os.path.exists(wav_path):
