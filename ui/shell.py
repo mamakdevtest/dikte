@@ -209,6 +209,7 @@ class AppShell(QWidget):
         status.addStretch(1)
         ver = Meta("1.0")
         ver.setProperty("mono", True)
+        ver.setToolTip(_t("Version"))
         status.addWidget(ver)
         col.addLayout(status)
         return card

@@ -58,6 +58,7 @@ import providers
 from filetranscribe import FileTranscriber
 from i18n import t
 
+from ui import format as _fmt
 from ui import theme as _theme
 from ui.local_models import LocalModelBox
 from ui.shell import AppShell, NAV as _NAV
@@ -323,9 +324,11 @@ class HistoryDetailsDialog(QDialog):
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(3, 1)
 
-        ts = self.row.get("ts", "-")
-        duration = f"{self.row.get('duration', 0):.1f} s" if "duration" in self.row else "-"
-        elapsed = f"{self.row.get('elapsed', 0):.1f} s" if self.row.get("elapsed") is not None else "-"
+        ts = _fmt.when(self.row.get("ts", "-"))
+        duration = (_fmt.seconds(self.row.get("duration", 0))
+                    if "duration" in self.row else "-")
+        elapsed = (_fmt.seconds(self.row.get("elapsed", 0))
+                   if self.row.get("elapsed") is not None else "-")
         mode_str = t("Agent Ask") if self.row.get("mode") == "ask" else t("Dictation")
         lang = self.row.get("language") or "-"
 
@@ -504,7 +507,7 @@ class SettingsWindow(QDialog):
         # Overlay is 10th tab per prototype (last)
         try:
             from ui.pages import overlay as overlay_page
-            self.shell.add_page(t("Overlay/Indicator"), overlay_page.build(self), "monitor")
+            self.shell.add_page(t("Indicator"), overlay_page.build(self), "monitor")
         except Exception:
             pass
 
@@ -2105,7 +2108,8 @@ class SettingsWindow(QDialog):
             text = (row.get("text") or "").replace("\n", " ")
             preview = text[:110] + ("…" if len(text) > 110 else "")
             header = t("{ts}  ({duration} s)",
-                       ts=row.get("ts", ""), duration=row.get("duration", 0))
+                       ts=_fmt.when(row.get("ts", "")),
+                       duration=_fmt.number(row.get("duration", 0)))
             if row.get("mode") == "ask":
                 asked = (row.get("question") or row.get("raw") or "").replace("\n", " ")
                 header += t("  ·  asked Claude: {question}",

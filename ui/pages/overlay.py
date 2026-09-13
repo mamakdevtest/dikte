@@ -56,7 +56,7 @@ def _state_card(title: str, desc: str, preview: QWidget) -> QWidget:
 
 def build(window):
     body, outer = page(
-        t("Overlay/Indicator"),
+        t("Indicator"),
         t("The indicator shows recording, work and result states at a glance. The tray menu keeps the same actions reachable outside the window."),
     )
 

@@ -173,7 +173,6 @@ TR = {
     "Dikte": "Dikte",
     "Dashboard": "Kontrol Paneli",
     "Dashboard…": "Kontrol Paneli…",
-    "Genel bakış — son dikte ve toplantılarınız": "Genel bakış — son dikte ve toplantılarınız",
     "Total dictations": "Toplam dikte",
     "Last 7 days": "Son 7 gün",
     "Meetings": "Toplantılar",
@@ -382,8 +381,6 @@ TR = {
     "Install as a {desktop} shortcut": "{desktop} kısayolu olarak kur",
     "Install as a global shortcut": "Global kısayol olarak kur",
     "Remove": "Kaldır",
-    "Registered in KDE: {shortcut}": "KDE'de kayıtlı: {shortcut}",
-    "No KDE shortcut installed.": "KDE kısayolu kurulu değil.",
     "Registered in {desktop}: {shortcut}": "{desktop}'da kayıtlı: {shortcut}",
     "No global shortcut installed.": "Global kısayol kurulu değil.",
     "No global shortcut installed. The tray menu starts a meeting too.":
@@ -528,7 +525,7 @@ TR = {
         "aynısı olarak çalışır: skill'lerinle, bağlı servislerinle ve kendi "
         "hesabınla.",
     "How it runs": "Nasıl çalışıyor",
-    "Runs on": "Şunun üstünde çalışır",
+    "Runs on": "Çalıştığı yer",
     "More thinking is slower, and you are standing in front of the screen while "
     "it happens. Worth it for a job that has to be worked out rather than "
     "looked up.":
@@ -562,8 +559,6 @@ TR = {
     "The conversation": "Konuşma",
     "The answer": "Cevap",
     "Found: {path}": "Bulundu: {path}",
-    "No KDE shortcut installed. The tray menu asks it too.":
-        "Kurulu KDE kısayolu yok. Tepsi menüsünden de sorulabilir.",
     "A name like “sonnet” always means the newest model of that line. Opus "
     "thinks harder and answers slower, which is felt here more than anywhere "
     "else: you are standing in front of the screen.":
@@ -624,9 +619,6 @@ TR = {
     "Dikte: the meeting is written up": "Dikte: tutanak hazır",
     "Meeting failed: {error}": "Toplantı başarısız: {error}",
     "Dikte: the meeting could not be written up": "Dikte: tutanak çıkarılamadı",
-    "{error}\n\nThe recording has been kept. Settings → Minutes can try again.":
-        "{error}\n\nSes kaydı duruyor. Ayarlar → Tutanaklar üzerinden yeniden "
-        "denenebilir.",
     "Recording saved. The previous meeting is still being written up, so start "
     "this one from Settings → Minutes when it is done.":
         "Kayıt saklandı. Önceki toplantının tutanağı hâlâ çıkarılıyor; bu kaydı o "
@@ -762,8 +754,6 @@ TR = {
         "yeniden denenebilsin diye. Buradaki ayar başarıyla bitenler için.",
     "none": "yok",
     "Type a key combination first.": "Önce bir tuş kombinasyonu yaz.",
-    "No KDE shortcut installed. The tray menu starts a meeting too.":
-        "KDE kısayolu kurulu değil. Toplantıyı tepsi menüsünden de başlatabilirsin.",
     "System instruction given to the minutes model.":
         "Tutanak modeline verilen sistem talimatı.",
     "Pick a meeting to read it.": "Okumak için bir toplantı seç.",
@@ -1066,4 +1056,128 @@ TR = {
     "Your voice, from this input.": "Sesin, bu girişten gelir.",
     "“and move that to Thursday” knows what “that” is; after it, fresh.": "“Onu perşembeye al”daki “o”nun ne olduğu bilinir; sonrasında sıfırdan başlar.",
     "“sonnet” always means the newest of that line.": "“sonnet” her zaman o serinin en yenisini seçer.",
+
+    # --- backfilled on 2026-09-12 --------------------------------------
+    # The strings tests/i18n_untranslated.json listed as reaching t() with no
+    # entry, so they showed English inside a Turkish window. That record is
+    # empty again, and tests/test_i18n.py fails if it refills. New strings
+    # belong in the topical sections above, not here.
+    #
+    # ggml.py — what a local model download says when it goes wrong
+    "Could not create {path}: {error}": "{path} oluşturulamadı: {error}",
+    "Could not delete the model: {error}": "Model silinemedi: {error}",
+    "Could not download {name}: HTTP {code}": "{name} indirilemedi: HTTP {code}",
+    "Could not download {name}: {error}": "{name} indirilemedi: {error}",
+    "Could not install {name}: {error}": "{name} kurulamadı: {error}",
+    "Could not start {name}: {error}": "{name} başlatılamadı: {error}",
+    "Could not unpack {name}: {error}": "{name} açılamadı: {error}",
+    "Could not write {name}: {error}": "{name} yazılamadı: {error}",
+    "No local cleanup model has been downloaded yet. Settings → API and models → Download.": "Henüz yerel bir temizleme modeli indirilmedi. Ayarlar → API ve modeller → İndir.",
+    "No whisper model has been downloaded yet. Settings → API and models → Download.": "Henüz bir whisper modeli indirilmedi. Ayarlar → API ve modeller → İndir.",
+    "The download stopped early ({done} of {total}).": "İndirme erken durdu ({done} / {total}).",
+    "The download tried to write outside the directory it was unpacking into.": "İndirme, açtığı dizinin dışına yazmaya çalıştı.",
+    "llama.cpp is not installed. Settings → API and models → Download.": "llama.cpp kurulu değil. Ayarlar → API ve modeller → İndir.",
+    "no output": "çıktı yok",
+    "whisper.cpp is not installed. Settings → API and models → Download.": "whisper.cpp kurulu değil. Ayarlar → API ve modeller → İndir.",
+    "whisper.cpp publishes no macOS build. Install it with: brew install whisper-cpp": "whisper.cpp macOS derlemesi yayınlamıyor. Şununla kur: brew install whisper-cpp",
+    "{name} did not start: {error}": "{name} başlamadı: {error}",
+    "{name} does not match its published checksum. Nothing was installed.": "{name} yayınlanan sağlama toplamıyla eşleşmiyor. Hiçbir şey kurulmadı.",
+    "{name} is longer than it said it would be.": "{name} bildirdiği boyuttan daha uzun çıktı.",
+    "{name} is published without a checksum, so there is no way to tell what arrived. Nothing was installed.": "{name} sağlama toplamı olmadan yayınlanmış; gelenin ne olduğunu anlamanın yolu yok. Hiçbir şey kurulmadı.",
+    "{name} was not in the download.": "{name} indirmenin içinde yoktu.",
+    "{repo} {tag} has no build for this machine.": "{repo} {tag} bu makine için derleme yayınlamıyor.",
+    "{repo} {tag} has no whisper-bin-x64.zip for this machine.": "{repo} {tag} bu makine için whisper-bin-x64.zip yayınlamıyor.",
+    # hub.py — GitHub and Hugging Face, when they answer badly
+    "Could not reach {url}: {error}": "{url} adresine ulaşılamadı: {error}",
+    "Could not read the answer from {url}: {error}": "{url} adresinden gelen yanıt okunamadı: {error}",
+    "Hugging Face did not return a model list.": "Hugging Face bir model listesi döndürmedi.",
+    "{repo} did not return a file list.": "{repo} bir dosya listesi döndürmedi.",
+    "{repo} has no downloadable release.": "{repo} indirilebilir bir sürüm yayınlamıyor.",
+    "{url} answered HTTP {code}.": "{url} HTTP {code} ile yanıtladı.",
+    # ui/local_models.py — the download box
+    "A Hugging Face repository of GGUF files. The list is fetched; any other one can be typed in.": "GGUF dosyaları barındıran bir Hugging Face deposu. Liste getirilir; başka bir tane elle yazılabilir.",
+    "Checking…": "Kontrol ediliyor…",
+    "Delete": "Sil",
+    "Delete model": "Modeli sil",
+    "Delete {name} from this machine?": "{name} bu makineden silinsin mi?",
+    "Download": "İndir",
+    "Download stopped.": "İndirme durdu.",
+    "Downloaded, version {version}.": "İndirildi, sürüm {version}.",
+    "Downloading: {done} of {total}{share}": "İndiriliyor: {done} / {total}{share}",
+    "Downloading…": "İndiriliyor…",
+    "Fetching the model list…": "Model listesi getiriliyor…",
+    "Installed on the system: {path}": "Sistemde kurulu: {path}",
+    "Not installed.": "Kurulu değil.",
+    "Nothing downloaded yet.": "Henüz hiçbir şey indirilmedi.",
+    "Program": "Program",
+    "Publisher": "Yayıncı",
+    "Ready: {name}.": "Hazır: {name}.",
+    "downloaded": "indirildi",
+    "not downloaded": "indirilmedi",
+    "{name} has not been downloaded yet.": "{name} henüz indirilmedi.",
+    # ui/pages/general.py
+    "A recording that reaches this stops on its own and is still transcribed.": "Bu süreye ulaşan kayıt kendiliğinden durur ve yine de yazıya çevrilir.",
+    "Below the threshold the transcription is never called.": "Eşiğin altında yazıya çevirme hiç çağrılmaz.",
+    "Dictation, the agent command and the meeting microphone listen to this input.": "Dikte, ajan komutu ve toplantı mikrofonu bu girişi dinler.",
+    "Everyday dictation: language, where the text goes, recording limits and silence detection.": "Günlük dikte: dil, metnin nereye gittiği, kayıt sınırları ve sessizlik algılama.",
+    "Keep audio files": "Ses dosyalarını sakla",
+    "Language and input": "Dil ve giriş",
+    "Loading microphones…": "Mikrofonlar yükleniyor…",
+    "Off means the recording is deleted once transcribed.": "Kapalıysa kayıt yazıya çevrildikten sonra silinir.",
+    "Off means the transcript is only copied to the clipboard.": "Kapalıysa transkript yalnızca panoya kopyalanır.",
+    "Recording behavior": "Kayıt davranışı",
+    "Result display": "Sonuç gösterimi",
+    "Silence detection": "Sessizlik algılama",
+    "Storage": "Depolama",
+    "Text insertion": "Metin ekleme",
+    "The floating indicator in the screen corner while recording.": "Kayıt sırasında ekran köşesindeki yüzen gösterge.",
+    "The right language means fewer mishearings on the first try.": "Doğru dil, ilk denemede daha az yanlış duymak demektir.",
+    "What you had copied returns once pasting is done.": "Yapıştırma bitince önceden kopyaladığın şey geri gelir.",
+    # ui/pages/dashboard.py — stat labels, next to the numbers
+    "Overview — your recent dictations and meetings": "Genel bakış — son dikte ve toplantılarınız",
+    "Ask": "Sor",
+    "avg": "ort.",
+    "last 30 days": "son 30 gün",
+    "min": "dk",
+    "success": "başarılı",
+    "total": "toplam",
+    "total duration": "toplam süre",
+    # ui/pages/providers.py
+    "Automatic": "Otomatik",
+    "Choose where speech-to-text and transcript cleanup run. Keys are stored only on this computer.": "Konuşmadan metne çevirme ve transkript temizliğinin nerede çalışacağını seç. Anahtarlar yalnızca bu bilgisayarda saklanır.",
+    "Load the model when Dikte starts": "Modeli Dikte başlarken yükle",
+    "On this machine": "Bu makinede",
+    "Threads": "İş parçacığı",
+    "Use the graphics card": "Ekran kartını kullan",
+    "Runs on this machine, on llama.cpp.": "Bu makinede, llama.cpp üzerinde çalışır.",
+    # dikte.py
+    "Cannot start meeting while another voice capture is active on this device. Finish it or choose a shareable input.": "Bu cihazda başka bir ses kaydı etkinken toplantı başlatılamaz. Onu bitir ya da paylaşılabilir bir giriş seç.",
+    "Paused — thinking on hold": "Duraklatıldı — düşünme bekliyor",
+    "{error}\n\nThe recording has been kept. Settings → Minutes can try again. ({retry})": "{error}\n\nKayıt saklandı. Ayarlar → Tutanaklar yeniden deneyebilir. ({retry})",
+    # cleanup.py / assistant.py / meeting.py — nothing chosen yet
+    "Local model": "Yerel model",
+    "{binary} not found. Install it, or pick another cleanup provider under Settings → API and models.": "{binary} bulunamadı. Kur ya da Ayarlar → API ve modeller altından başka bir temizleme sağlayıcısı seç.",
+    "{service} has no cleanup model chosen. Pick one in Settings.": "{service} için temizleme modeli seçilmemiş. Ayarlar'dan bir tane seç.",
+    "{service} has no minutes model chosen. Pick one in Settings.": "{service} için tutanak modeli seçilmemiş. Ayarlar'dan bir tane seç.",
+    "{service} has no model chosen for this. Pick one in Settings.": "{service} için model seçilmemiş. Ayarlar'dan bir tane seç.",
+    "This agent request may already have run. Confirm before retrying it.": "Bu ajan isteği zaten çalışmış olabilir. Yeniden denemeden önce onayla.",
+    # api.py / audio.py / chunked_session.py
+    "Bad provider URL: {error}": "Geçersiz sağlayıcı adresi: {error}",
+    "The cleanup model spent its whole reply on thinking. Set Thinking to “Off”.": "Temizleme modeli yanıtının tamamını düşünmeye harcadı. Düşünme'yi “Kapalı” yap.",
+    "max duration reached": "azami süreye ulaşıldı",
+    "No audio recorder found.": "Ses kaydedici bulunamadı.",
+    # hotkey.py — Windows, when the combination is taken
+    "Could not reach the Windows shortcut service.": "Windows kısayol servisine ulaşılamadı.",
+    "Windows would not give Dikte {shortcut}; another application already holds it.": "Windows {shortcut} kısayolunu Dikte'ye vermedi; başka bir uygulama onu tutuyor.",
+    # ui/shell.py — the sidebar footer and the indicator page
+    "Local": "Yerel",
+    "Ready": "Hazır",
+    "Indicator": "Gösterge",
+    "Version": "Sürüm",
+    # ui/pages/*.py — the one-line introductions
+    "Every dictation and agent command, kept on this computer.": "Her dikte ve ajan komutu bu bilgisayarda saklanır.",
+    "Global key combinations that work wherever the focus is.": "Odak nerede olursa olsun çalışan genel tuş kombinasyonları.",
+    "Recorded meetings and the minutes written from them.": "Kaydedilen toplantılar ve onlardan yazılan tutanaklar.",
+    "Recordings older than this are deleted when the app starts and after each meeting. The written minutes are never touched.": "Bundan eski kayıtlar uygulama başlarken ve her toplantıdan sonra silinir. Yazılan tutanaklara hiç dokunulmaz.",
+    "The indicator shows recording, work and result states at a glance. The tray menu keeps the same actions reachable outside the window.": "Gösterge kayıt, çalışma ve sonuç durumlarını tek bakışta gösterir. Tepsi menüsü aynı eylemleri pencere dışından erişilebilir tutar.",
 }

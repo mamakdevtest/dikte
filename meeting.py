@@ -724,11 +724,18 @@ def format_when(ts, short=False):
     """"2026-08-28 14:30" said the way people write it, in our language.
 
     An unparseable or empty stamp comes back as it arrived: the raw form is
-    still information, just not dressed up.
+    still information, just not dressed up. A history row carries seconds and a
+    meeting row does not, so both shapes are read here rather than at every call
+    site.
     """
-    try:
-        stamp = time.strptime(ts, "%Y-%m-%d %H:%M")
-    except (TypeError, ValueError):
+    stamp = None
+    for shape in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            stamp = time.strptime(ts, shape)
+            break
+        except (TypeError, ValueError):
+            continue
+    if stamp is None:
         return ts or ""
     long_names, short_names = _MONTHS.get(language(), _MONTHS["en"])
     month = (short_names if short else long_names)[stamp.tm_mon - 1]

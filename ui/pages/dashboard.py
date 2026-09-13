@@ -11,6 +11,7 @@ from i18n import t
 
 from ..widgets import SectionCard
 from . import page, scrolled
+from .. import format as fmt
 from .. import theme
 
 
@@ -231,13 +232,14 @@ def build(window):
         dc = []
         pu = {}
 
-    body, outer = page(t("Dashboard"), t("Genel bakış — son dikte ve toplantılarınız"))
+    body, outer = page(t("Dashboard"), t("Overview — your recent dictations and meetings"))
     _quick_actions(window, outer)
 
     # 4 cards
     cards = QHBoxLayout()
     cards.setSpacing(10)
-    avg_txt = f"{hs.get('avg_duration',0):.1f}s {t('avg')}" if hs.get('total') else t("—")
+    avg_txt = (f"{fmt.seconds(hs.get('avg_duration', 0))} {t('avg')}"
+               if hs.get('total') else "—")
     cards.addWidget(_stat_card(t("Total dictations"), hs.get("total", 0), avg_txt))
     cards.addWidget(_stat_card(t("Last 7 days"), hs.get("last_7d", 0), f"{hs.get('success_rate',0):.0f}% {t('success')}"))
     cards.addWidget(_stat_card(t("Meetings"), ms.get("total", 0), f"{ms.get('last_30d',0)} {t('last 30 days')}"))
@@ -278,7 +280,7 @@ def build(window):
             for r in rows:
                 txt = (r.get("text") or r.get("raw") or "").replace("\n", " ")[:90]
                 ts = r.get("ts", "")
-                item = QListWidgetItem(f"{ts}  {txt}")
+                item = QListWidgetItem(f"{fmt.when(ts)}  {txt}")
                 item.setData(Qt.ItemDataRole.UserRole, r)
                 lst.addItem(item)
         lst.itemClicked.connect(lambda _item=None: _goto_tab(window, ("History", "Geçmiş")))
@@ -301,7 +303,7 @@ def build(window):
             for r in mrows:
                 title = (r.get("title") or "").strip() or mt.fallback_title(r.get("ts", ""))
                 ts = r.get("ts", "")
-                item = QListWidgetItem(f"{title}  —  {ts}")
+                item = QListWidgetItem(f"{title}  —  {fmt.when(ts)}")
                 item.setData(Qt.ItemDataRole.UserRole, r)
                 ml.addItem(item)
         ml.itemClicked.connect(lambda _item=None: _goto_tab(window, ("Minutes", "Tutanak")))
