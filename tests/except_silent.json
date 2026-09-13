@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 286,
+  "count": 285,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -28,7 +28,7 @@
     "dikte.py:Dikte._current_seconds": 1,
     "dikte.py:Dikte._new_result_overlay": 1,
     "dikte.py:Dikte._on_error": 1,
-    "dikte.py:Dikte._on_finished": 2,
+    "dikte.py:Dikte._on_finished": 1,
     "dikte.py:Dikte._on_live_transcript": 1,
     "dikte.py:Dikte._on_meeting_progress": 1,
     "dikte.py:Dikte._on_result_copy": 1,
@@ -261,7 +261,7 @@
       "unclassified": 1
     },
     "dikte.py:Dikte._on_finished": {
-      "value of the wrong shape": 2
+      "value of the wrong shape": 1
     },
     "dikte.py:Dikte._on_live_transcript": {
       "view refreshed after the fact": 1

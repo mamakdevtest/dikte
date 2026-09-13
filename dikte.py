@@ -10,6 +10,7 @@ command line says "there is no instance to talk to, so be one".
 import contextlib
 import json
 import os
+import pathlib
 import signal
 import socket
 import sys
@@ -1988,10 +1989,106 @@ def install_crash_reporting():
     sys.excepthook = report_crash
 
 
+LOG_LIMIT = 1_000_000
+
+
+class Tee:
+    """Write to a stream and to a file: what a bundle has instead of a terminal.
+
+    **The file is written first, on purpose.** If the terminal has gone away — a closed
+    pipe, a reader that quit — the write to it raises, and by then the durable copy is
+    already made. That is the whole point of the class: N9 was a message that had nowhere
+    to go. The stream write itself is left unguarded, because a program whose stdout is
+    gone raising BrokenPipeError is Python's own behaviour, the CLI already handles it, and
+    a tee that swallows it would be inventing a second kind of silence.
+
+    Everything it does not implement it delegates to the stream it wraps: other code calls
+    `fileno()`, `reconfigure()` and `buffer` on `sys.stdout`, and a logger that breaks
+    those is worse than no logger.
+    """
+
+    def __init__(self, stream, handle):
+        self._stream = stream
+        self._handle = handle
+
+    def write(self, text):
+        handle = self._handle
+        if handle is not None:
+            try:
+                handle.write(text)
+                handle.flush()
+            except Exception as exc:
+                self._stop_logging(exc)
+        self._stream.write(text)
+        return len(text)
+
+    def flush(self):
+        if self._handle is not None:
+            try:
+                self._handle.flush()
+            except Exception as exc:
+                self._stop_logging(exc)
+        self._stream.flush()
+
+    def _stop_logging(self, exc):
+        """Say once — out loud, where a person can still see it — that the file is done.
+
+        A log that has stopped accepting output and says nothing is the failure this whole
+        class exists to prevent, one level down. One message, not one per write, and the
+        handle is dropped so the next write does not try again.
+        """
+        if self._handle is None:
+            return
+        self._handle = None
+        print(f"dikte: the log file stopped accepting output ({exc})", file=self._stream)
+
+    def isatty(self):
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def keep_a_log(path=None):
+    """Also write what the application prints into a file, when no terminal is watching.
+
+    N9, found by packaging: a frozen application's stdout does not reach a pipe, and a
+    bundle starts from a desktop entry with no terminal at all — so every message it
+    prints on failure, including the ones that explain the failure, goes nowhere a person
+    can look. The condition is "no terminal", not "frozen", because `install.sh`'s desktop
+    entry runs a source checkout with exactly the same problem.
+
+    Returns the path it opened, or None when the output already goes somewhere a person is
+    looking. Never raises: a diagnostic aid that breaks the thing it is diagnosing is the
+    worst possible version of this idea.
+    """
+    stream = sys.stdout
+    if stream is not None and hasattr(stream, "isatty") and stream.isatty():
+        return None
+    try:
+        target = pathlib.Path(path) if path is not None else cfg.log_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # One file, not an archive: a log that grows without bound is its own failure.
+        if target.exists() and target.stat().st_size > LOG_LIMIT:
+            target.write_text("", encoding="utf-8")
+        handle = open(target, "a", encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"dikte: could not open a log file ({exc})", file=sys.stderr)
+        return None
+    sys.stdout = Tee(sys.stdout, handle)
+    if sys.stderr is not sys.stdout:
+        sys.stderr = Tee(sys.stderr, handle)
+    print(f"dikte: no terminal; writing to {target}", file=sys.stderr)
+    return target
+
+
 def run_app(args):
     command = args[0] if args else ""
 
     install_crash_reporting()
+    # Before anything else can print: a desktop entry has no terminal, so from here on
+    # whatever this run has to say is also written somewhere it can be read later (N9).
+    keep_a_log()
 
     if sys.platform == "win32":
         try:

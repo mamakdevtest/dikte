@@ -47,10 +47,12 @@ def _reports(handler, reporters=frozenset()):
     because the caller cannot tell it apart from success.
 
     `reporters` is the set of this module's own functions that report when called, so a
-    handler that hands its message to a helper has reported. Without it the counter
-    treated `_could_not_read(...)` as silence — four sites in `ui/stats.py` were
-    reporting the failure to the terminal and still counted as saying nothing, which is
-    the same blind spot as a static scan that only sees the one shape it was written for.
+    handler that hands its message to a helper has reported — by name (`_could_not_read(…)`)
+    or as a method (`self._stop_logging(…)`). Without it the counter treated both as
+    silence: four sites in `ui/stats.py` were reporting the failure to the terminal and
+    still counted as saying nothing, and `Tee.write` was caught the same way a second time.
+    A check that only sees the shape it was written for needs its shape widened each time
+    that happens, and the widening is worth recording rather than hiding.
     """
     for node in ast.walk(handler):
         if node is handler:
@@ -62,7 +64,8 @@ def _reports(handler, reporters=frozenset()):
             if isinstance(func, ast.Name) and (func.id in ("print", "warn")
                                                or func.id in reporters):
                 return True
-            if isinstance(func, ast.Attribute) and func.attr in REPORTING_ATTRS:
+            if isinstance(func, ast.Attribute) and (func.attr in REPORTING_ATTRS
+                                                    or func.attr in reporters):
                 return True
     return False
 

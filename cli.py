@@ -1062,6 +1062,10 @@ def cmd_doctor(opts):
         "agent": {"provider": assistant.provider(conf),
                   "directory": assistant.working_dir(conf)},
         "running": ipc.send("status") is not None,
+        # N9: a bundle started from a desktop entry prints into nowhere, so this file is
+        # where a failure can be read afterwards. Reporting the path is the least doctor
+        # can do about it.
+        "log": str(cfg.log_path()),
     }
     lines = [f"{'✓' if path else '✗'} {name:14} {path or 'not on your PATH'}"
              for name, path in programs.items()]
@@ -1086,6 +1090,7 @@ def cmd_doctor(opts):
     lines.append(
         f"{'✓' if checks['running'] else '·'} application "
         + ("running" if checks["running"] else "not running"))
+    lines.append(f"· log, written when there is no terminal: {cfg.log_path()}")
     return out(opts, {"ok": True, **checks}, "\n".join(lines))
 
 

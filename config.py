@@ -433,6 +433,17 @@ def _directories(platform=None):
 
 
 CONFIG_DIR, DATA_DIR = _directories()
+
+# Where the application's own output goes when nobody is watching a terminal (N9). A
+# frozen bundle is launched from a desktop entry, so `print` reaches no one; the file is
+# the only place a failure can be read afterwards, and `dikte doctor` reports its path.
+LOG_NAME = "dikte.log"
+
+
+def log_path():
+    return DATA_DIR / LOG_NAME
+
+
 CONFIG_FILE = CONFIG_DIR / "config.json"
 HISTORY_FILE = DATA_DIR / "history.jsonl"
 RECORDINGS_DIR = DATA_DIR / "recordings"
