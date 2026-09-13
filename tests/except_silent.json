@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 285,
+  "count": 284,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -54,7 +54,6 @@
     "meeting.py:MeetingPipeline._work": 1,
     "meeting.py:MeetingPipeline.run": 1,
     "meeting.py:MeetingPipeline.stop": 1,
-    "meeting.py:prune_audio": 1,
     "overlay.py:<module>": 1,
     "overlay.py:Overlay._draw_dismiss": 1,
     "overlay.py:Overlay._draw_level_rail": 1,
@@ -236,15 +235,15 @@
       "optional widget": 1
     },
     "dikte.py:Dikte.__init__": {
-      "unclassified": 1,
-      "optional widget": 2
+      "optional import": 2,
+      "optional widget": 1
     },
     "dikte.py:Dikte._apply_settings": {
       "unclassified": 1,
       "optional widget": 2
     },
     "dikte.py:Dikte._build_tray": {
-      "presentation that may not resolve": 1,
+      "optional import": 1,
       "optional widget": 1,
       "teardown that is already done": 1
     },
@@ -255,7 +254,7 @@
       "worker that is gone": 1
     },
     "dikte.py:Dikte._new_result_overlay": {
-      "optional widget": 1
+      "optional import": 1
     },
     "dikte.py:Dikte._on_error": {
       "unclassified": 1
@@ -276,13 +275,14 @@
       "view refreshed after the fact": 1
     },
     "dikte.py:Dikte._toggle_live_popup": {
-      "unclassified": 1
+      "optional import": 1
     },
     "dikte.py:Dikte._tray_icon": {
-      "presentation that may not resolve": 1
+      "optional import": 1
     },
     "dikte.py:Dikte.open_dashboard": {
-      "optional widget": 2
+      "optional import": 1,
+      "optional widget": 1
     },
     "dikte.py:Dikte.open_settings": {
       "value of the wrong shape": 1
@@ -291,13 +291,13 @@
       "optional widget": 1
     },
     "dikte.py:Dikte.retry_agent_from_job": {
-      "absent file or row": 1
+      "optional import": 1
     },
     "dikte.py:Dikte.retry_meeting_from_base": {
-      "unclassified": 1
+      "optional import": 1
     },
     "dikte.py:Dikte.retry_voice_job": {
-      "absent file or row": 1
+      "optional import": 1
     },
     "dikte.py:Dikte.start_meeting": {
       "value of the wrong shape": 1
@@ -309,25 +309,25 @@
       "worker that is gone": 1
     },
     "dikte.py:HintMenu.paintEvent": {
-      "presentation that may not resolve": 1
+      "optional import": 1
     },
     "dikte.py:HintMenu.sizeHint": {
-      "value of the wrong shape": 1
+      "optional import": 1
     },
     "dikte.py:_win32_message_box": {
-      "value of the wrong shape": 1
+      "optional import": 1
     },
     "dikte.py:run_app": {
-      "unclassified": 2
+      "optional import": 2
     },
     "hotkey.py:WindowsHotkey._pump": {
       "value of the wrong shape": 1
     },
     "i18n.py:_windows_locale": {
-      "value of the wrong shape": 1
+      "optional import": 1
     },
     "livetext.py:LiveTranscriber._probe": {
-      "value of the wrong shape": 1
+      "optional import": 1
     },
     "meeting.py:MeetingPipeline._work": {
       "value of the wrong shape": 1
@@ -338,11 +338,8 @@
     "meeting.py:MeetingPipeline.stop": {
       "unclassified": 1
     },
-    "meeting.py:prune_audio": {
-      "unclassified": 1
-    },
     "overlay.py:<module>": {
-      "lookup that is not there": 1
+      "optional import": 1
     },
     "overlay.py:Overlay._draw_dismiss": {
       "view refreshed after the fact": 1
@@ -377,10 +374,10 @@
       "value of the wrong shape": 1
     },
     "overlay.py:_palette_colors": {
-      "presentation that may not resolve": 1
+      "optional import": 1
     },
     "paste.py:_ensure_win32_clipboard_prototypes": {
-      "lookup that is not there": 1
+      "optional import": 1
     },
     "paste.py:_windows_copy_text": {
       "value of the wrong shape": 1
@@ -398,17 +395,18 @@
       "unclassified": 1
     },
     "settings_ui.py:HistoryDetailsDialog.__init__._val_label": {
-      "presentation that may not resolve": 1
+      "optional import": 1
     },
     "settings_ui.py:SettingsWindow.__init__": {
-      "unclassified": 1,
+      "optional import": 1,
       "optional widget": 3,
       "view refreshed after the fact": 1
     },
     "settings_ui.py:SettingsWindow._after_theme_change": {
       "unclassified": 1,
-      "optional widget": 2,
-      "view refreshed after the fact": 1
+      "optional widget": 1,
+      "view refreshed after the fact": 1,
+      "optional import": 1
     },
     "settings_ui.py:SettingsWindow._ai_edit_changed": {
       "value of the wrong shape": 1,
@@ -432,7 +430,7 @@
       "value of the wrong shape": 1
     },
     "settings_ui.py:SettingsWindow._load_audio_devices.work": {
-      "unclassified": 4
+      "device list the machine may not offer": 4
     },
     "settings_ui.py:SettingsWindow._load_history": {
       "unclassified": 1
@@ -450,7 +448,7 @@
       "value of the wrong shape": 1
     },
     "settings_ui.py:SettingsWindow._load_voice_jobs": {
-      "absent file or row": 1
+      "optional import": 1
     },
     "settings_ui.py:SettingsWindow._meeting_provider_changed": {
       "optional widget": 5
@@ -508,7 +506,8 @@
       "optional widget": 1
     },
     "settings_ui.py:SettingsWindow._retry_voice_job": {
-      "optional widget": 3,
+      "optional import": 2,
+      "optional widget": 1,
       "value of the wrong shape": 1
     },
     "settings_ui.py:SettingsWindow._save": {
@@ -521,8 +520,7 @@
       "optional widget": 2
     },
     "settings_ui.py:SettingsWindow._show_minutes": {
-      "worker that is gone": 1,
-      "value of the wrong shape": 1,
+      "optional import": 2,
       "optional widget": 1
     },
     "settings_ui.py:SettingsWindow._snapshot_settings": {
@@ -538,21 +536,22 @@
     },
     "settings_ui.py:SettingsWindow.preview_overlay_corner": {
       "view refreshed after the fact": 1,
-      "optional widget": 1
+      "optional import": 1
     },
     "settings_ui.py:SettingsWindow.resizeEvent": {
       "value of the wrong shape": 1,
-      "unclassified": 2,
+      "optional import": 2,
       "optional widget": 1
     },
     "ui/app_window.py:<module>": {
-      "lookup that is not there": 2
+      "optional import": 2
     },
     "ui/app_window.py:DashboardWindow.__init__": {
-      "optional widget": 3,
+      "optional widget": 2,
       "teardown that is already done": 1,
       "lookup that is not there": 1,
-      "unclassified": 2
+      "unclassified": 2,
+      "optional import": 1
     },
     "ui/app_window.py:DashboardWindow.showEvent": {
       "optional widget": 1
@@ -564,8 +563,7 @@
       "optional widget": 2
     },
     "ui/icons.py:_default_color": {
-      "unclassified": 1,
-      "presentation that may not resolve": 1
+      "optional import": 2
     },
     "ui/icons.py:icon": {
       "presentation that may not resolve": 1
@@ -578,7 +576,7 @@
       "absent file or row": 1
     },
     "ui/live_popup.py:<module>": {
-      "lookup that is not there": 1
+      "optional import": 1
     },
     "ui/live_popup.py:LivePopup._refresh_palette": {
       "presentation that may not resolve": 2,
@@ -592,7 +590,7 @@
       "optional widget": 1
     },
     "ui/overlay_coordinator.py:<module>": {
-      "lookup that is not there": 1
+      "optional import": 1
     },
     "ui/overlay_coordinator.py:OverlayCoordinator._activity_height": {
       "value of the wrong shape": 1
@@ -608,7 +606,7 @@
       "value of the wrong shape": 1
     },
     "ui/pages/__init__.py:apply_page_margins_for_width": {
-      "optional widget": 1
+      "optional import": 1
     },
     "ui/pages/__init__.py:update_margins": {
       "view refreshed after the fact": 1
@@ -641,14 +639,14 @@
       "optional widget": 1
     },
     "ui/pages/dashboard.py:build": {
-      "optional widget": 2
+      "optional import": 2
     },
     "ui/pages/dashboard.py:build.refresh": {
-      "optional widget": 1
+      "optional import": 1
     },
     "ui/pages/general.py:build._on_picker_changed": {
       "view refreshed after the fact": 1,
-      "optional widget": 1
+      "optional import": 1
     },
     "ui/pages/history.py:build": {
       "optional widget": 1
@@ -660,7 +658,7 @@
       "optional widget": 2
     },
     "ui/pages/meeting.py:build": {
-      "unclassified": 1
+      "optional import": 1
     },
     "ui/pages/minutes.py:build": {
       "optional widget": 1
@@ -672,17 +670,17 @@
       "optional widget": 2
     },
     "ui/result_overlay.py:<module>": {
-      "lookup that is not there": 1
+      "optional import": 1
     },
     "ui/result_overlay.py:ResultOverlay._copy": {
-      "unclassified": 1,
+      "optional import": 1,
       "optional widget": 1
     },
     "ui/result_overlay.py:ResultOverlay._sync_expanded_property": {
       "optional widget": 1
     },
     "ui/result_overlay.py:_palette_colors": {
-      "presentation that may not resolve": 1,
+      "optional import": 1,
       "value of the wrong shape": 1
     },
     "ui/shell.py:AppShell._apply_collapse_icon": {
@@ -692,7 +690,7 @@
       "optional widget": 1
     },
     "ui/shell.py:AppShell._engine_card": {
-      "unclassified": 1
+      "optional import": 1
     },
     "ui/shell.py:AppShell._sync_nav": {
       "optional widget": 1
@@ -711,10 +709,10 @@
       "optional widget": 2
     },
     "ui/shell.py:AppShell.set_theme": {
-      "unclassified": 1
+      "optional import": 1
     },
     "ui/shell.py:_t": {
-      "unclassified": 1
+      "optional import": 1
     },
     "ui/stats.py:_parse_ts": {
       "value of the wrong shape": 1
@@ -726,12 +724,11 @@
       "value of the wrong shape": 2
     },
     "ui/theme.py:_chevron_disabled_path": {
-      "value of the wrong shape": 1,
-      "absent file or row": 1
+      "optional import": 2
     },
     "ui/theme.py:_chevron_path": {
-      "value of the wrong shape": 2,
-      "absent file or row": 1
+      "optional import": 2,
+      "value of the wrong shape": 1
     },
     "ui/thinking.py:Spinner.paintEvent": {
       "presentation that may not resolve": 1
@@ -741,7 +738,7 @@
       "view refreshed after the fact": 1
     },
     "ui/thinking.py:ThinkingPopup._reposition": {
-      "unclassified": 1
+      "optional import": 1
     },
     "ui/thinking.py:ThinkingPopup.set_paused": {
       "optional widget": 1
@@ -756,11 +753,13 @@
       "value of the wrong shape": 1
     },
     "worker.py:Pipeline._retry_cleanup_only": {
-      "unclassified": 3
+      "clipboard restore that is best effort": 2,
+      "a target the settings may not have": 1
     },
     "worker.py:Pipeline._work": {
       "optional widget": 1,
-      "unclassified": 3,
+      "clipboard restore that is best effort": 2,
+      "a target the settings may not have": 1,
       "value of the wrong shape": 1
     }
   }

@@ -132,6 +132,9 @@ class LivePopup(QWidget):
             try:
                 pal.setColor(pal.ColorRole.PlaceholderText, fg3)
             except Exception:
+                # reason: A palette role this Qt may not name. The placeholder keeps the
+                #         colour the theme gave it, which is what it would have looked like
+                #         anyway.
                 pass
             self.text.setPalette(pal)
         except Exception:

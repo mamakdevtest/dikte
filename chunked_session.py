@@ -185,6 +185,9 @@ class ChunkedLiveRecorder(QObject):
                 peak, _ = audio.chunk_levels(chunk)
                 self.level.emit(peak)
             except Exception:
+                # reason: A level reading for the waveform: one chunk drawn without a bar is
+                #         a cosmetic gap, and the audio itself is already committed to the
+                #         buffer.
                 pass
             with self._lock:
                 self._buffer.extend(chunk)

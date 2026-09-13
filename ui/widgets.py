@@ -369,6 +369,8 @@ class SettingRow(QWidget):
                 QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
             )
         except Exception:
+            # reason: The narrow-layout direction. The row still renders, just less tidily,
+            #         which is the same thing a narrow window gets anywhere else.
             pass
         if narrow:
             outer.setContentsMargins(20, 12, 20, 12)

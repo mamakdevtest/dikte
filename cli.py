@@ -84,6 +84,8 @@ def _safe_print(text, file=None, flush=False):
                 print(text.encode("utf-8", errors="replace").decode("utf-8", errors="replace"),
                       file=file, flush=flush)
             except Exception:
+                # reason: This *is* the fallback printer. If even the narrow form fails
+                #         there is no wider one left to complain with.
                 pass
 
 

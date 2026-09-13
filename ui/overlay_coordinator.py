@@ -192,6 +192,8 @@ class OverlayCoordinator:
                 return None
             return screen.availableGeometry()
         except Exception:
+            # reason: No cursor means no screen to place on. The caller falls back to the
+            #         area it already has rather than the overlay refusing to appear.
             return None
 
     def _activity_height(self, act: Activity) -> int:

@@ -1321,6 +1321,8 @@ class Dikte:
                 # keep result visible briefly then hide
                 self.result_overlay._hide_timer.start(1200)
         except Exception:
+            # reason: The result card may already be dismissed — the clipboard call above
+            #         this line has already happened, so the user's transcript is safe.
             pass
 
     def _tick(self):
@@ -1695,6 +1697,9 @@ class Dikte:
         try:
             self.overlay.clear_live_transcript()
         except Exception:
+            # reason: Clearing a stale live line on the way to an error message. A leftover
+            #         partial line is cosmetic; the error the user needs to see is the next
+            #         thing shown.
             pass
         self._report(message, self.overlay)
         self._coordinator_notify(DICTATION, "failed", self.overlay)
@@ -1810,6 +1815,9 @@ class Dikte:
                 try:
                     self._coordinator.set_corner(corner)
                 except Exception:
+                    # reason: The overlay may not be built yet (nothing listened while the
+                    #         app was starting). The corner is in settings and lands on the
+                    #         next rebuild.
                     pass
             self.overlay.corner = corner
             self.ask_overlay.corner = corner

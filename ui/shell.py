@@ -413,6 +413,8 @@ class AppShell(QWidget):
             try:
                 self._sidebar.setFixedWidth(_SIDEBAR_COMPACT if compact else _SIDEBAR_W)
             except Exception:
+                # reason: The sidebar's width is cosmetic; the pages lay out regardless, so
+                #         a missing sidebar costs a tidier window, not a window.
                 pass
 
 

@@ -955,6 +955,8 @@ def test_provider(conf, pid, timeout=30):
                 if models:
                     base += f" ({models[0]})"
         except Exception:
+            # reason: A provider-specific extra, after the test result is already in hand:
+            #         what the user asked for has been answered.
             pass
         return base
     if who.kind == "local-whisper":

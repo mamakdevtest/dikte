@@ -41,6 +41,8 @@ try:
 
     QComboBox.wheelEvent = _combo_wheel_no_accidental
 except Exception:
+    # reason: Intercepting the wheel is a nicety for a page inside a scroll area; without it
+    #         the combo still opens and still selects.
     pass
 
 import api
@@ -1692,6 +1694,8 @@ class SettingsWindow(QDialog):
                 who = providers.provider(self.conf, provider)
                 label = who.name if who else provider
             except Exception:
+                # reason: An unrecognised provider still gets a card, labelled by its id,
+                #         instead of no card at all: what is configured stays visible.
                 label = provider or "local"
             # Resolve model text
             model_text = ""
@@ -1911,6 +1915,8 @@ class SettingsWindow(QDialog):
             row = dict(row)
             row["style"] = self._minutes_style_key()
         except Exception:
+            # reason: One malformed row is skipped so the rest of the list can render; the
+            #         user keeps their minutes instead of losing the page.
             pass
 
         # Reuse MeetingPipeline: ensure transcript exists on disk to avoid re-transcribe
@@ -2107,6 +2113,8 @@ class SettingsWindow(QDialog):
         try:
             self._load_voice_jobs()
         except Exception:
+            # reason: The jobs strip is secondary to the transcript list, which has been
+            #         filled by the time this runs.
             pass
         self.history.clear()
         for row in reversed(cfg.read_history(self.conf["history_limit"])):
@@ -2573,6 +2581,9 @@ class SettingsWindow(QDialog):
                     try:
                         w._apply_theme()
                     except Exception:
+                        # reason: A widget that does not implement theming keeps its old
+                        #         colours until its page is rebuilt. Wrong for a moment, not
+                        #         wrong.
                         pass
             # Refresh inline-styled widgets inside settings window
             for widget in self.findChildren(QWidget):
@@ -2847,6 +2858,8 @@ class SettingsWindow(QDialog):
         try:
             self._update_ai_descriptions()
         except Exception:
+            # reason: Helper text under the model pickers. Not knowing which model does what
+            #         does not block the page.
             pass
 
         self._select_data(self.assistant_provider, conf["assistant_provider"])
@@ -2939,6 +2952,8 @@ class SettingsWindow(QDialog):
         try:
             self._fetch_cli_versions(providers.definitions(self.conf))
         except Exception:
+            # reason: A background version probe. The page is usable without it — CI patches
+            #         this out for the same reason it is allowed to fail here.
             pass
         QTimer.singleShot(0, self._load_audio_devices)
 

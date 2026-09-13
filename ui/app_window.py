@@ -61,6 +61,9 @@ class DashboardWindow(SettingsWindow):
                     else:
                         self.shell.set_page(self.dashboard_index)
                 except Exception:
+                    # reason: Whether the first-run notice belongs is a courtesy question;
+                    #         the window opens either way, and an unreadable setting must
+                    #         not stop it.
                     pass
             except Exception as e:
                 import traceback; traceback.print_exc()
@@ -70,6 +73,8 @@ class DashboardWindow(SettingsWindow):
         try:
             self.setWindowTitle(t("Dikte"))
         except Exception:
+            # reason: The window title. The class already carries a usable default, so a
+            #         missing translation costs a title, not a window.
             pass
         self._controller = controller
 

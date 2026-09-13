@@ -17,6 +17,7 @@ cannot disagree about what is being counted.
 import ast
 import json
 import pathlib
+import tempfile
 import unittest
 from collections import Counter
 
@@ -136,11 +137,32 @@ REASONS = {
         "deleteLater", "_terminate_process", "terminate", "disconnect", "removeEventFilter",
         "closeEvent", "setParent",
     ),
+    # A device list the machine may not be able to enumerate: no microphone, no monitor, a
+    # sound server that is not running. An empty list is what the page shows either way.
+    "device list the machine may not offer": (
+        "cached_list_sources", "cached_list_monitors", "default_input", "default_monitor",
+        "list_sources", "list_monitors",
+    ),
+    # Putting the clipboard back is courtesy, not the job: the paste already happened, and
+    # the user's old clipboard surviving is worth less than their transcript arriving.
+    "clipboard restore that is best effort": (
+        "copy_bytes", "read_clipboard", "copy_text", "set_clipboard",
+    ),
+    # The transcription target comes from settings, and settings can be half-written or
+    # from an older release: no target is a reason to fall back, not to stop.
+    "a target the settings may not have": (
+        "transcribe_target", "cleanup_target", "assistant_target",
+    ),
 }
 # No call at all in the guarded body: an attribute, an index or a dict key. The reason is
 # the same one in every case — the lookup was allowed to come up empty.
 LOOKUP_REASON = "lookup that is not there"
+IMPORT_REASON = "optional import"
 UNCLASSIFIED = "unclassified"
+
+# What a hand-written reason looks like in the source: a comment directly above the
+# statement that chose to say nothing. Used by `explicit_reasons` (see T4.8).
+REASON_MARKER = "# reason:"
 
 
 def _call_names(nodes):
@@ -162,7 +184,7 @@ def _call_names(nodes):
 
 
 def _guarded_calls(tree):
-    """{id(handler): [call names in its guarded body]} for every Try in the tree.
+    """{id(handler): (call names, guarded body imports something)} for every Try.
 
     An `ExceptHandler` does not contain its own `Try`, so this pairing cannot come out of
     `_handlers` and has to be built here.
@@ -171,13 +193,20 @@ def _guarded_calls(tree):
     for node in ast.walk(tree):
         if isinstance(node, ast.Try):
             calls = _call_names(node.body)
+            imports = any(isinstance(stmt, (ast.Import, ast.ImportFrom))
+                          for stmt in node.body)
             for handler in node.handlers:
-                pairs[id(handler)] = calls
+                pairs[id(handler)] = (calls, imports)
     return pairs
 
 
-def reason_for(calls):
+def reason_for(calls, imports=False):
     """The reason a handler that says nothing is allowed to say nothing."""
+    if imports:
+        # A guarded import is the whole shape: the module may not be importable here
+        # (a platform without `ctypes.windll`, a UI module not built yet, an optional
+        # dependency), and the fallback the caller already carries is the answer.
+        return IMPORT_REASON
     if not calls:
         return LOOKUP_REASON
     for reason, markers in REASONS.items():
@@ -225,10 +254,47 @@ def silent_reasons(root=ROOT):
         guarded = _guarded_calls(tree)
         for handler, context in _handlers(tree):
             if _is_broad(handler) and not _reports(handler, helpers):
-                reason = reason_for(guarded.get(id(handler), []))
+                calls, imports = guarded.get(id(handler), ([], False))
+                reason = reason_for(calls, imports)
                 slot = found.setdefault(f"{rel}:{context}", Counter())
                 slot[reason] += 1
     return {key: dict(value) for key, value in found.items()}
+
+
+def explicit_reasons(root=ROOT):
+    """{site: [reason text, ...]} for silent handlers no derivation can cover (T4.8).
+
+    The marker is a comment directly above the handler's first statement, because that is
+    where the next reader is standing when they ask why nothing happens here. Comments are
+    not in the AST, so the source lines are read; the AST says which line the block has to
+    be on. An empty string in the list means that handler never said why.
+    """
+    found = {}
+    for path in product_files(root):
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            continue
+        lines = source.splitlines()
+        rel = path.relative_to(root)
+        helpers = frozenset(_reporting_helpers(tree))
+        guarded = _guarded_calls(tree)
+        for handler, context in _handlers(tree):
+            if not (_is_broad(handler) and not _reports(handler, helpers)):
+                continue
+            calls, imports = guarded.get(id(handler), ([], False))
+            if reason_for(calls, imports) != UNCLASSIFIED:
+                continue
+            # The whole comment block above the first statement, however it is wrapped.
+            above, i = [], handler.body[0].lineno - 2
+            while i >= 0 and lines[i].strip().startswith("#"):
+                above.insert(0, lines[i].strip())
+                i -= 1
+            block = " ".join(above)
+            said = block.split(REASON_MARKER, 1)[1].strip() if REASON_MARKER in block else ""
+            found.setdefault(f"{rel}:{context}", []).append(said)
+    return found
 
 
 def _handlers(node, context=""):
@@ -307,18 +373,52 @@ class SilentlySwallowedFailures(unittest.TestCase):
 
     def test_the_reasons_are_sanctioned_ones(self):
         """A hand-edited record must not be able to invent a reason."""
-        allowed = set(REASONS) | {LOOKUP_REASON, UNCLASSIFIED}
+        allowed = set(REASONS) | {LOOKUP_REASON, IMPORT_REASON, UNCLASSIFIED}
         stray = sorted({reason for by in self.recorded.get("reasons", {}).values()
                         for reason in by} - allowed)
         self.assertEqual([], stray,
                          f"tests/except_silent.json carries reasons that do not exist: {stray}")
 
-    def test_the_reasons_still_pending_may_only_shrink(self):
-        """The sites with no reason yet are recorded rather than papered over.
+    def test_the_check_itself_notices_a_missing_reason(self):
+        """Who checks the checker: a silent handler with no comment is reported.
 
-        Writing a plausible label for each of them would be 38 more chances to be wrong,
-        and a wrong reason is worse than an absent one. So the absences are the list, it
-        cannot grow, and shrinking it is the burn-down.
+        A guard nobody has watched fail is a guess, and deleting a real reason out of a
+        product file to watch this one go red is a bad way to spend an approval. So this
+        runs the real `explicit_reasons` against a throwaway tree with two handlers — one
+        that says why and one that does not — and asserts it can tell them apart.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            (pathlib.Path(tmp) / "sample.py").write_text(
+                "def speaks(thing):\n"
+                "    try:\n"
+                "        return thing.whatever()\n"
+                "    except Exception:\n"
+                "        # reason: whatever it was, this one is long enough to be read\n"
+                "        pass\n"
+                "\n"
+                "\n"
+                "def silent(other):\n"
+                "    try:\n"
+                "        return other.whatever()\n"
+                "    except Exception:\n"
+                "        pass\n",
+                encoding="utf-8")
+            waiting = explicit_reasons(pathlib.Path(tmp))
+        self.assertEqual(["speaks"], [site.split(":")[1] for site, why in waiting.items()
+                                      if why and why[0]])
+        self.assertEqual([""], waiting["sample.py:silent"],
+                         "a silent handler with no comment must come back empty")
+        forgotten = sorted(site for site, why in waiting.items()
+                           if any(len(reason) < 30 for reason in why))
+        self.assertEqual(["sample.py:silent"], forgotten)
+
+    def test_the_reasons_still_pending_may_only_shrink(self):
+        """The sites with no derivable reason are recorded rather than papered over.
+
+        Writing a plausible label for each of them would have been one more chance to be
+        wrong per site, so they are not labelled — and each of them now says why in its own
+        words instead (see the test below). This list is what keeps the absences: it cannot
+        grow, and shrinking it is the burn-down.
         """
         now = {site for site, by in silent_reasons().items() if UNCLASSIFIED in by}
         before = {site for site, by in self.recorded.get("reasons", {}).items()
@@ -328,6 +428,25 @@ class SilentlySwallowedFailures(unittest.TestCase):
             "a silent site arrived with no reason derivable from its code — decide what "
             "it is, add the marker to REASONS, then rewrite the record:\n  "
             + "\n  ".join(grown)))
+
+    def test_every_site_with_no_derivable_reason_says_why_itself(self):
+        """A derivation covers what repeats; the rest is read by a person.
+
+        The long tail of silent handlers is a list of one-offs, and a marker list keyed on
+        `get` or `y` would classify them by accident rather than by understanding. Each was
+        read, and each carries its reason in the source, directly above the statement that
+        chooses to say nothing — which is the one place a reader is guaranteed to look.
+        """
+        waiting = explicit_reasons()
+        forgotten = sorted(
+            f"{site} ({len(reasons)} silent handler(s), "
+            f"{sum(1 for why in reasons if not why)} of them silent about why)"
+            for site, reasons in waiting.items()
+            if any(len(why) < 30 for why in reasons))
+        self.assertEqual([], forgotten, (
+            "these silent handlers have no reason derivable from their code and do not say "
+            "why themselves. Add a `# reason: ...` comment above the first statement of "
+            "each:\n  " + "\n  ".join(forgotten)))
 
 
 if __name__ == "__main__":

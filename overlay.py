@@ -1049,6 +1049,8 @@ class Overlay(QWidget):
             try:
                 pt = QPointF(pos.x(), pos.y())
             except Exception:
+                # reason: The integer form of a point that this Qt will not take; the float
+                #         form below is the same point, drawn without a jump.
                 pt = QPointF(float(pos.x()), float(pos.y()))
             pause_rect = self._pause_button_rect()
             stop_rect = self._stop_button_rect()
