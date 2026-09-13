@@ -11,7 +11,7 @@ import os
 from PyQt6.QtCore import QEasingCurve, Qt, QSize, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QLabel, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import icons as _icons
@@ -172,7 +172,11 @@ class AppShell(QWidget):
         return sidebar
 
     def _engine_card(self, whisper_label):
-        card = QWidget()
+        # A QFrame, not a QWidget: the sheet styles the card as `QFrame#card`, so
+        # a plain QWidget with the same objectName matches nothing and renders
+        # with no surface and no border at all.
+        card = QFrame()
+        card.setFrameShape(QFrame.Shape.NoFrame)
         card.setObjectName("card")
         col = QVBoxLayout(card)
         col.setContentsMargins(11, 9, 11, 9)
