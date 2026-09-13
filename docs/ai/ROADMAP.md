@@ -317,7 +317,7 @@ Close the pass that is already open, in its own dependency order:
 | **T4.6 ✅** | F1/R7 | Editing-level migration completion + EN/TR parity — *verified: the retired slider survives only in the `pop` that removes it, the untranslated set is empty, and Phase 3 closed the last parity gap (the thinking panel had no i18n at all)* |
 | **T4.7 ✅** | F1/R8 | Deterministic regression coverage for every defect above — *verified: the guards added in Phases 0–3, each proved red before it was trusted green* |
 | **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 18 report, 293 report nothing** (174 a bare `pass`, 63 assigning a fallback, 32 returning; 96 in `settings_ui.py`, 37 in `dikte.py`, 15 in `overlay.py`). The ratchet exists and is proved red in both directions; the first three data-path sites are fixed. A per-site *reason* for the remaining 293 is still owed — see below* |
-| T4.9 | F3 | `OverlayCoordinator.update` trigger; close the `Config.data` read race; decide on cross-process locking |
+| **T4.9 ◐** | F3 | `OverlayCoordinator.update` trigger; close the `Config.data` read race; decide on cross-process locking — *the trigger is verified by running all three overlay widgets against a spy coordinator; the read race is **reproduced and fixed** (`json.dump` walked the dict while a worker could add a key, and the save was lost — the file was never at risk); the locking decision is made below* |
 
 **Verification:** `docs/ai/TASKS.md` R1–R8 all `[x]`; a fresh reviewer on the
 final diff (V4); full suite green with the new regression tests named in
@@ -815,6 +815,58 @@ reading the file turned up — the unnamed controls, the missing line, the disab
 colour, the empty spinner, the missing i18n, the language reset, the fixed assistant
 name, the always-rendered recovery card, the doubled height declaration — had been
 reported by nobody at all.
+
+### 2026-09-12 — Phase 4, T4.9
+
+**The update trigger exists and is now tested by running it.** The coordinator owns
+the geometry but cannot watch a widget resize itself, so each overlay-family widget
+routes its own `_reposition()` through `coordinator.recompute_geometry()` — three
+copies of the same three lines (`overlay.py`, `ui/live_popup.py`,
+`ui/result_overlay.py`). If a fourth forgets, its neighbour keeps the old position and
+the cards overlap, and nothing raises. The test binds a spy coordinator to each of the
+three classes and calls the real `_reposition()`, then checks the other half: a bound
+widget must **not** place itself, because a widget that fights the coordinator is worse
+than one that forgets, and an unbound one must place itself again.
+
+**The `Config.data` read race reproduced, and it cost the save.** `save()` writes a
+temporary file and replaces it atomically, so the file was never at risk — but
+`json.dump` walks `self.data` with the pure-Python encoder (it is called with
+`indent`), and a worker thread adding one key during that walk raises
+`RuntimeError: dictionary changed size during iteration`. The settings the user had
+just changed were then not written at all, and the failure reached them only as
+"Could not save the settings". Fixed by taking the snapshot first; the test simulates
+the race deterministically with a dict that grows *while* it is walked, so it says the
+same thing on every machine instead of depending on timing. Red evidence:
+
+```
+before   RuntimeError: dictionary changed size during iteration
+           File "json/encoder.py", line 361, in _iterencode_dict
+after    ok   (and a stray `.tmp` is never left behind)
+```
+
+**The cross-process locking decision: no lock.** The writers are the running app and
+the CLI, and the reasoning for leaving it as it is:
+
+- **Writes are already atomic** (a temporary file plus `os.replace`), so a lock would
+  prevent nothing that is currently broken. The failure mode a lock is usually reached
+  for — a half-written config — cannot happen.
+- **A lock cannot fix the failure that can happen.** Both processes hold a full
+  in-memory copy of the config, so the risk is a *lost update*, and serialising the
+  writes leaves the last writer winning exactly as before. The only cure for a lost
+  update is reading before writing.
+- **That cure is already in place in both directions.** Every CLI invocation builds a
+  fresh `Config()` from disk, and the CLI then sends `reload` so the running app
+  re-reads (`cli.py:585-588` says this in as many words: *"the window it was not
+  changed in would otherwise overwrite it"*), with `reload_settings` doing
+  `self.conf.load()`.
+
+What remains, named rather than hidden: if the settings window is **open with unsaved
+edits** when the CLI changes a key that window also shows, the window's next Save
+writes its own widget value over the CLI's. Refreshing the window's widgets on a
+reload would fix it and is wrong — it would silently discard the user's unsaved edits.
+The honest fix is a UI affordance ("these settings changed outside this window"), which
+is a product decision rather than a reliability one, so it is recorded here instead of
+being invented in a reliability task.
 
 ### Corrections made to this document while executing it
 

@@ -321,7 +321,7 @@ Zaten açık olan turu kendi bağımlılık sırasıyla kapat:
 | **T4.6 ✅** | F1/R7 | Düzenleme seviyesi göçünün tamamlanması + EN/TR eşitliği — *doğrulandı: emekli kaydırıcı yalnızca onu silen `pop`'ta yaşıyor, çevrilmemiş küme boş, ve Faz 3 son eşitlik açığını kapattı (düşünme panelinin hiç i18n'i yoktu)* |
 | **T4.7 ✅** | F1/R8 | Yukarıdaki her kusur için deterministik regresyon kapsamı — *doğrulandı: Faz 0–3'te eklenen korkulaklar, her biri yeşile güvenilmeden önce kırmızı kanıtlandı* |
 | **T4.8 ◐** | F2 | `except Exception` istisna listesini yak: kalan her yer ya hatasını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 18'i bildiriyor, 293'ü hiçbir şey söylemiyor** (174'ü çıplak `pass`, 63'ü yedek değer atıyor, 32'si `return`; 96'sı `settings_ui.py`, 37'si `dikte.py`, 15'i `overlay.py`). Mandal var ve iki yönde de kırmızı kanıtlandı; veri yolundaki ilk üç yer düzeltildi. Kalan 293 için yer başına *gerekçe* hâlâ borç — aşağıya bak* |
-| T4.9 | F3 | `OverlayCoordinator.update` tetikleyicisi; `Config.data` okuma yarışını kapat; süreçler arası kilide karar ver |
+| **T4.9 ◐** | F3 | `OverlayCoordinator.update` tetikleyicisi; `Config.data` okuma yarışını kapat; süreçler arası kilide karar ver — *tetikleyici, üç overlay widget'ı casus bir koordinatöre karşı koşturularak doğrulandı; okuma yarışı **yeniden üretildi ve düzeltildi** (`json.dump` sözlüğü dolaşırken bir worker anahtar ekleyebiliyordu ve kaydetme kayboluyordu — dosya hiç risk altında değildi); kilit kararı aşağıda verildi* |
 
 **Doğrulama:** `docs/ai/TASKS.md` R1–R8 işaretli; son diff üzerinde taze bir
 gözden geçiren (V4); yeni regresyon testleri adlarıyla
@@ -818,6 +818,57 @@ okumaktan geldi. Buna karşılık ölçümün ve dosyayı okumanın ortaya çık
 — adsız kontroller, eksik satır, pasif renk, boş spinner, eksik i18n, dil sıfırlaması,
 sabit ajan adı, her durumda çizilen kurtarma kartı, ikiye katlanmış yükseklik
 bildirimi — **kimse bildirmemişti.**
+
+### 2026-09-12 — Faz 4, T4.9
+
+**Tetikleyici var ve artık koşturularak test ediliyor.** Koordinatör geometriyi
+sahipleniyor ama bir widget'ın kendi boyutunu değiştirdiğini göremez; bu yüzden her
+overlay ailesi widget'ı kendi `_reposition()`'ını `coordinator.recompute_geometry()`
+üzerinden geçiriyor — aynı üç satırın üç kopyası (`overlay.py`, `ui/live_popup.py`,
+`ui/result_overlay.py`). Dördüncüsü unutursa komşusu eski konumunda kalır, kartlar üst
+üste biner ve hiçbir şey hata vermez. Test, üç sınıfın her birine casus bir koordinatör
+bağlayıp gerçek `_reposition()`'ı çağırıyor, sonra diğer yarıyı da kontrol ediyor:
+bağlı bir widget kendini **yerleştirmemeli** (koordinatörle çekişen bir widget,
+unutandan kötüdür) ve serbest bırakılan biri yeniden kendi yerleştirmelidir.
+
+**`Config.data` okuma yarışı yeniden üretildi ve kaydetmeye mal oldu.** `save()` geçici
+bir dosya yazıp atomik olarak yerine koyuyor, yani dosya hiç risk altında değildi —
+ama `json.dump` `self.data`'yı saf Python kodlayıcıyla dolaşır (`indent` ile
+çağrılıyor) ve bu dolaşma sırasında bir worker iş parçacığının tek anahtar eklemesi
+`RuntimeError: dictionary changed size during iteration` veriyor. Kullanıcının az önce
+değiştirdiği ayarlar o zaman hiç yazılmıyordu ve hata ona yalnızca "Could not save the
+settings" olarak ulaşıyordu. Önce anlık görüntü alınarak düzeltildi; test yarışı
+dolaşılırken büyüyen bir sözlükle deterministik olarak simüle ediyor, yani zamanlamaya
+bağlı kalmak yerine her makinede aynı şeyi söylüyor. Kırmızı kanıt:
+
+```
+önce    RuntimeError: dictionary changed size during iteration
+          File "json/encoder.py", line 361, in _iterencode_dict
+sonra   ok   (ve geride hiç `.tmp` kalmıyor)
+```
+
+**Süreçler arası kilit kararı: kilit yok.** Yazarlar çalışan uygulama ve CLI, ve
+böyle bırakılmasının gerekçesi:
+
+- **Yazmalar zaten atomik** (geçici dosya + `os.replace`), yani bir kilit hâlihazırda
+  bozuk olan hiçbir şeyi engellemez. Kilitlerin genelde arandığı arıza — yarım yazılmış
+  bir config — burada olamaz.
+- **Kilit, olabilen arızayı düzeltemez.** İki süreç de config'in tam bir bellek içi
+  kopyasını tutuyor, yani risk bir *kayıp güncelleme*; yazmaları sıraya dizmek son
+  yazanın kazanmasını aynen bırakır. Kayıp güncellemenin tek ilacı yazmadan önce
+  okumaktır.
+- **Bu ilaç iki yönde de zaten var.** Her CLI çağrısı diskten taze bir `Config()`
+  kuruyor, ve CLI ardından `reload` gönderiyor ki çalışan uygulama yeniden okusun
+  (`cli.py:585-588` bunu açıkça söylüyor: *"değiştirilmediği pencerenin onun üzerine
+  yazacağı"*), `reload_settings` de `self.conf.load()` yapıyor.
+
+Geriye kalan, saklanmak yerine adlandırılıyor: CLI, açık ayar penceresinin de gösterdiği
+bir anahtarı değiştirdiğinde ve pencerede **kaydedilmemiş düzenlemeler** varsa, pencerenin
+bir sonraki Kaydet'i kendi widget değerini CLI'ınkinin üzerine yazar. Yeniden yüklemede
+pencerenin widget'larını tazelemek bunu düzeltirdi ve yanlış olurdu — kullanıcının
+kaydedilmemiş düzenlemelerini sessizce atardı. Dürüst çözüm bir arayüz imkânı ("bu
+ayarlar bu pencerenin dışında değişti"), ki bu bir güvenilirlik değil ürün kararı; bu
+yüzden bir güvenilirlik görevinde icat edilmek yerine buraya kaydedildi.
 
 ### Bu belgede uygulama sırasında düzeltilenler
 
