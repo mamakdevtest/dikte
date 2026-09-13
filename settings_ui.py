@@ -3238,12 +3238,30 @@ class SettingsWindow(QDialog):
 
         try:
             self._baseline = self._snapshot_settings()
-        except Exception:
-            pass
+        except Exception as exc:
+            # Without a baseline the window cannot tell an edited page from an
+            # untouched one, so the "unsaved changes" prompt would let edits go
+            # without asking. Report it instead of pretending it was recorded.
+            print(f"dikte: could not record the saved baseline ({exc}); the "
+                  "unsaved-changes prompt may not fire", file=sys.stderr)
+
+        # Persisted and applied are two outcomes, and the user gets told which one
+        # happened: `conf.save()` above returning means the file is written, not that
+        # the running application took the change. The sentence for this case has
+        # been in the string table since the beginning and had never been shown.
+        apply_error = None
         try:
             self.applied.emit()
         except Exception as exc:
+            apply_error = exc
             print(f"dikte: settings saved but apply failed: {exc}", file=sys.stderr)
+
+        if apply_error is not None:
+            QMessageBox.warning(
+                self, t("Dikte Settings"),
+                t("Settings were saved, but some settings could not be applied:\n"
+                  "{error}", error=apply_error))
+            return
 
         QMessageBox.information(self, t("Dikte Settings"), t("Saved successfully."))
 

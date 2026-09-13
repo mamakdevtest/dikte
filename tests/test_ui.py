@@ -699,6 +699,41 @@ class Settings(DikteTest):
         save.assert_called_once()
         self.assertEqual(warnings, [True], "the failure must be shown")
         self.assertEqual(applied, [], "applied must not fire on a failed save")
+
+    def test_a_save_that_cannot_be_applied_says_so(self):
+        """Persisted and applied are two outcomes (AGENTS.md rule 4).
+
+        The file was written and the running application did not take the change.
+        The sentence for exactly that has been in the string table since the
+        beginning; the code only ever wrote it to stderr, where a systray user never
+        looks, and then told them "Saved successfully."
+        """
+        warnings = []
+        infos = []
+        self.enterContext(mock.patch.object(
+            QMessageBox, "warning",
+            side_effect=lambda *a, **k: warnings.append(a[2] if len(a) > 2 else "")))
+        self.enterContext(mock.patch.object(
+            QMessageBox, "information",
+            side_effect=lambda *a, **k: infos.append(True)))
+
+        class DeadSignal:
+            """What `emit` does once its C++ object is gone."""
+
+            def emit(self):
+                raise RuntimeError("wrapped C/C++ object deleted")
+
+            def connect(self, *_args, **_kwargs):
+                return None
+
+        window = self.window(cfg.Config())
+        window.applied = DeadSignal()
+        window._save()
+
+        self.assertEqual(1, len(warnings), "the partial failure must be shown")
+        self.assertIn("could not be applied", warnings[0])
+        self.assertEqual([], infos,
+                         "a save that was not applied must not claim success")
     def test_repeated_and_unchanged_save_is_safe(self):
         conf = cfg.Config()
         window = self.window(conf)

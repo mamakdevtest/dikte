@@ -1965,16 +1965,32 @@ def install_signal_handlers(app):
     return reader, writer, notifier
 
 
+def report_crash(etype, value, tb):
+    """Print an unhandled exception and keep the process alive.
+
+    Installed as `sys.excepthook`. A crash in a Qt slot would otherwise take the
+    process down with no trace visible from a systray app, so the cause is never
+    just "the app closed".
+
+    Returning *normally* is the whole point, and it is not decoration: measured,
+    PyQt6 calls `qFatal` — the process dies, taking a recording with it — when an
+    exception escapes a slot, and installing a hook that returns is what stops it.
+    `tests/test_reliability.py` runs both halves in their own process to keep that
+    true.
+    """
+    import traceback
+    traceback.print_exception(etype, value, tb)
+
+
+def install_crash_reporting():
+    """Route unhandled exceptions through `report_crash`."""
+    sys.excepthook = report_crash
+
+
 def run_app(args):
     command = args[0] if args else ""
 
-    # A crash in a Qt slot would otherwise take the process down with no trace
-    # visible from a systray app. Print the trace and keep it from dying, so the
-    # cause is never just "the app closed".
-    def _excepthook(etype, value, tb):
-        import traceback
-        traceback.print_exception(etype, value, tb)
-    sys.excepthook = _excepthook
+    install_crash_reporting()
 
     if sys.platform == "win32":
         try:
