@@ -126,6 +126,16 @@ and `DEEPGRAM_API_KEY`, and are stored in
 which case the raw transcript is pasted, and a thinking model's effort can be
 set next to it.
 
+### The first run
+
+The first time the dashboard opens, a three-step wizard walks through it: **microphone**
+(it records two seconds and tells you whether it heard anything), **engine** (the local
+model download, with the sizes shown, and a button that switches transcription to this
+machine), and **the real thing** — press your shortcut and dictate a sentence; the page
+watches for it and, if nothing arrives in 90 seconds, names the three things worth
+checking. Skipping is allowed: the dashboard's **Set up** button and `dikte setup` bring
+it back, and `dikte doctor` answers the same questions in the terminal.
+
 ## Using it
 
 | What | How |

@@ -122,6 +122,15 @@ içinde, izinler 600, Mac'te ise `~/Library/Application Support/Dikte` altında.
 Temizlemeyi tamamen kapatabilirsin, o zaman ham transkript yapıştırılır; modelin
 yanındaki kutudan düşünme seviyesini de seçebilirsin.
 
+### İlk çalıştırma
+
+Pano ilk kez açıldığında üç adımlı bir sihirbaz eşlik ediyor: **mikrofon** (iki saniye
+kaydedip bir şey duyup duymadığını söylüyor), **motor** (boyutları gösterilen yerel model
+indirmesi ve yazıya çevirmeyi bu makineye alan bir düğme) ve **gerçek şey** — kısayoluna
+basıp bir cümle söyle; sayfa onu bekliyor ve 90 saniyede bir şey gelmezse bakmaya değer üç
+şeyi sayıyor. Atlamak serbest: panodaki **Kur** düğmesi ve `dikte setup` onu geri getirir,
+`dikte doctor` aynı soruları terminalde yanıtlar.
+
 ## Kullanım
 
 | Ne | Nasıl |

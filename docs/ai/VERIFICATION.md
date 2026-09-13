@@ -1,3 +1,54 @@
+# VERIFICATION — the first-run wizard, and the counter's third blind spot
+
+## What is verified
+
+    $ python3.14 -m unittest tests.test_welcome
+    Ran 17 tests ... OK
+
+The tests are about what the wizard *says*, because it is the one screen a new user trusts:
+a machine with no microphone is told so and its check button is disabled (not a button that
+does nothing), a silent input is not called working (`peak 0.0` → "Nothing came through"),
+a 41% peak is ("Heard you — peak level 41%"), a failed recorder repeats what the recorder
+said, pressing "Transcribe on this machine" with no model chosen changes **nothing** and
+says why, and the last step reports a dictation that arrives, reports nothing-yet with three
+named causes after 90 s, and treats an unreadable history as unknown rather than as zero.
+
+The recorder and the device listing are stubbed: a test that needs a microphone is a test
+that fails on the machine that has none.
+
+## The counter's third blind spot — found by writing new code against it
+
+`tests/test_except_ratchet.py` counted this as **silence**:
+
+    try:
+        self.conf.save()
+    except Exception as exc:
+        self.engine_note.setText(t("That could not be saved: {error}").format(error=exc))
+        self.engine_note.setProperty("note", "err")
+        return
+
+That handler tells the user, in the place the user is looking. The counter only knew the
+terminal vocabulary (`print`, `warn`, `emit`, a reporting helper) — the same shape-narrowness
+that earlier missed `ui/stats.py`'s helpers and `Tee.write`. It now also recognizes a write
+to one of the project's own message widgets (`InfoNote`, `StatusChip`) on an attribute the
+module itself built with one, so the widget has to be a note box in this file rather than an
+attribute that merely sounds like one.
+
+The record is unchanged at **284** — this widening freed nothing that was already recorded,
+and the new module adds no silent handler of its own: every one of its failure paths either
+prints or writes a note. Both of its deferred reports (the microphone listing) print where
+the failure happened as well as carrying the message to the note.
+
+## Two things the wizard decided, recorded because they are choices
+
+- **It never switches the engine by itself.** The engine step reports what is set up and has
+  a button that saves the local model. A wizard that repoints the transcriber at whatever it
+  finds is how a first run becomes a mystery on the day dictation behaves differently.
+- **The third step watches the real dictation rather than simulating one.** A test button
+  that records and transcribes would prove the pipeline works and say nothing about whether
+  the shortcut, the focus and the paste path work — which is what actually fails first. The
+  cost is patience: 90 seconds of watching, then three named causes and `dikte doctor`.
+
 # VERIFICATION — T4.8's long tail, and the defect the burn-down found
 
 ## The number

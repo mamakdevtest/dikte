@@ -433,8 +433,18 @@ sürümüyle `docs/ai/VERIFICATION.md`'ye yazılır.
 
 Yalnızca Faz 5'ten sonra. Değere göre sıralı:
 
-1. İlk çalıştırma deneyimi: çalışan üç adımlı bir sihirbaz (mikrofon → model →
-   test); çünkü yerel model indirmesi bugün sürtünmenin en yüksek olduğu an.
+1. **İlk çalıştırma deneyimi — indi.** `ui/welcome.py`: üç adım (mikrofon → motor →
+   gerçek şey); ilk açılışta, panodaki **Kur** düğmesinden ve `dikte setup` ile erişilebilir.
+   Model indirmeyi yeniden yazmak yerine ayarlar sayfasının indirme kutusunu kullanıyor ve
+   motoru kendi başına değiştirmiyor — motor adımının bunun için bir düğmesi var, çünkü
+   yazıya çeviriciyi sessizce diskte bulunan modeli işaret etmek, ilk çalıştırmayı sonradan
+   bir muammaya dönüştürmenin yoludur. Mikrofon adımı, diktenin kullandığı kaydediciyle iki
+   buçuk saniye kaydedip tepe seviyeyi bildiriyor; mikrofonu olmayan makineye ölü bir düğme
+   gösterilmiyor, durum söyleniyor. Üçüncü adım bir dikteyi **taklit etmiyor**: gerçeğini
+   geçmişte bekliyor ve 90 saniye sonra üç olası nedeni sayıyor (hangisi olduğunu
+   `dikte doctor` söylüyor). 17 test; her başarısızlık yolu bir şey söylüyor — modül kayda
+   hiç sessiz handler eklemiyor. *Kalan: hiçbir macOS ya da Windows koşusu onu görmedi ve
+   README turunda bir karesi yok.*
 2. `sherpa-onnx` akışlı ara sonuçları, isteğe bağlı ikinci yerel motor olarak (§3.4).
 3. `dikte doctor --json`'dan teşhis paketi — zaten %80 hazır — telemetri olmadan
    hata raporu için.

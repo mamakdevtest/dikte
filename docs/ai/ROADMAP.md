@@ -431,8 +431,18 @@ version it was observed on.
 
 Only after Phase 5. Ranked by value against effort:
 
-1. First-run experience: a working three-step wizard (mic → model → test), because
-   the local-model download is currently the highest-friction moment.
+1. **First-run experience — landed.** `ui/welcome.py`: three steps (microphone → engine →
+   the real thing), reachable on the first launch, from the dashboard's **Set up** button,
+   and as `dikte setup`. It reuses the settings page's download box instead of
+   reimplementing the model fetch, and it never switches the engine on its own — the engine
+   step has a button for that, because silently repointing the transcriber at whatever model
+   is on disk is how a first run becomes a mystery later. The microphone step records for
+   two and a half seconds through the same recorder dictation uses and reports the peak; a
+   machine with no microphone is told so rather than shown a dead button. The third step
+   does **not** simulate a dictation: it watches the history for the real one and, after
+   90 seconds, names the three likely causes (`dikte doctor` names which). 17 tests, every
+   failure path saying something — the module adds no silent handler to the record. *Left:
+   no macOS or Windows run has met it, and the README tour has no shot of it.*
 2. `sherpa-onnx` streaming partials as an optional second local engine (§3.4).
 3. A diagnostics bundle from `dikte doctor --json` — already 80% built — for
    bug reports without telemetry.
