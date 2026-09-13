@@ -2022,6 +2022,15 @@ def run_app(args):
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("dikte: no system tray found, running anyway")
 
+    if ipc.running_instance():
+        # Not a second application: a second launch means "show me the one that is
+        # running". Taking the socket instead — which `removeServer` + `listen` does by
+        # design — would leave the first instance alive and unreachable, with both of them
+        # able to record, and the frozen bundle puts this one double click away.
+        ipc.send("dashboard")
+        print("dikte: already running; asked it to open the dashboard", file=sys.stderr)
+        return 0
+
     dikte = Dikte(app)
 
     server = QLocalServer()

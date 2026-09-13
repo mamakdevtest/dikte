@@ -5,6 +5,7 @@ shortcut still sends a bare verb, and an instance from before replies existed
 answers by saying nothing at all.
 """
 
+import io
 import json
 import os
 import sys
@@ -213,6 +214,42 @@ class TheFrozenBuildCanFindItself(unittest.TestCase):
         self.assertEqual([], offenders, (
             "run the application through ipc.launch_command() instead:\n  "
             + "\n  ".join(offenders)))
+
+
+class TheSecondLaunchStepsAside(unittest.TestCase):
+    """N8: a second launch must not steal the running instance's socket.
+
+    `removeServer()` + `listen()` is Qt's way of clearing a stale socket, and it also takes
+    the name from a live instance: the first Dikte keeps recording, unreachable, while
+    every command now reaches the second. A frozen bundle on a desktop entry makes that one
+    double click away.
+    """
+
+    def test_something_answering_status_is_an_instance(self):
+        self.assertTrue(ipc.running_instance(probe=lambda: {"ok": True, "running": True}))
+
+    def test_silence_is_not_an_instance(self):
+        self.assertFalse(ipc.running_instance(probe=lambda: None))
+
+    def test_a_probe_that_cannot_answer_says_so_and_is_not_an_instance(self):
+        def broken():
+            raise OSError("no socket layer at all")
+
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertFalse(ipc.running_instance(probe=broken))
+        self.assertIn("could not ask whether Dikte is already running", err.getvalue())
+
+    def test_the_probe_asks_with_a_timeout(self):
+        """A second launch cannot hang waiting for the first one to reply."""
+        calls = []
+
+        def fake_send(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return None
+
+        with mock.patch.object(ipc, "send", fake_send):
+            ipc.running_instance(timeout=3)
+        self.assertEqual([("status", {"timeout": 3})], calls)
 
 
 if __name__ == "__main__":

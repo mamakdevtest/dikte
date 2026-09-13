@@ -90,6 +90,26 @@ def command_for(verb):
     return " ".join(shlex.quote(part) for part in launch_command(verb))
 
 
+def running_instance(timeout=2, probe=None):
+    """Is a live Dikte answering on this machine's socket name?
+
+    Qt's idiom for a stale socket is `removeServer()` followed by `listen()`, and that is
+    also how a second launch quietly steals the first one's name: the running Dikte keeps
+    recording while every terminal, shortcut and tray command now reaches the new process.
+    With a frozen bundle sitting on a desktop entry, a double click is all it takes — so
+    the question is asked before the name is taken, and the answer is not assumed.
+    """
+    ask = probe or (lambda: send("status", timeout=timeout))
+    try:
+        return ask() is not None
+    except Exception as exc:
+        # A probe that cannot answer is not an instance, and saying so is the difference
+        # between "probably nothing is running" and "I could not tell".
+        print(f"dikte: could not ask whether Dikte is already running ({exc})",
+              file=sys.stderr)
+        return False
+
+
 def send(cmd, wait=False, timeout=0, **args):
     """Send one request; the reply, or None when no instance is running.
 
