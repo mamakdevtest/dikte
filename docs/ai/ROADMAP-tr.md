@@ -286,7 +286,7 @@ düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kural�
 daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
 fotoğraflıyordu (N4).
 
-### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 4'ü teslim edildi*
+### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 5'i teslim edildi*
 
 Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi
 var. Her bulgu, hiçbir şey değiştirilmeden önce koda ve güncel bir kareye karşı
@@ -300,8 +300,8 @@ ekran görüntülerinden yazılmıştı.
 | 2 | **bitti** | Sonuç overlay'i + canlı popup (içeriğe göre boyutlanma, boş durum) | U6'nın ilk yarısı tuttu — kart gerçekten 260 px sabit bir kutu ve içinde üç satır vardı — ve düzeltildi: artık metni kadar uzun, üç satır için 124 px; genişletilmiş hâli 24 satırlık bir transkripti 460×460'ta taşıyor. İkinci yarısı eskimişti: "boş durum yok" iddiası, metin alanının baştan beri taşıdığı placeholder'dan önceye ait. Kartı doğru boyutlandırmak, sabit yüksekliğin arkasına saklanmış iki kusuru ortaya çıkardı: kart her zaman kendi metninden bir satır kısaydı (uygulama stil sayfasının metin alanlarına verdiği 8 px dolgu, yalnızca kenar boşluklarından yapılan bir sayıma görünmez, bu yüzden son satır kartın hâlâ yeri varken kayıp gidiyordu) ve pasif genişletme oku etkin renginde çiziliyordu (Qt bir QToolButton'ın metnini QStyleSheetStyle üzerinden çözdüğü için palet rengi oraya ulaşmıyor). İkisi de düzeltildi ve korkuluk altında. |
 | 3 | **bitti** | Düşünme paneli — pille aynı görsel aile | U11'in ilk yarısı doğru ve bildirilenden kötüydü (hareket göstergesi çizecek bir şeyi olmayan bir QLabel'dı — N6b), ikinci yarısı desteklenemez (referans bir ayarlar referansı, gösterge hakkında hiçbir şey söylemiyor). Dosyayı okumak ayrıca panelin hiç i18n'i olmadığını ve gösterilmesinin arayüz dilini sıfırladığını (N7) buldu. |
 | 4 | **bitti** | Tepsi menüsü — ikonlar, ayırıcılar, açık/kapalı durumu | U12 iddia iddia kontrol edildi: 11 aksiyonun hepsi ikon taşıyor ve `tests/test_icon_contracts.py` o adları zaten koruyor; dört ayırıcı menüyü dikte / toplantılar / ayarlar+yeniden başlat / çık olarak grupluyor; durum etikette, ikon vurgusunda ve tooltip'te görünüyor — PAUSED bilerek RECORDING etiketini paylaşıyor, çünkü duraklatma overlay'in düğmesi. Gerçek kusur bildirilmemişti: iki soru tooltip'i sabit bir ajan adı söylüyordu — "recording for Claude", "talking to Claude" — ve bu, doğrusunu zaten bilen bir `display_name(self.conf)`'un hemen altındaydı; yani Codex ve yerel model kullanıcılarına mikrofonu yanlış programın tuttuğu söyleniyordu. Düzeltildi; seçim test edilebilir bir `ask_tray_state()`'e taşındı. |
-| 5 | sıradaki | Kontrol paneli (istatistik anlamı, boş durumlar) | U4 |
-| 6 | | Dokuz ayar sayfası | U2–U5, U9 |
+| 5 | **bitti** | Kontrol paneli (istatistik anlamı, boş durumlar) | U4'ün üç iddiası: Geçmiş'teki kurtarma kartı tuttu **ve daha kötüydü** — her durumda çiziliyordu, sayfanın en iyi yerinde boş bir liste kutusu ve ölü bir Yeniden dene düğmesi (düzeltildi: kurtarılabilir bir şey yokken gizleniyor); Gösterge sayfasının boş durumunu hiç ortalamaması tuttu (düzeltildi: iki stretch arasında duruyor); kontrol panelinin boş grafik kartı **desteklenemedi** — iki grafik kartı bir satırı paylaşıyor ve sağdaki gerçek bir donut taşıyor, boş olan da kendi "Henüz veri yok"unu ortalıyor. Tur artık kurtarılabilir bir iş serpiyor, böylece kart yalnızca boş bir kutu olarak değil iki hâliyle de fotoğraflanıyor. |
+| 6 | sıradaki | Dokuz ayar sayfası | U2–U5, U9 |
 | 7 | | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
 
 **Doğrulama:** alınan her kare kilitlenen yöne karşı incelenir; altın-görüntü
@@ -673,6 +673,29 @@ Doğrulanamayan: menünün masaüstü tepsisinde çizildiği hali. Turda tepsi y
 `QSystemTrayIcon`'un offscreen'de bağlanacağı bir şey yok; yani menünün boyaması ile
 içeriği ayrı ayrı kapsanıyor ama hiç birlikte değil.
 
+### 2026-09-12 — Faz 3, yüzey 5 (boş durumlar)
+
+| Dosya | Değişiklik |
+|---|---|
+| `settings_ui.py` | `_load_voice_jobs`, kurtarılabilir bir iş yokken kurtarma kartını gizliyor — eskiden her durumda çiziliyordu: Geçmiş sayfasının en iyi yerinde boş bir liste kutusu ve ölü bir Yeniden dene düğmesi |
+| `ui/pages/overlay.py` | Gösterge sayfasının boş durumu, başlığın altında altı boş bir boşluk bırakmak yerine iki stretch arasında duruyor |
+| `tools/shoot_ui.py` | bir retryable ses işi serpiliyor, böylece kurtarma kartı yalnızca boş bir kutu olarak değil dolu ve etkin hâliyle fotoğraflanıyor |
+| `tests/test_empty_states.py` | yeni. Kart iş yokken gizleniyor, retryable bir işle görünüyor, tamamlanmış bir iş için gizli kalıyor; boş durumun üstünde ve altında boşluk var ve sayfa söylediğini söylemeye devam ediyor |
+
+U4, iddia iddia:
+
+| U4 iddiası | Karar |
+|---|---|
+| "Geçmiş'teki 'kurtarılabilir' kartı büyük boş bir kutu" | **Doğru ve daha kötüsü.** Kart, boş kalması tesadüf olan bir kutu değildi; *her* durumda çizilen, yani her zaman kurtarılacak bir şey olduğunu iddia eden bir karttı. Düzeltildi. Turda başarısız bir iş serpili olmadığı için her karede boş görünüyordu ve bulgu bu yüzden bir boyut sorunu olarak kaydedilmişti |
+| "kontrol panelinin boş grafik kartı tam kart yüksekliğinde" | **Desteklenemez.** İki grafik kartı bir satırı paylaşıyor ve sağdaki gerçek bir donut taşıyor, yani satırın yüksekliği içinde içerik olan bir şeyden geliyor; boş kart da kendi "Henüz veri yok"unu ortalıyor — U4'ün başka yerde istediği muamele |
+| "Kaplama sayfası boş durumunu hiç ortalamıyor" | **Doğru.** `EmptyState` kendi içeriğini ortalıyor ama `EmptyState`'i ortalayan yoktu; sayfa sonuna bir stretch koyup onu yukarı itiyordu. Düzeltildi ve karede ortalanmış olarak ölçüldü |
+
+Bilerek dokunulmayan: *dolu* bir kartın içindeki iş listesi sabit 110 px tavanını koruyor,
+yani tek iş altında boşluk bırakıyor. Satırlar word-wrap yapıyor, dolayısıyla içeriğe göre
+boyutlandırma satır başına `sizeHintForRow` gerektirir ve ilk yerleşim geçişinden önce
+kurulduğunda kendini yanlış ölçer — canlı popup'ın ilk boyutlandırma denemesini kaydıran
+arıza.
+
 ### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
@@ -799,6 +822,15 @@ gösterenden daha kötüdür:
   gösterdiğini etiket etiket karşılaştır. Düşünme panelinin çevrilmemiş literallerini
   yakalayan buydu ve tablo dolaylamasını, değişkene atamayı, statik taramanın göremediği
   her şeyi yakalıyor.
+
+  Aynı tarama bir sonraki çıkışında ikinci kez yanıldı ve bu kez hata Türkçeye özgü:
+  çevirilerde ASCII'ye katlanmış sözcükleri ararken 63 tane buldu — hepsi `re.IGNORECASE`
+  yüzünden yanlış pozitif, çünkü onun altında Türkçe `ı` ile `i` aynı harfe katlanıyor ve
+  `toplanti` deseni doğru yazılmış `Toplantı` ile eşleşiyor. İki yazımı da birebir eşlemek
+  yerine **sıfır** buluyor; ve başladığım dizi (kareden "son 30 gun" diye okunan) tabloda
+  `"son 30 gün"`. İki ders: Türkçe metin üzerinde bir tarama büyük/küçük harf duyarsız
+  eşleme kullanmamalı, ve küçük bir çizimden okunan diakritik, diakritiğin eksik olduğunun
+  kanıtı değil.
 
 Faz 1 sırasında:
 

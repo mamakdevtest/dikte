@@ -282,7 +282,7 @@ cannot carry button text at any size the design uses (N2), a style rule that
 matches nothing fails silently in two more ways (N3), and the tour was photographing
 only the top of every page (N4).
 
-### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 4 of 7 delivered*
+### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 5 of 7 delivered*
 
 Rebuild in this order — most-visible first, and each surface has its own
 verification frame from T0.5. Each finding is re-checked against the code and a
@@ -296,8 +296,8 @@ U10), and all three were written from the old screenshots.
 | 2 | **done** | Result overlay + live popup (content-sizing, empty state) | U6's first half held — the card really was a fixed 260 px box with three lines in it — and is fixed: it is now as tall as its text, 124 px for three lines, with the expanded state carrying a 24-line transcript at 460×460. Its second half was stale: the "no empty state" claim predates the placeholder the text area has always had. Sizing the card properly then exposed two defects that were hiding behind the fixed height: the card was a line short of its own text (the application stylesheet's 8 px padding on text areas was invisible to a margins-only count, so the last line scrolled out of sight while the card still had room), and the disabled expand arrow drew in the enabled colour (a palette colour does not reach a QToolButton whose text Qt resolves through QStyleSheetStyle). Both fixed and guarded. |
 | 3 | **done** | Thinking panel — same visual family as the pill | U11: first half true and worse than reported (the activity cue was a QLabel with nothing to draw — see N6b), second half unsupportable (the reference is a settings reference and says nothing about the indicator). Reading the file also found that the panel had no i18n at all and that showing it resets the interface language (N7). |
 | 4 | **done** | Tray menu — icons, separators, toggle state | U12 re-checked claim by claim: 11 actions all carry an icon and `tests/test_icon_contracts.py` already guards those names; four separators group the menu into dictation / meetings / settings+restart / quit; state shows in the label, an icon accent and the tooltip, with PAUSED deliberately sharing RECORDING's label because pause is the overlay's button. The real defect was unreported: both ask tooltips named a fixed assistant — "recording for Claude", "talking to Claude" — under a `display_name(self.conf)` that already knew better, so Codex and local-model users were told the wrong program had the microphone. Fixed, with the choice moved into a testable `ask_tray_state()`. |
-| 5 | next | Dashboard (stat semantics, empty states) | U4 |
-| 6 | | The nine settings pages | U2–U5, U9 |
+| 5 | **done** | Dashboard (stat semantics, empty states) | U4's three claims: the History recovery card held **and was worse** — it rendered in every state, an empty list box and a dead Retry button in the page's best space (fixed: it hides when nothing is retryable); the Indicator page never centring its empty state held (fixed: it sits between two stretches); the dashboard's empty chart card could **not** be supported — the two chart cards share a row and the right-hand one holds a real donut, and the empty one centres its own "No data yet". The tour now seeds a retryable job, so the card is photographed both ways instead of only as an empty box. |
+| 6 | next | The nine settings pages | U2–U5, U9 |
 | 7 | | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
 
 **Verification:** every captured frame reviewed against the locked direction;
@@ -669,6 +669,28 @@ What could not be verified: the menu as a desktop tray draws it. The tour has no
 `QSystemTrayIcon` has nothing to attach to offscreen, so the menu's painting and its
 contents are covered separately but never together.
 
+### 2026-09-12 — Phase 3, surface 5 (empty states)
+
+| File | Change |
+|---|---|
+| `settings_ui.py` | `_load_voice_jobs` hides the recovery card when nothing is retryable — it used to render in every state, an empty list box and a dead Retry button in the best space on the History page |
+| `ui/pages/overlay.py` | the Indicator page's empty state sits between two stretches instead of under the title with a void beneath it |
+| `tools/shoot_ui.py` | one retryable voice job is seeded, so the recovery card is photographed filled and enabled rather than only as an empty box |
+| `tests/test_empty_states.py` | new. The card hides with no jobs, appears with a retryable one, stays hidden for a completed one; the empty state has slack above and below, and the page still says what it says |
+
+U4, claim by claim:
+
+| U4 claim | Verdict |
+|---|---|
+| "the History 'recoverable' card is a large empty box" | **True, and worse.** The card was not a box that happened to be empty, it was a card that rendered in *every* state, always claiming there was something to recover. Fixed. The tour had no failed job seeded, which is why every frame showed it empty and why the finding was recorded as a size problem |
+| "the dashboard's empty chart card holds a full card's height" | **Unsupportable.** The two chart cards share a row and the right-hand one carries a real donut, so the row's height comes from something with content in it; the empty card centres its own "No data yet", which is the treatment U4 asks for elsewhere |
+| "the Overlay page never centres its empty state" | **True.** `EmptyState` centres its own contents but nothing centred `EmptyState`; the page added a trailing stretch and pushed it to the top. Fixed, and measured in the frame as centred |
+
+Left alone, deliberately: the job list inside a *filled* card keeps its fixed 110 px cap,
+so one job leaves space below it. The rows word-wrap, so content-sizing would need
+per-row `sizeHintForRow` and would misjudge itself when built before the first layout
+pass — the failure that made the live popup's first sizing attempt scroll.
+
 ### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
@@ -793,6 +815,15 @@ where it was wrong:
   build the surface in two languages and compare what it shows, one label at a time. That is
   what caught the thinking panel's untranslated literals, and it catches table indirection,
   variable assignment, and anything else the static scan cannot see.
+
+  The same scan failed a second way on its next outing, and this one is specific to
+  Turkish: looking for ASCII-folded words in the translations, it reported 63 of them —
+  every one of them a false positive caused by `re.IGNORECASE`, under which Turkish `ı`
+  and `i` fold together, so the pattern for `toplanti` matched the correct `Toplantı`.
+  Matching both spellings exactly instead finds **zero**, and the string I started from
+  (`"son 30 gun"`, read off a frame) is `"son 30 gün"` in the table. Two lessons: a scan
+  over Turkish text must not use case-insensitive matching, and a diacritic read off a
+  small rendering is not evidence of a missing diacritic.
 
 And during Phase 1:
 
