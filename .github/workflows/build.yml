@@ -53,6 +53,25 @@ jobs:
       - name: Build the frozen application and prove it starts
         run: python packaging/build.py
 
+      # T5.4, and the reason this job exists at all: PowerShell cannot be checked from
+      # Linux, so the runner is where the installer gets looked at. A throwaway machine,
+      # installed from the bundle, with -NoLaunch because the job must not wait on a GUI
+      # designed to stay up.
+      - name: Install it the way a user does (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./install.ps1 -NoLaunch
+          $shim = Join-Path $env:LOCALAPPDATA "Programs\Dikte\dikte.cmd"
+          if (-not (Test-Path $shim)) { throw "install.ps1 created no shim at $shim" }
+          Write-Host "installed command:"; Get-Content $shim
+          $out = & $shim --help
+          if ($LASTEXITCODE -ne 0) { throw "the installed command exited $LASTEXITCODE" }
+          $out | Select-Object -First 3
+          # the console-less twin is what the shortcuts point at; if it is missing, the
+          # shortcuts would flash a console, which is the defect T5.4 exists to remove
+          if (-not (Test-Path "dist\dikte\diktew.exe")) { throw "the bundle has no diktew.exe" }
+
       - name: Upload the bundle
         uses: actions/upload-artifact@v4
         with:

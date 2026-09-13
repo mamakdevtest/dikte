@@ -201,8 +201,17 @@ def main(argv=None):
     print(f"bundle size: {size / 1e6:.1f} MB")
 
     failures = []
-    for name, check in (("--help", check_help), ("doctor", check_doctor),
-                        ("window", check_window)):
+    checks = [("--help", check_help), ("doctor", check_doctor), ("window", check_window)]
+    # The console-less twin is a separate executable with its own copy of the archive, so
+    # it can fail on its own: start it too, where it exists (T5.4).
+    if sys.platform == "win32":
+        twin = exe.parent / "diktew.exe"
+        if twin.exists():
+            checks.append(("window (console-less)", lambda _exe: check_window(twin)))
+        else:
+            failures.append("diktew.exe")
+            print("  FAIL  diktew.exe: the bundle has no console-less twin")
+    for name, check in checks:
         ok, detail = check(exe)
         print(f"  {'ok  ' if ok else 'FAIL'}  {name}: {detail}")
         if not ok:

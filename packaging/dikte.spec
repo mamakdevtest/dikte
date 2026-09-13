@@ -85,8 +85,34 @@ exe = EXE(
         os.path.join(ROOT, "icons", "dikte.ico")) else None,
 )
 
+# Windows gets a second, console-less executable, because Windows is the platform where a
+# console is a *visible* thing that flashes on screen. The Startup entry and the Start
+# Menu shortcut point at this one; a terminal keeps using `dikte`, which still has its
+# console for the CLI. Other platforms have no equivalent problem, and a second executable
+# carries its own copy of the module archive, so they do not pay for it.
+twin = None
+if sys.platform == "win32":
+    twin = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name="diktew",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=os.path.join(ROOT, "icons", "dikte.ico"),
+    )
+
 coll = COLLECT(
-    exe,
+    *(c for c in (exe, twin) if c is not None),
     a.binaries,
     a.datas,
     strip=False,

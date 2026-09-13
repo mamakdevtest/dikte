@@ -7,22 +7,30 @@
 #      Start Menu shortcut plus a Startup (autostart) shortcut.
 #   2. Adds the project dir to the user's PATH so `python dikte.py --help` works
 #      as `dikte` via a generated dikte.cmd shim in %LOCALAPPDATA%\Programs\Dikte.
-#   3. Ensures PyQt6 is installed (pip install PyQt6) when missing.
+#   3. Ensures PyQt6 is installed (pip install PyQt6) when missing — source installs only;
+#      a bundle carries its own Qt.
 #   4. Registers the global shortcuts via `python dikte.py shortcut install`.
-#   5. Launches the GUI windowlessly (pythonw) so no console window appears.
+#   5. Launches the GUI windowlessly: the console-less `diktew.exe` from a bundle, or
+#      `pythonw` for a source install, so no console window appears.
 #
 # Safe to run again to repair or update an existing install: every step
 # overwrites or no-ops, nothing double-applies.
 #
-# Prerequisites: Python 3.11+ on PATH, ffmpeg on PATH.
+# Prerequisites: Python 3.11+ on PATH, ffmpeg on PATH — **unless a frozen build is sitting
+# next to this script** (`dist\dikte\dikte.exe`, what `packaging/build.py` produces). A
+# bundle carries its own interpreter and its own Qt, so when one is present Python is not
+# needed, nothing is pip-installed, and the shim, shortcuts and autostart all point at the
+# bundle instead (T5.4). Without one, every step below behaves exactly as it did.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -Shortcut "Ctrl+Space" -CancelShortcut "Ctrl+Esc"
+#   powershell -ExecutionPolicy Bypass -File install.ps1 -NoLaunch   # install only
 
 param(
     [string]$Shortcut = "Ctrl+Space",
-    [string]$CancelShortcut = ""
+    [string]$CancelShortcut = "",
+    [switch]$NoLaunch
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,6 +44,16 @@ function Info($msg) { Write-Host "info $msg" -ForegroundColor Cyan }
 $DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $DIR) { $DIR = (Get-Location).Path }
 $DIR = (Resolve-Path $DIR).Path
+
+# Is there a frozen build to install? See the header: with one, this script needs no
+# Python at all. `diktew.exe` is the console-less twin the spec builds for Windows only,
+# which is what the Start Menu and Startup shortcuts should point at — a shortcut that
+# flashes a console is the thing T5.4 is here to fix.
+$FROZEN_DIR = Join-Path $DIR "dist\dikte"
+$FROZEN_CLI = Join-Path $FROZEN_DIR "dikte.exe"
+$FROZEN_GUI = Join-Path $FROZEN_DIR "diktew.exe"
+$FROZEN = Test-Path $FROZEN_CLI
+if (-not (Test-Path $FROZEN_GUI)) { $FROZEN_GUI = $FROZEN_CLI }
 
 # Display metadata. Kept minimal and reliable: no remote version lookup, so the
 # recorded version is local-only and never blocks a reinstall.
@@ -169,7 +187,15 @@ if (-not $found) {
         Info "Found Python $bestVer at $best"
     }
 }
-if (-not $found -or -not $PY) { Warn "Python not found on PATH. Install Python 3.11+ from https://www.python.org/downloads/ and re-run."; Warn "Tried: python, python3, py, and common install locations."; exit 1 }
+if (-not $FROZEN -and (-not $found -or -not $PY)) { Warn "Python not found on PATH. Install Python 3.11+ from https://www.python.org/downloads/ and re-run."; Warn "Tried: python, python3, py, and common install locations."; Warn "Or place a frozen build in dist\dikte\ and re-run: it needs no Python."; exit 1 }
+
+# Everything from here to the shim exists to find and describe the *interpreter*, which a
+# frozen install does not have or need. Skipped as a block rather than guarded line by
+# line, so a future edit here cannot quietly reintroduce a Python requirement into the
+# bundle path.
+if ($FROZEN) {
+    Info "Installing the frozen build in $FROZEN_DIR (no Python needed)."
+} else {
 
 # Verify version >= 3.11
 $verCheck = _try_version $PY @($PY_VER)
@@ -214,6 +240,8 @@ if ($GUI_PY -ne "pyw" -and $GUI_PY -ne "pythonw" -and (Test-Path $GUI_PY)) {
     Info "Windowless interpreter: $GUI_PY $($GUI_VER -join ' ')"
 }
 
+}
+
 # 2. App dir + shim -------------------------------------------------------
 $BIN_DIR = Join-Path $env:LOCALAPPDATA "Programs\Dikte"
 New-Item -ItemType Directory -Force -Path $BIN_DIR | Out-Null
@@ -222,7 +250,10 @@ $shim = Join-Path $BIN_DIR "dikte.cmd"
 $pyForShim = $PY
 if ($PY -match '\s' -and $PY -notmatch '^".*"$') { $pyForShim = "`"$PY`"" }
 $verPart = ($PY_VER -join ' ').Trim()
-if ($verPart) { $shimLine = "@echo off`r`n$pyForShim $verPart `"$DIR\dikte.py`" %*`r`n" }
+if ($FROZEN) {
+    # No interpreter to name and no `dikte.py` to point at: the bundle is both.
+    $shimLine = "@echo off`r`n`"$FROZEN_CLI`" %*`r`n"
+} elseif ($verPart) { $shimLine = "@echo off`r`n$pyForShim $verPart `"$DIR\dikte.py`" %*`r`n" }
 else { $shimLine = "@echo off`r`n$pyForShim `"$DIR\dikte.py`" %*`r`n" }
 Set-Content -Path $shim -Value $shimLine -Encoding Ascii
 Ok "Command installed: $shim"
@@ -269,12 +300,19 @@ try { $ws = New-Object -ComObject WScript.Shell -ErrorAction Stop } catch {
 function New-GuiShortcut([string]$path, [string]$desc) {
     if (-not $ws) { throw "WScript.Shell not available" }
     $lnk = $ws.CreateShortcut($path)
-    # $GUI_PY is a bare executable ("pythonw", "pyw", "python"...). WScript.Shell
-    # cannot take a prepended call operator, and the version selector (e.g. -3)
-    # must be a CLI argument for pyw, so both parts are passed explicitly.
-    $lnk.TargetPath = $GUI_PY
-    $lnk.Arguments = @($GUI_VER) + @("`"$DIR\dikte.py`" --gui") -join ' '
-    $lnk.WorkingDirectory = $DIR
+    if ($FROZEN) {
+        # The console-less twin, run as itself: no interpreter to find, no script to name.
+        $lnk.TargetPath = $FROZEN_GUI
+        $lnk.Arguments = "--gui"
+        $lnk.WorkingDirectory = (Split-Path -Parent $FROZEN_GUI)
+    } else {
+        # $GUI_PY is a bare executable ("pythonw", "pyw", "python"...). WScript.Shell
+        # cannot take a prepended call operator, and the version selector (e.g. -3)
+        # must be a CLI argument for pyw, so both parts are passed explicitly.
+        $lnk.TargetPath = $GUI_PY
+        $lnk.Arguments = @($GUI_VER) + @("`"$DIR\dikte.py`" --gui") -join ' '
+        $lnk.WorkingDirectory = $DIR
+    }
     $lnk.Description = $desc
     if (Test-Path $ICON_PATH) { try { $lnk.IconLocation = "$ICON_PATH,0" } catch {} }
     $lnk.Save()
@@ -313,8 +351,14 @@ if (Test-Path $startupDir) {
 }
 
 # 5. Ensure PyQt6 is installed -------------------------------------------
-$hasQt = $false
-try { & $PY @($PY_VER) -c "import PyQt6.QtWidgets" 2>$null; $hasQt = ($LASTEXITCODE -eq 0) } catch { $hasQt = $false }
+# A bundle brings its own Qt, so there is nothing to install and nothing to probe for:
+# this step belongs to the source install only.
+if ($FROZEN) {
+    $hasQt = $true
+} else {
+    $hasQt = $false
+    try { & $PY @($PY_VER) -c "import PyQt6.QtWidgets" 2>$null; $hasQt = ($LASTEXITCODE -eq 0) } catch { $hasQt = $false }
+}
 if (-not $hasQt) {
     Info "PyQt6 not found; installing..."
     $pipArgs = @("-m","pip","install","--quiet","PyQt6")
@@ -356,7 +400,8 @@ if ($Shortcut -and $CancelShortcut -and $Shortcut -eq $CancelShortcut) {
 function Register-Shortcut($which, $combo, $label) {
     if (-not $combo) { return }
     try {
-        $out = & $PY @($PY_VER) "$DIR\dikte.py" shortcut install $which --combo $combo 2>&1 | Out-String
+        if ($FROZEN) { $out = & $FROZEN_CLI shortcut install $which --combo $combo 2>&1 | Out-String }
+        else { $out = & $PY @($PY_VER) "$DIR\dikte.py" shortcut install $which --combo $combo 2>&1 | Out-String }
         if ($LASTEXITCODE -eq 0) { Ok "${label}: $combo" }
         else { Warn (($out -split "`n")[0].Trim()) }
     } catch {
@@ -415,22 +460,31 @@ if (-not $ffmpegFound) {
 }
 
 # 9. Launch GUI -----------------------------------------------------------
-if ($hasQt) {
+if ($NoLaunch) {
+    Info "Not launching (-NoLaunch). Start it with: dikte   (or from the Start Menu)"
+} elseif ($hasQt) {
     try {
-        $guiArgs = @($GUI_VER) + @("`"$DIR\dikte.py`"", "--gui")
+        if ($FROZEN) {
+            $exe = $FROZEN_GUI
+            $argStr = "--gui"
+            $workDir = Split-Path -Parent $FROZEN_GUI
+        } else {
+            $guiArgs = @($GUI_VER) + @("`"$DIR\dikte.py`"", "--gui")
+            # Build argument string correctly: join with spaces, already quoted.
+            $argStr = ($guiArgs -join ' ')
+            $exe = $GUI_PY
+            $workDir = $DIR
+        }
         # Use Start-Process so the installer can exit while Dikte stays running.
         # WindowStyle Hidden hides the console when falling back to python.exe.
-        $style = if ($GUI_PY -like "*pythonw.exe" -or $GUI_PY -eq "pyw") { "Hidden" } else { "Hidden" }
-        # Build argument string correctly: join with spaces, already quoted.
-        $argStr = ($guiArgs -join ' ')
         Info "Launching Dikte..."
-        Start-Process -FilePath $GUI_PY -ArgumentList $argStr -WorkingDirectory $DIR -WindowStyle Hidden -ErrorAction Stop | Out-Null
+        Start-Process -FilePath $exe -ArgumentList $argStr -WorkingDirectory $workDir -WindowStyle Hidden -ErrorAction Stop | Out-Null
         Ok "Dikte started. Look for its tray icon near the clock."
         Say  "If you don't see it, run: dikte doctor"
     } catch {
         Warn "Could not launch GUI automatically: $_"
         Say  "Start it manually: dikte"
-        Say  "Or: $GUI_PY $($GUI_VER -join ' ') `"$DIR\dikte.py`" --gui"
+        if (-not $FROZEN) { Say "Or: $GUI_PY $($GUI_VER -join ' ') `"$DIR\dikte.py`" --gui" }
     }
 } else {
     Warn "GUI not launched (PyQt6 missing). Fix PyQt6 then run: dikte"
