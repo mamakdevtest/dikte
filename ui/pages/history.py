@@ -84,10 +84,13 @@ def build(window):
     row_lay.setContentsMargins(20, 12, 20, 12)
     row_lay.setSpacing(8)
     row_lay.addWidget(copy)
-    row_lay.addWidget(delete)
-    row_lay.addStretch(1)
-    row_lay.addWidget(clear)
     row_lay.addWidget(reload_)
+    # The two destructive actions go last, past the stretch: they are the only
+    # buttons on this page that lose data, and they were previously interleaved
+    # with Copy and Reload, so a slipped click landed on Delete.
+    row_lay.addStretch(1)
+    row_lay.addWidget(delete)
+    row_lay.addWidget(clear)
     entries.add(row)
 
     return scrolled(body)

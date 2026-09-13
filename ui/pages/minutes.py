@@ -151,10 +151,13 @@ def build(window):
     row.addWidget(copy)
     row.addWidget(window.minutes_retry)
     row.addWidget(save_md)
-    row.addStretch(1)
     row.addWidget(folder)
-    row.addWidget(delete)
     row.addWidget(reload_)
+    # Delete alone, past the stretch: same rule as the History page, which had
+    # its destructive buttons interleaved with the safe ones. The two pages
+    # disagreed on the order before this.
+    row.addStretch(1)
+    row.addWidget(delete)
     outer.addLayout(row)
 
     return scrolled(body)

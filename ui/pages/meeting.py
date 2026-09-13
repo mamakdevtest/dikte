@@ -296,7 +296,7 @@ def build(window):
     window.meeting_prompt.setMinimumHeight(120)
     window.meeting_prompt.setMaximumHeight(180)
     outer.addWidget(window.meeting_prompt, 1)
-    reset = btn(t("Reset to default"), "secondary", "sm")
+    reset = btn(t("Reset to default"), "ghost", "sm")
     reset.clicked.connect(
         lambda: window.meeting_prompt.setPlainText(cfg.default_meeting_prompt()))
     outer.addWidget(reset, 0, Qt.AlignmentFlag.AlignRight)

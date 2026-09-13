@@ -68,7 +68,7 @@ class LocalModelBox(QGroupBox):
         self.model = QComboBox()
         self.download_button = _btn(t("Download"), "secondary", "sm")
         self.download_button.clicked.connect(self._download)
-        self.delete_button = _btn(t("Delete"), "ghost", "sm")
+        self.delete_button = _btn(t("Delete"), "danger", "sm")
         self.delete_button.clicked.connect(self._delete)
         form.addRow(t("Model"), self._side_by_side(self.model,
                                                    self.download_button,

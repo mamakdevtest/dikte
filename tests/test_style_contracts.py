@@ -272,6 +272,105 @@ class ObjectNamesAreStyled(unittest.TestCase):
             f"repository: {stale_windows}"))
 
 
+class DestructiveActionsAreSetApart(unittest.TestCase):
+    """A destructive button does not sit among the safe ones.
+
+    U2: the design reference says danger is muted red "only for actually
+    destructive actions", and that only means something if those actions are also
+    placed apart. The History page had Delete between Copy and the stretch, so a
+    slipped click on a routine action landed on the one that loses history.
+
+    The rule is deliberately narrow: in a layout that has a stretch, every danger
+    button added to it has to come after that stretch. Layouts with no stretch are
+    not judged, because there is no separation to speak of in them either way.
+    """
+
+    BUTTON_BUILDERS = {"btn", "Btn", "_btn", "icon_button"}
+
+    def _variants(self, tree):
+        """variable name -> variant, for buttons built with a literal one."""
+        found = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+                continue
+            call = node.value
+            name = getattr(call.func, "id", None) or getattr(call.func, "attr", None)
+            if name not in self.BUTTON_BUILDERS:
+                continue
+            variant = None
+            for arg in call.args[1:]:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    variant = arg.value
+                    break
+            for keyword in call.keywords:
+                if keyword.arg == "variant" and isinstance(keyword.value, ast.Constant):
+                    variant = keyword.value.value
+            if variant is None:
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    found[target.id] = variant
+                elif (isinstance(target, ast.Attribute)
+                      and isinstance(target.value, ast.Name)
+                      and target.value.id == "self"):
+                    found[f"self.{target.attr}"] = variant
+        return found
+
+    def _layout_calls(self, tree):
+        """(lineno, receiver, kind, argument) for addWidget/addStretch, in order."""
+        calls = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute):
+                continue
+            if func.attr not in ("addWidget", "addStretch"):
+                continue
+            receiver = func.value
+            key = (receiver.id if isinstance(receiver, ast.Name)
+                   else f"self.{receiver.attr}" if isinstance(receiver, ast.Attribute)
+                   else None)
+            argument = None
+            if node.args and isinstance(node.args[0], ast.Name):
+                argument = node.args[0].id
+            elif (node.args and isinstance(node.args[0], ast.Attribute)
+                  and isinstance(node.args[0].value, ast.Name)
+                  and node.args[0].value.id == "self"):
+                argument = f"self.{node.args[0].attr}"
+            calls.append((node.lineno, key, func.attr, argument))
+        return sorted(calls)
+
+    def test_no_danger_button_is_added_before_the_stretch(self):
+        offenders = []
+        for path in _module_paths():
+            tree = _parse(path)
+            if tree is None:
+                continue
+            variants = self._variants(tree)
+            if "danger" not in variants.values():
+                continue
+            calls = self._layout_calls(tree)
+            stretches = {}
+            for lineno, receiver, kind, _ in calls:
+                if kind == "addStretch" and receiver not in stretches:
+                    stretches[receiver] = lineno
+            for lineno, receiver, kind, argument in calls:
+                if kind != "addWidget" or argument is None:
+                    continue
+                if variants.get(argument) != "danger":
+                    continue
+                first_stretch = stretches.get(receiver)
+                if first_stretch is not None and lineno < first_stretch:
+                    rel = path.relative_to(REPO)
+                    offenders.append(
+                        f"{rel}:{lineno} adds the danger button {argument!r} to "
+                        f"the row before its stretch at line {first_stretch}")
+        self.assertEqual([], offenders, (
+            "a destructive action placed among the safe ones is one slip away "
+            "from doing its job:\n  " + "\n  ".join(offenders)))
+
+
 class TheRhythmIsDeclaredOnce(unittest.TestCase):
     """Control heights come from ui.tokens, not from a number typed in the sheet.
 

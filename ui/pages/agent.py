@@ -342,7 +342,7 @@ def build(window):
     window.assistant_prompt = QPlainTextEdit()
     window.assistant_prompt.setMinimumHeight(180)
     outer.addWidget(window.assistant_prompt, 1)
-    reset_prompt = btn(t("Reset to default"), "secondary", "sm")
+    reset_prompt = btn(t("Reset to default"), "ghost", "sm")
     reset_prompt.clicked.connect(
         lambda: window.assistant_prompt.setPlainText(cfg.default_assistant_prompt()))
     outer.addWidget(reset_prompt, 0, Qt.AlignmentFlag.AlignRight)
