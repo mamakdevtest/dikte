@@ -282,7 +282,7 @@ cannot carry button text at any size the design uses (N2), a style rule that
 matches nothing fails silently in two more ways (N3), and the tour was photographing
 only the top of every page (N4).
 
-### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 5 of 7 delivered*
+### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 6 of 7 delivered*
 
 Rebuild in this order — most-visible first, and each surface has its own
 verification frame from T0.5. Each finding is re-checked against the code and a
@@ -297,8 +297,8 @@ U10), and all three were written from the old screenshots.
 | 3 | **done** | Thinking panel — same visual family as the pill | U11: first half true and worse than reported (the activity cue was a QLabel with nothing to draw — see N6b), second half unsupportable (the reference is a settings reference and says nothing about the indicator). Reading the file also found that the panel had no i18n at all and that showing it resets the interface language (N7). |
 | 4 | **done** | Tray menu — icons, separators, toggle state | U12 re-checked claim by claim: 11 actions all carry an icon and `tests/test_icon_contracts.py` already guards those names; four separators group the menu into dictation / meetings / settings+restart / quit; state shows in the label, an icon accent and the tooltip, with PAUSED deliberately sharing RECORDING's label because pause is the overlay's button. The real defect was unreported: both ask tooltips named a fixed assistant — "recording for Claude", "talking to Claude" — under a `display_name(self.conf)` that already knew better, so Codex and local-model users were told the wrong program had the microphone. Fixed, with the choice moved into a testable `ask_tray_state()`. |
 | 5 | **done** | Dashboard (stat semantics, empty states) | U4's three claims: the History recovery card held **and was worse** — it rendered in every state, an empty list box and a dead Retry button in the page's best space (fixed: it hides when nothing is retryable); the Indicator page never centring its empty state held (fixed: it sits between two stretches); the dashboard's empty chart card could **not** be supported — the two chart cards share a row and the right-hand one holds a real donut, and the empty one centres its own "No data yet". The tour now seeds a retryable job, so the card is photographed both ways instead of only as an empty box. |
-| 6 | next | The nine settings pages | U2–U5, U9 |
-| 7 | | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
+| 6 | **done** | The nine settings pages | Two of the four claims did not survive measurement: **U5** (controls "do not share an edge") — they are right-aligned by design, so the right edges do share one line and the left edges vary by width, and the 976 px "overflow" is the page width without a scrollbar; **U9** (the five-way editing level is cramped) — each segment is 132×34. **U3** is closed by numbers: the muted tier is 6.06–6.67:1, a disabled button 5.54–6.06:1 and an enabled one 12.67–13.26:1, so disabled and enabled differ by 2.2× and both pass AA. **U2**'s hierarchy was already closed in Phase 2 (Save is `primary`); measuring the footer found what the audit had not — Save sat 3–4 px below Prompts on every page, because its height was declared twice (`setFixedHeight(CONTROL[...])` in `btn()` against the sheet's `min-height` + padding, so the pin silently lost). Fixed, and the T2.4 guard tightened: it only caught *literal* heights, so a token passed; the sheet is now the only place a control's height may be fixed. |
+| 7 | next | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
 
 **Verification:** every captured frame reviewed against the locked direction;
 the golden-image manifest updated deliberately in each commit, never blindly.
@@ -690,6 +690,30 @@ Left alone, deliberately: the job list inside a *filled* card keeps its fixed 11
 so one job leaves space below it. The rows word-wrap, so content-sizing would need
 per-row `sizeHintForRow` and would misjudge itself when built before the first layout
 pass — the failure that made the live popup's first sizing attempt scroll.
+
+### 2026-09-12 — Phase 3, surface 6 (the nine settings pages)
+
+| File | Change |
+|---|---|
+| `settings_ui.py` | Save is an ordinary `btn(..., "primary")` in the footer row instead of a `QDialogButtonBox`'s button, so both footer buttons come from one layout |
+| `ui/widgets.py` | `btn()` and the segmented control stop pinning a height: the sheet declares control heights, and `setFixedHeight(CONTROL[...])` was a second declaration that lost to it |
+| `ui/components.py` | the same pin in the dead copy noted as H6 — fixed too, because a revived copy would fight the sheet identically |
+| `tests/test_style_contracts.py` | `TheRhythmIsDeclaredOnce` gains `test_the_sheet_is_the_only_place_a_control_height_is_fixed` — a token is still a second declaration |
+
+The four claims, measured rather than read off a frame:
+
+| Claim | Verdict |
+|---|---|
+| **U2** no primary/secondary hierarchy | Half closed in Phase 2 (Save is `variant="primary"`). Measuring the footer found the defect nobody had reported: **Save sat 3–4 px below Prompts on every page**. Root cause: the control height was declared twice — `btn()` pinned it while the sheet declares `min-height` plus padding, making a content minimum of 34 px against a 32 (md) or 26 (sm) pin, so the pin lost the argument silently and the two buttons took their heights from different rules. Fixed; measured before/after in the window and in the frame |
+| **U3** muted tier and disabled controls too faint | **Unsupportable, by numbers.** The muted tier is 6.06–6.67:1 on the card, a disabled button 5.54–6.06:1, an enabled one 12.67–13.26:1 — 2.2× apart and both above AA. Phase 2's palette work had already answered this |
+| **U5** form columns drift; the shortcut row overflows the label column | **Unsupportable.** The controls are right-aligned by design: the right edges share one line (confirmed in the frame), the left edges vary with each control's width, and the 80 px "drift" is one wide combo against two narrow ones. The 976 px "overflow" is the page width when no scrollbar is present — the cards on that page are 726 wide, not 712 |
+| **U9** the five-way editing level is cramped | **Unsupportable.** Each segment measures **132×34** |
+
+The pin survived T2.4 because that guard only failed on *literal* heights; a token is
+not a literal. That is a miss of mine, and the guard now says what it meant: the sheet
+is the only place a control's height is fixed. Containers may still cap their own (a
+140 px chart, a 110 px list) — a control is not a container, which is why only
+`setFixedHeight` counts.
 
 ### Corrections made to this document while executing it
 

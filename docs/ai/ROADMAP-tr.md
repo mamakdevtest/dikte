@@ -286,7 +286,7 @@ düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kural�
 daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
 fotoğraflıyordu (N4).
 
-### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 5'i teslim edildi*
+### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 6'sı teslim edildi*
 
 Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi
 var. Her bulgu, hiçbir şey değiştirilmeden önce koda ve güncel bir kareye karşı
@@ -301,8 +301,8 @@ ekran görüntülerinden yazılmıştı.
 | 3 | **bitti** | Düşünme paneli — pille aynı görsel aile | U11'in ilk yarısı doğru ve bildirilenden kötüydü (hareket göstergesi çizecek bir şeyi olmayan bir QLabel'dı — N6b), ikinci yarısı desteklenemez (referans bir ayarlar referansı, gösterge hakkında hiçbir şey söylemiyor). Dosyayı okumak ayrıca panelin hiç i18n'i olmadığını ve gösterilmesinin arayüz dilini sıfırladığını (N7) buldu. |
 | 4 | **bitti** | Tepsi menüsü — ikonlar, ayırıcılar, açık/kapalı durumu | U12 iddia iddia kontrol edildi: 11 aksiyonun hepsi ikon taşıyor ve `tests/test_icon_contracts.py` o adları zaten koruyor; dört ayırıcı menüyü dikte / toplantılar / ayarlar+yeniden başlat / çık olarak grupluyor; durum etikette, ikon vurgusunda ve tooltip'te görünüyor — PAUSED bilerek RECORDING etiketini paylaşıyor, çünkü duraklatma overlay'in düğmesi. Gerçek kusur bildirilmemişti: iki soru tooltip'i sabit bir ajan adı söylüyordu — "recording for Claude", "talking to Claude" — ve bu, doğrusunu zaten bilen bir `display_name(self.conf)`'un hemen altındaydı; yani Codex ve yerel model kullanıcılarına mikrofonu yanlış programın tuttuğu söyleniyordu. Düzeltildi; seçim test edilebilir bir `ask_tray_state()`'e taşındı. |
 | 5 | **bitti** | Kontrol paneli (istatistik anlamı, boş durumlar) | U4'ün üç iddiası: Geçmiş'teki kurtarma kartı tuttu **ve daha kötüydü** — her durumda çiziliyordu, sayfanın en iyi yerinde boş bir liste kutusu ve ölü bir Yeniden dene düğmesi (düzeltildi: kurtarılabilir bir şey yokken gizleniyor); Gösterge sayfasının boş durumunu hiç ortalamaması tuttu (düzeltildi: iki stretch arasında duruyor); kontrol panelinin boş grafik kartı **desteklenemedi** — iki grafik kartı bir satırı paylaşıyor ve sağdaki gerçek bir donut taşıyor, boş olan da kendi "Henüz veri yok"unu ortalıyor. Tur artık kurtarılabilir bir iş serpiyor, böylece kart yalnızca boş bir kutu olarak değil iki hâliyle de fotoğraflanıyor. |
-| 6 | sıradaki | Dokuz ayar sayfası | U2–U5, U9 |
-| 7 | | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
+| 6 | **bitti** | Dokuz ayar sayfası | Dört iddiadan ikisi ölçümden sağ çıkmadı: **U5** (kontroller "bir kenarı paylaşmıyor") — kontroller tasarım gereği sağa hizalı, yani sağ kenarlar tek çizgiyi paylaşıyor ve sol kenarlar genişliğe göre değişiyor; 976 px'lik "taşma" ise kaydırma çubuğu yokken sayfanın genişliği; **U9** (5'li düzenleme seviyesi sıkışık) — her segment 132×34. **U3** sayılarla kapandı: soluk katman 6.06–6.67:1, pasif düğme 5.54–6.06:1, etkin düğme 12.67–13.26:1; yani pasif ile etkin 2.2 kat farklı ve ikisi de AA üstü. **U2**'nin hiyerarşisi Faz 2'de zaten kapanmıştı (Kaydet `primary`); footer'ı ölçmek taramanın görmediğini buldu — Kaydet her sayfada Promptlar'ın 3–4 px altındaydı, çünkü yüksekliği iki kez bildiriliyordu (`btn()` içinde `setFixedHeight(CONTROL[...])`, sheet'in `min-height` + dolgusuna karşı; sabitleme sessizce kaybediyordu). Düzeltildi ve T2.4 korkuluğu sıkılaştırıldı: yalnızca *literal* yükseklikleri yakalıyordu, token geçiyordu; artık bir kontrolün yüksekliğinin sabitlendiği tek yer sheet. |
+| 7 | sıradaki | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
 
 **Doğrulama:** alınan her kare kilitlenen yöne karşı incelenir; altın-görüntü
 manifestosu her commit'te bilinçli güncellenir, asla körlemesine değil.
@@ -695,6 +695,30 @@ yani tek iş altında boşluk bırakıyor. Satırlar word-wrap yapıyor, dolayı
 boyutlandırma satır başına `sizeHintForRow` gerektirir ve ilk yerleşim geçişinden önce
 kurulduğunda kendini yanlış ölçer — canlı popup'ın ilk boyutlandırma denemesini kaydıran
 arıza.
+
+### 2026-09-12 — Faz 3, yüzey 6 (dokuz ayar sayfası)
+
+| Dosya | Değişiklik |
+|---|---|
+| `settings_ui.py` | Kaydet artık footer satırında sıradan bir `btn(..., "primary")`; bir `QDialogButtonBox`'ın düğmesi değil, böylece iki footer düğmesi tek layout'tan geliyor |
+| `ui/widgets.py` | `btn()` ve segment kontrolü yükseklik sabitlemeyi bıraktı: kontrol yüksekliklerini sheet bildiriyor ve `setFixedHeight(CONTROL[...])` ona karşı kaybeden ikinci bir bildirimdi |
+| `ui/components.py` | H6'da not edilen ölü kopyadaki aynı sabitleme — o da düzeltildi, çünkü canlandırılmış bir kopya sheet'e aynı şekilde karşı koyardı |
+| `tests/test_style_contracts.py` | `TheRhythmIsDeclaredOnce` yeni bir test kazandı: `test_the_sheet_is_the_only_place_a_control_height_is_fixed` — token da ikinci bir bildirimdir |
+
+Dört iddia, kareden okunmak yerine ölçülerek:
+
+| İddia | Karar |
+|---|---|
+| **U2** birincil/ikincil hiyerarşi yok | Yarısı Faz 2'de kapanmıştı (Kaydet `variant="primary"`). Footer'ı ölçmek kimsenin bildirmediği kusuru buldu: **Kaydet her sayfada Promptlar'ın 3–4 px altındaydı**. Kök neden: kontrol yüksekliği iki kez bildiriliyordu — `btn()` sabitliyordu, sheet ise `min-height` + dolgu bildiriyor ve 32 (md) / 26 (sm) sabitlemeye karşı 34 px'lik bir içerik minimumu oluşuyordu; sabitleme tartışmayı sessizce kaybediyor, iki düğme yüksekliğini farklı kurallardan alıyordu. Düzeltildi; pencerede ve karede önce/sonra ölçüldü |
+| **U3** soluk katman ve pasif kontroller fazla silik | **Sayılarla desteklenemez.** Soluk katman kart üzerinde 6.06–6.67:1, pasif düğme 5.54–6.06:1, etkin düğme 12.67–13.26:1 — 2.2 kat ayrı ve ikisi de AA üstü. Faz 2'nin palet çalışması bunu zaten yanıtlamıştı |
+| **U5** form kolonları kayıyor; kısayol satırı etiket kolonuna taşıyor | **Desteklenemez.** Kontroller tasarım gereği sağa hizalı: sağ kenarlar tek çizgiyi paylaşıyor (karede doğrulandı), sol kenarlar her kontrolün genişliğine göre değişiyor ve 80 px'lik "kayma" bir geniş combo ile iki dar kombo arasındaki fark. 976 px'lik "taşma" ise kaydırma çubuğu yokken sayfanın genişliği — o sayfadaki kartlar 712 değil 726 geniş |
+| **U9** 5'li düzenleme seviyesi sıkışık | **Desteklenemez.** Her segment **132×34** |
+
+Sabitleme T2.4'ten sağ çıkmıştı, çünkü o korkulak yalnızca *literal* yüksekliklerde kırmızı
+oluyordu; token literal değil. Bu benim kaçırmamdı ve korkulak artık ne demek istediğini
+söylüyor: bir kontrolün yüksekliğinin sabitlendiği tek yer sheet. Konteynerler kendi
+yüksekliklerini sınırlayabilir (140 px'lik grafik, 110 px'lik liste) — kontrol konteyner
+değildir, bu yüzden yalnızca `setFixedHeight` sayılıyor.
 
 ### Bu belgede uygulama sırasında düzeltilenler
 
