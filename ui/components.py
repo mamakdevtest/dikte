@@ -70,9 +70,9 @@ class Button(QPushButton):
                          variant if variant in _VARIANTS else "secondary")
         if size == "sm":
             self.setProperty("size", "sm")
-            self.setFixedHeight(CONTROL["sm"])
-        else:
-            self.setFixedHeight(CONTROL["md"])
+        # No pinned height: the sheet declares the control heights (see
+        # ui/widgets.btn). This file is the dead copy noted in H6; it still has to
+        # obey the rule, because a revived copy would fight the sheet the same way.
         if icon_name:
             try:
                 self.setIcon(_icons.icon(

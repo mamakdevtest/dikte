@@ -474,6 +474,47 @@ class TheRhythmIsDeclaredOnce(unittest.TestCase):
                         "control height belongs in ui.tokens.CONTROL")
         self.assertEqual([], offenders, "\n  ".join([""] + offenders))
 
+    def test_the_sheet_is_the_only_place_a_control_height_is_fixed(self):
+        """A token is still a second declaration.
+
+        `setFixedHeight(CONTROL["md"])` passed the literal check above and still
+        fought the sheet: `QPushButton { min-height: 32 }` plus its padding makes a
+        content minimum of 34, so the pin lost the argument — silently, per call.
+        Two buttons in one row then took their heights from different rules and
+        landed 3 px apart in the footer. Anything that fixes a control's height in
+        code is a height declared outside the sheet, token or not; only the shapes
+        (the 14 px arrow, the 1 px separator) may be pinned, and they are pinned
+        precisely because they are not controls.
+        """
+        offenders = []
+        # Only `setFixedHeight`: min/max heights legitimately size *containers* (a
+        # 140 px chart, a 110 px list cap), and a control is not a container. What
+        # may not exist is a second, competing declaration of a control's height.
+        setters = ("setFixedHeight",)
+        for path in _module_paths():
+            tree = _parse(path)
+            if tree is None:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if not (isinstance(func, ast.Attribute) and func.attr in setters):
+                    continue
+                if not node.args:
+                    continue
+                arg = node.args[0]
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, int):
+                    if arg.value <= self.CODE_CEILING:
+                        continue
+                    why = f"{arg.value}px is above the {self.CODE_CEILING}px shape ceiling"
+                else:
+                    why = ("a token is still a height declared outside the sheet, "
+                           "where the padding that decides the real height lives")
+                rel = path.relative_to(REPO)
+                offenders.append(f"{rel}:{node.lineno} {func.attr}(...) — {why}")
+        self.assertEqual([], offenders, "\n  ".join([""] + offenders))
+
 
 if __name__ == "__main__":
     unittest.main()

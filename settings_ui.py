@@ -511,17 +511,20 @@ class SettingsWindow(QDialog):
         except Exception:
             pass
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save)
-        save_button = buttons.button(QDialogButtonBox.StandardButton.Save)
-        save_button.setText(t("Save"))
-        save_button.setProperty("variant", "primary")
-        buttons.accepted.connect(self._save)
+        # Both footer buttons are ordinary buttons in one row. Save used to come out
+        # of a QDialogButtonBox, which brings its own internal layout and padding with
+        # it: measured against the frame, it put Save 4 px below Prompts on every page,
+        # and a dialog's button box has no business in a window footer anyway.
+        save_button = btn(t("Save"), "primary")
+        save_button.clicked.connect(self._save)
+        self.save_btn = save_button
 
         bar = QWidget()
         bl = QHBoxLayout(bar)
         bl.setContentsMargins(20, 10, 20, 12)
+        bl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         bl.addStretch(1)
-        bl.addWidget(buttons)
+        bl.addWidget(save_button)
         self.minutes_prompt_btn = btn(t("Prompts"), "secondary", "sm")
         self.minutes_prompt_btn.setToolTip(t("Edit meeting summary prompts"))
         self.minutes_prompt_btn.clicked.connect(self._open_prompt_creator)

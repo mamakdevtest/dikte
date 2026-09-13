@@ -183,9 +183,12 @@ def btn(text, variant="secondary", size=None, icon_name=None, icon_color=None,
     button.setProperty("variant", variant if variant in _VARIANTS else "secondary")
     if size == "sm":
         button.setProperty("size", "sm")
-        button.setFixedHeight(CONTROL["sm"])
-    else:
-        button.setFixedHeight(CONTROL["md"])
+    # The height is the sheet's, per size class: `QPushButton { min-height: ... }`
+    # plus its padding. Pinning it here as well fought the sheet — a fixed 32 px
+    # against a content minimum of 34 px is a contradiction Qt resolves by ignoring
+    # the pin, so two buttons in one row ended up 3 px apart (measured in the
+    # footer). One declaration, in the sheet, where the padding that decides the
+    # real height also lives.
     if icon_name:
         button.setIcon(_icons.icon(icon_name, 15, icon_color or theme.palette()["fg2"]))
     return button
@@ -492,7 +495,8 @@ class SegmentedControl(QWidget):
         for label, value in options:
             b = QPushButton(label)
             b.setProperty("variant", "seg")
-            b.setFixedHeight(CONTROL["md"])
+            # No pinned height: the sheet declares `QPushButton[variant="seg"]
+            # { min-height: ... }`, and a pin here fought it (see ui/widgets.btn).
             b.setCheckable(True)
             b.setAutoExclusive(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
