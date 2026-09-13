@@ -115,9 +115,22 @@ class Loading(DikteTest):
         cfg.Config()
         self.assertEqual(i18n.language(), "tr")
 
-    def test_an_unknown_key_reads_as_its_default(self):
-        self.assertIsNone(cfg.Config()["no_such_setting"])
+    def test_an_unknown_key_reads_as_none_and_says_so(self):
+        """A key declared nowhere is a typo, and a typo means a control that does nothing.
+
+        Measured before this was written: the product reads 96 literal setting keys and this
+        is the only one that is not declared anywhere — so the reading exists, not the typo.
+        """
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertIsNone(cfg.Config()["no_such_setting"])
+        self.assertIn("no setting is called 'no_such_setting'", err.getvalue())
         self.assertEqual(cfg.Config().get("no_such_setting", "fallback"), "fallback")
+
+    def test_a_declared_key_is_read_without_a_word(self):
+        """The other direction: the line above is a defect report, not chatter."""
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(cfg.DEFAULTS["cleanup_model"], cfg.Config()["cleanup_model"])
+        self.assertEqual("", err.getvalue())
 
 
 class Saving(DikteTest):

@@ -1164,7 +1164,15 @@ class Config:
         i18n.set_language(self.data["ui_language"])
 
     def __getitem__(self, key):
-        return self.data.get(key, DEFAULTS.get(key))
+        if key in self.data:
+            return self.data[key]
+        if key in DEFAULTS:
+            return DEFAULTS[key]
+        # A key in neither place is a typo, or a setting a fork wrote: returning None in
+        # silence is how a control comes to do nothing at all, which is the failure this
+        # project keeps meeting from other directions (T4.8's neighbours).
+        print(f"dikte: no setting is called {key!r}; the caller gets None", file=sys.stderr)
+        return None
 
     def __setitem__(self, key, value):
         self.data[key] = value
