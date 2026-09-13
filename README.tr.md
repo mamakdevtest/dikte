@@ -224,7 +224,15 @@ i18n.py           metin tablosu
 ```
 
 Gösterge XWayland üzerinden çizilir; Wayland'da bir pencereyi belirli bir köşeye
-yerleştirmenin yolu yok, `dikte.py` bu yüzden `QT_QPA_PLATFORM=xcb` ayarlar.
+yerleştirmenin yolu yok, `dikte.py` bu yüzden `QT_QPA_PLATFORM=xcb` ayarlar. Kararı
+veren `paste.indicator_platform()`.
+
+**XWayland'siz** bir Wayland oturumunda pencereyi yerleştiren bir yol yok: Qt Wayland
+eklentisine düşer, `move()` yok sayılır ve göstergenin nerede görüneceğine besteci
+karar verir — çoğu zaman ortada, bazen hiç. Bu durum sessiz kalmıyor: Gösterge
+sayfası bunu söyler ve `QT_QPA_PLATFORM`'a dokunulmaz, böylece Qt en azından
+başlayabilir. XWayland kurmak köşeyi geri verir. Windows ve macOS pencereyi doğrudan
+yerleştirir; orada XWayland devrede değil.
 
 ## Lisans
 

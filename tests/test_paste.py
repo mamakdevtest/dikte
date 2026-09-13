@@ -26,6 +26,91 @@ import paste
 from tests.support import DikteTest, FakeCompleted, only_these_tools
 
 
+class TheIndicatorChooser(DikteTest):
+    """Where the corner indicator is allowed to draw itself (X2).
+
+    Three answers, and the third one is the point of the exercise: there is no
+    session-independent way to place the window, so the session that cannot place
+    it has to be named rather than discovered by a user whose indicator is not
+    where they put it.
+    """
+
+    def under(self, platform="linux", **env):
+        with mock.patch.object(sys, "platform", platform), \
+                mock.patch.dict(os.environ, env, clear=True):
+            return paste.indicator_platform()
+
+    def test_a_wayland_session_with_xwayland_goes_through_it(self):
+        """The documented path: DISPLAY means XWayland is there to place windows."""
+        self.assertEqual(paste.XCB,
+                         self.under(XDG_SESSION_TYPE="wayland",
+                                    WAYLAND_DISPLAY="wayland-0", DISPLAY=":0"))
+
+    def test_a_wayland_session_without_xwayland_is_named_unplaced(self):
+        """No DISPLAY: Qt goes to the Wayland plugin and `move()` is ignored."""
+        self.assertEqual(paste.UNPLACED,
+                         self.under(XDG_SESSION_TYPE="wayland",
+                                    WAYLAND_DISPLAY="wayland-0"))
+
+    def test_an_x11_session_places_the_window_itself(self):
+        self.assertEqual(paste.NATIVE,
+                         self.under(XDG_SESSION_TYPE="x11", DISPLAY=":0"))
+
+    def test_a_session_that_never_says_what_it_is_is_not_assumed_to_be_wayland(self):
+        """`XDG_SESSION_TYPE` unset: the window can still be placed directly."""
+        self.assertEqual(paste.NATIVE, self.under(DISPLAY=":0"))
+
+    def test_windows_and_macos_are_native_whatever_the_environment_says(self):
+        for platform in ("win32", "darwin"):
+            with self.subTest(platform=platform):
+                self.assertEqual(
+                    paste.NATIVE,
+                    self.under(platform, XDG_SESSION_TYPE="wayland"))
+
+    def test_the_platform_is_forced_only_when_xwayland_can_place_the_window(self):
+        """The import-time half, run in its own process.
+
+        `dikte.py` has to set `QT_QPA_PLATFORM` before Qt loads, so this cannot be
+        checked in-process: by the time a test runs, Qt is already up and the
+        platform is chosen.
+        """
+        cases = {
+            "wayland with xwayland": (
+                {"XDG_SESSION_TYPE": "wayland", "DISPLAY": ":0"}, "xcb"),
+            "wayland without xwayland": (
+                {"XDG_SESSION_TYPE": "wayland",
+                 "WAYLAND_DISPLAY": "wayland-0"}, "unset"),
+            "x11": ({"XDG_SESSION_TYPE": "x11", "DISPLAY": ":0"}, "unset"),
+            "nothing said": ({}, "unset"),
+        }
+        for name, (env, expected) in cases.items():
+            with self.subTest(session=name):
+                result = subprocess.run(
+                    [sys.executable, "-c",
+                     "import dikte, os; "
+                     "print(os.environ.get('QT_QPA_PLATFORM', 'unset'))"],
+                    cwd=str(pathlib.Path(__file__).resolve().parent.parent),
+                    env={**env, "PATH": os.environ.get("PATH", ""),
+                         "HOME": os.environ.get("HOME", "")},
+                    capture_output=True, text=True, timeout=90)
+                self.assertEqual(0, result.returncode, result.stderr[-400:])
+                self.assertEqual(expected, result.stdout.strip(),
+                                 f"{name}: the platform the app asked for")
+
+    def test_the_answer_is_read_from_the_session_not_settled_at_import(self):
+        """A session started before the display server was up must not stick.
+
+        The same reason `desktop()` is read every time; the two decisions come from
+        one session and one environment.
+        """
+        with mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland"},
+                             clear=True):
+            self.assertEqual(paste.UNPLACED, paste.indicator_platform())
+        with mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland",
+                                          "DISPLAY": ":0"}, clear=True):
+            self.assertEqual(paste.XCB, paste.indicator_platform())
+
+
 class Chooser(DikteTest):
     """Which pair of programs this session's clipboard goes through."""
 

@@ -233,7 +233,15 @@ i18n.py           the string table
 ```
 
 The indicator is drawn through XWayland, because a Wayland client cannot place a
-window in a screen corner; `dikte.py` sets `QT_QPA_PLATFORM=xcb` for that.
+window in a screen corner; `dikte.py` sets `QT_QPA_PLATFORM=xcb` for that, and
+`paste.indicator_platform()` is what decides it.
+
+On a Wayland session with **no XWayland** there is no path that places the window:
+Qt falls back to the Wayland plugin, `move()` is ignored, and the compositor
+decides where the indicator appears — often centred, sometimes nowhere. That case
+is named rather than silent: the Indicator page says so, and `QT_QPA_PLATFORM` is
+left alone so Qt can at least start. Installing XWayland restores the corner.
+Windows and macOS place the window directly; no XWayland is involved there.
 
 ## License
 

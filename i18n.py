@@ -278,6 +278,12 @@ TR = {
         "açtığından birkaç saniye daha uzun sürer.",
     "This machine (whisper.cpp)": "Bu makine (whisper.cpp)",
     "This machine (llama.cpp)": "Bu makine (llama.cpp)",
+    "This session has no XWayland, so the indicator cannot be placed in a corner: "
+    "it appears wherever the compositor puts it. Installing XWayland gives it back "
+    "the corner you choose here.":
+        "Bu oturumda XWayland yok, yani gösterge bir köşeye yerleştirilemez: "
+        "besteci onu nereye koyarsa orada görünür. XWayland kurmak, burada "
+        "seçtiğin köşeyi ona geri verir.",
     "Sends one test sentence to the cleanup model and shows its reply. "
     "Proves the key, the address and the model id together.":
         "Temizleme modeline bir test cümlesi gönderir ve yanıtını gösterir. "

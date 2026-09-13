@@ -508,6 +508,38 @@ def desktop():
     return WAYLAND
 
 
+# --- where the corner indicator can be drawn -------------------------------
+
+XCB = "xcb"            # a Wayland session that still has XWayland
+NATIVE = "native"      # X11, Windows or macOS: the window can be placed directly
+UNPLACED = "unplaced"  # Wayland without XWayland: the compositor decides, not us
+
+
+def indicator_platform(env=None):
+    """How the corner indicator gets to a corner on this session.
+
+    A Wayland client cannot place a window in a screen corner, so a Wayland
+    session that still has XWayland is drawn through it (`XCB`) — the approach the
+    README documents, and the reason `dikte.py` sets `QT_QPA_PLATFORM=xcb` before
+    Qt loads.
+
+    There is no third path that places the window. Without XWayland Qt goes to the
+    Wayland plugin, `move()` is ignored, and the compositor puts the window where
+    it likes — so `UNPLACED` is a state worth naming rather than leaving the user
+    to wonder why their indicator is not in the corner they chose. It is read from
+    the session, not from an OS check, because X11 and Wayland are the same
+    platform to `sys.platform`.
+
+    Read every time, like `desktop()`, so a test can say which session it means.
+    """
+    env = os.environ if env is None else env
+    if sys.platform in ("win32", "darwin"):
+        return NATIVE
+    if env.get("XDG_SESSION_TYPE") != "wayland":
+        return NATIVE
+    return XCB if env.get("DISPLAY") else UNPLACED
+
+
 # --- the clipboard ---------------------------------------------------------
 
 def _macos_snapshot():

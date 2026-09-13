@@ -35,9 +35,15 @@ def _win32_message_box(title, text):
         pass
 
 # A Wayland client cannot place a window in a screen corner, so the indicator
-# is drawn through XWayland. Not applicable on Windows/macOS.
+# is drawn through XWayland. Not applicable on Windows/macOS. The decision itself
+# lives in `paste.indicator_platform()` — which is Qt-free on purpose, since this
+# has to run before Qt loads — so that the session which cannot place the window
+# can say so in the indicator page instead of leaving a window somewhere
+# unexpected. See UNPLACED there.
 if sys.platform not in ("win32", "darwin"):
-    if os.environ.get("XDG_SESSION_TYPE") == "wayland" and os.environ.get("DISPLAY"):
+    import paste as _paste
+
+    if _paste.indicator_platform() == _paste.XCB:
         os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 # An application started from the Finder is given none of the shell's PATH, so

@@ -13,9 +13,11 @@ the scaffolding `tests/test_ui.py` already covers.
 
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 from PyQt6.QtWidgets import QApplication, QLabel, QListWidget, QPushButton
 
+import paste
 import settings_ui
 import voice_jobs
 from tests.support import DikteTest
@@ -124,6 +126,23 @@ class TheIndicatorPage(DikteTest):
         joined = " ".join(labels)
         self.assertIn("No overlay preview", joined)
         self.assertIn("appears on its own while recording", joined)
+
+    def test_a_session_that_cannot_place_the_indicator_is_told_so(self):
+        """The page says there is nothing to configure here (X2).
+
+        On a Wayland session with no XWayland there is something it cannot do — the
+        indicator is drawn wherever the compositor likes — and this page is where
+        the corner is chosen, so it is the one place that can say so.
+        """
+        with mock.patch.object(paste, "indicator_platform",
+                               return_value=paste.UNPLACED):
+            labels = " ".join(w.text() for w in self.body().findChildren(QLabel))
+        self.assertIn("no XWayland", labels)
+
+    def test_a_session_that_can_place_it_hears_nothing_about_xwayland(self):
+        with mock.patch.object(paste, "indicator_platform", return_value=paste.XCB):
+            labels = " ".join(w.text() for w in self.body().findChildren(QLabel))
+        self.assertNotIn("XWayland", labels)
 
 
 if __name__ == "__main__":

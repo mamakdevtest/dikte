@@ -1,4 +1,6 @@
-"""Overlay page: stub — the live indicator lives outside this window."""
+"""Overlay page: the indicator lives outside this window, so it says where."""
+
+import paste
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
@@ -6,7 +8,7 @@ from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from i18n import t
 
 from .. import theme
-from ..widgets import EmptyState
+from ..widgets import EmptyState, InfoNote
 from . import page, scrolled
 
 
@@ -59,6 +61,16 @@ def build(window):
         t("Indicator"),
         t("The indicator shows recording, work and result states at a glance. The tray menu keeps the same actions reachable outside the window."),
     )
+
+    # A session with no XWayland cannot place the indicator at all, and this page
+    # is where the corner is chosen and otherwise says there is nothing to
+    # configure — so it is the one honest place to say that. See
+    # paste.UNPLACED for the decision.
+    if paste.indicator_platform() == paste.UNPLACED:
+        outer.addWidget(InfoNote(t(
+            "This session has no XWayland, so the indicator cannot be placed in a "
+            "corner: it appears wherever the compositor puts it. Installing "
+            "XWayland gives it back the corner you choose here.")))
 
     # The empty state is the whole page. It used to sit under the title with a
     # void beneath it — `EmptyState` centres its own contents, but nothing centred
