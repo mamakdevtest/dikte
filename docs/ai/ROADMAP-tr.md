@@ -256,25 +256,35 @@ değil iki tanesinden türetilmek zorunda kalmasının sebebi bu).
 okundu — o karelerde kalan her İngilizce metin arayüz değil veri (bir model
 kimliği, bir sağlayıcı kimliği, fixture'ın kendi toplantı başlığı).
 
-### Faz 2 — Tasarım sistemi — *sürüyor: T2.1, T2.2 ve T2.3'ün renk yarısı 2026-09-12'de teslim edildi*
+### Faz 2 — Tasarım sistemi — **bitti 2026-09-12**
 
 | Görev | Durum | Teslim edilen ve bunu neyin kanıtladığı |
 |---|---|---|
 | T2.1 | **bitti** | Belgelenen sıcak yön artık tek yön. `ui/tokens.py` bir sıcak-taş `LIGHT` ve bir sıcak-kömür `DARK` taşıyor, başka hiçbir şey yok. **Altı doygun renk odası emekliye ayrıldı.** Her biri bir kömür tabanın tek bir vurguyla karışımıydı — altısının da "aynı koyu arayüz, farklı renkli düğme" olarak okunmasının ve uygulamanın takip ettiğini iddia ettiği tasarıma hiç benzememesinin sebebi buydu. `RETIRED_THEMES` adlarını saklıyor, böylece `normalize()` hâlâ tema sanmak yerine yerlerine ne geçtiğini açıkça söyleyebiliyor. |
 | T2.2 | **bitti** | `light` ve `dark` kendine eşleniyor; açık tema ilk kez erişilebilir. Varsayılan `blue`'dan `dark`'a taşındı (`config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py`). Seçici iki temayı sunuyor ve dairelerin seçim halkası paletin mürekkebinden geliyor; böylece açık bir daire açık kenar çubuğunda artık kaybolmuyor. |
-| T2.3 | **renk yarısı bitti** | Her metin eşleşmesi tahmin değil ölçüm: `fg` 12,2–12,7:1, `fg2` 7,5:1, `fg3` en kötü 5,5–5,6:1, durum renkleri 4,6–6,5:1, dolgulu düğme 14,5–17,0:1. `tests/test_theme.py` bunların hepsini sözleşme olarak sabitliyor, yani sonraki bir palet düzenlemesi sessizce geri alamaz. **Hâlâ açık:** düğmelerin ötesinde etkin / hover / odak / pasif ayrışma gözden geçirmesi. |
-| T2.4 | **bitti** | Ritim `ui/tokens.py`'de bir kez bildiriliyor (`CONTROL`, `ROW_HEIGHT`, `CELL`, `INDICATOR`) ve başka hiçbir yer kendi yüksekliğini seçemiyor. Alanlar, açılır kutular, düğmeler, segment kontrolü ve kenar çubuğu satırları `CONTROL["md"]`'ye taşındı; böylece bir kontrol ile komşusu şansa değil kuruluma göre hizalanıyor. Korkuluk altında: sheet'te 1px üstü literal `min-height`, 14px üstü literal `height` yok; kodda 14 üstü `setFixedHeight` yok — ikisi de yeşile dönmeden önce kırmızı kanıtlandı. |
-| T2.5 | **büyük ölçüde açık** | Sayfa başına buton hiyerarşisi (U2) — *başlandı*: Kaydet düğmesi nihayet bir birincil eylem ve tek dolgulu düğme o. |
-| T2.6 | açık | Durum bağlama: ana anahtarı kapalı bir kontrol devre dışı olur (U8). |
+| T2.3 | **bitti** | Her metin eşleşmesi üzerine çizildiği arka plana karşı ölçüldü: `fg` 12,2–12,7:1, `fg2` 7,5:1, `fg3` en kötü 5,5–5,6:1, durum renkleri kendi tonlarında çip etiketi olarak 4,6–6,5:1, dolgulu düğme 14,5–17,0:1 ve çizgiler 1,31–1,90:1 ile görünür. `tests/test_theme.py` hepsini sabitliyor. Durum gözden geçirmesi gerçek kusuru buldu: `ghost` ve `danger`, `border-color: transparent`'ı odak kuralının *altında* bildirdiği için QSS'in belge-sırası eşitliği onlara hiç odak halkası bırakmıyordu — tek bir odak kuralı her değişkenden sonra konularak düzeltildi, değişken başına korkuluk altına alındı. **Doğrulanmadı:** halkanın gerçekten çizildiği; çünkü odaklanmamış offscreen pencerede odak oluşmuyor. |
+| T2.4 | **bitti** | Ritim `ui/tokens.py`'de bir kez bildiriliyor (`CONTROL`, `ROW_HEIGHT`, `CELL`, `INDICATOR`) ve başka hiçbir yer kendi yüksekliğini seçemiyor. Alanlar, açılır kutular, düğmeler, segment kontrolü ve kenar çubuğu satırları `CONTROL["md"]`'ye taşındı; böylece bir kontrol ile komşusu şansa değil kuruluma göre hizalanıyor. Korkuluk altında: sheet'te 1px üstü literal `min-height`, 14px üstü literal `height` yok; kodda 14 üstü `setFixedHeight` yok. |
+| T2.5 | **bitti** | Düğme seviyeleri artık referansın dediği anlama geliyor. Ajan ve Toplantı sayfalarındaki `Reset to default` ikincildi ve referans Reset'i ghost örneği olarak adlandırıyor — artık ghost. İndirilmiş bir modeli silen `Delete` ghost'tu, yani bir yer iminin ağırlığındaydı, üstelik onaylı yıkıcı bir eylemde — artık danger. İki eylem satırı da yıkıcı düğmeleri boşluktan sonraya alıyor: Geçmiş'te Sil, Kopyala ile boşluk arasındaydı; Tutanak'ta aynı biçim ters sırayla vardı, yani iki sayfa birbiriyle de çelişiyordu. Korkuluk altında: satırının boşluğundan önce eklenen danger düğmesi takımı kırmızı yapıyor. |
+| T2.6 | **bitti** | Her ana anahtar bağımlılarına karşı denetlendi. `auto_paste` ve `skip_silent` bağlıydı; temizleme sayfasının prompt editörleri ise `ui.widgets.gate()`'in elle kopyalanmış ve `except Exception: pass` içine sarılmış hâliyle kapılanıyordu — bağlantı başarısız olsa editörler açık kalır, üstteki anahtar ise promptların devrede olmadığını söylerdi. Artık paylaşılan yardımcıyı çağırıyor. Kalan anahtarların (`result_overlay_enabled`, `live_transcript`, `keep_audio`) bağımlısı yok: köşe seçici kayıt göstergesine ait ve bilgi notu bir kontrolü kapılamıyor, davranışı tarif ediyor. Pikselle doğrulandı: anahtar kapalıyken prompt alanı `surface2` (devre dışı arka planı) çiziyor. |
 
-**Teslim edildiği hâliyle doğrulama:** `unittest discover` 1498 test OK, 79 sn;
+**Teslim edildiği hâliyle doğrulama:** `unittest discover` 1500 test OK, 85 sn;
 `tools/quick_tests.py` 1361 test, 14 sn; `shoot_ui.py --check` 2 tema × 1 dil
 boyunca 60 kare çizdi ve yüzey manifestosu bozulmadı; iki temanın farklı olduğu
 dosya adıyla değil **pikselle** kanıtlandı.
 
-Bunu yaparken iki bulgu çıktı, ikisi de aşağıdaki "Düzeltmeler"de kayıtlı: tur,
-iddia ettiği her tema adı için tek bir palet çiziyordu (N1) ve terrakota, tasarımın
-kullandığı hiçbir boyutta düğme metnini taşıyamıyor (N2).
+Düğme işinden bir şey daha çıktı: tur bunların hiçbirini kontrol edemezmiş. Her
+ayar sayfası bir kaydırma alanında yaşıyor ve çekim sabit 1000×700'dü, yani Geçmiş
+sayfasının silme satırı ile Tutanak sayfasının eylem satırı tek bir karede hiç
+görünmemiş. Artık her sayfa ölçülüp pencere ona göre büyütülüyor ve kareler kendi
+yüksekliklerinde 700–2040 px arasında çıkıyor. Sıralama düzeltmesi sonra kare
+üzerinde doğrulandı: satırda 101 px yıkıcı-kırmızı metin ve son güvenli eylemle
+arasında ölçülmüş 250 px boşluk.
+
+Bunu yaparken çıkan bulgular "Düzeltmeler"de kayıtlı: tur, iddia ettiği her tema
+adı için tek palet çiziyordu (N1); terrakota tasarımın kullandığı hiçbir boyutta
+düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kuralı iki biçimde
+daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
+fotoğraflıyordu (N4).
 
 ### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g)
 
@@ -552,6 +562,28 @@ widget düz bir `QWidget` olarak kuruluyordu, sheet ise kartları `QFrame#card` 
 biçimlendiriyor — Qt hiçbir şeyle eşleştirmedi ve hiçbir şey çizmedi. Yazı soluk
 değildi, çıplak kenar çubuğunun üstünde oturuyordu.
 
+### 2026-09-12 — Faz 2, üçüncü teslim (T2.5, T2.6 ve odak halkası)
+
+| Dosya | Değişiklik |
+|---|---|
+| `ui/pages/agent.py`, `ui/pages/meeting.py` | `Reset to default` ikincildi; referans Reset'i ghost örneği olarak adlandırıyor |
+| `ui/local_models.py` | indirilmiş bir modeli silen `Delete` ghost'tu — onaylı yıkıcı bir eylemde yer imi ağırlığı |
+| `ui/pages/history.py`, `ui/pages/minutes.py` | yıkıcı düğmeler boşluktan sonraya taşındı ve iki sayfa sıralamada anlaşıyor |
+| `ui/pages/cleanup.py` | elle kurulmuş gate yerine paylaşılan `ui.widgets.gate()` |
+| `ui/qss.py` | her düğme değişkeninden sonra tek bir odak kuralı; devre dışı sekme grubu soluklaşıyor |
+| `tools/shoot_ui.py` | her ayar sayfası, üst 700 px'i yerine tam olarak fotoğraflanıyor |
+| `tests/test_style_contracts.py` | üç sözleşme daha: yıkıcı yerleşimi, odağın korunması, ritim (evvelki teslimden) |
+
+Okunan değil ölçülen:
+
+```
+Geçmiş sayfası, tur düzeltmesinden önce  silme satırı hiçbir karede yoktu
+sonra                                   101 px yıkıcı-kırmızı metin, aynı satırdaki
+                                        son güvenli eylemden 250 px uzakta
+prompt alanı, anahtar kapalı            arka plan surface2 (#f2ede1) = devre dışı
+                                        (açık alan rengi #f7f3e9)
+```
+
 ### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
@@ -595,6 +627,33 @@ gösterenden daha kötüdür:
   stil vardı ve onu giyen yoktu; ve gerçek Kaydet düğmesi stilsizdi — U2'nin (buton
   hiyerarşisi yok) somut hâli bu, burada Kaydet'i birincil yaparak onarıldı.
 
+- **N3 — hiçbir şeyle eşleşmeyen bir stil kuralı sessizce başarısız oluyor, üç
+  biçimde.** Plan "sheet'in etkisi yok"u tek bir kusur sınıfı sayıyordu; işi
+  yaparken üç biçimi çıktı ve her biri varsayılan görünümlü bir widget çizip hiçbir
+  şey fırlatmıyor. (1) **Yanlış widget sınıfı:** kenar çubuğunun motor kartı bir
+  `QWidget`'tı, sheet ise kartları `QFrame#card` diye biçimlendiriyor — kartın ne
+  yüzeyi ne kenarlığı vardı; 0 px, düzeltmeyle 19 371 px. "Durum satırı çok soluk"
+  iki palet revizyonu boyunca kontrast sorunu olarak ele alınmıştı; hiçbir palet
+  olmayan bir kartı düzeltemez. `tests/test_style_contracts.py` artık her
+  objectName'i hangi widget sınıfının aldığını ve ona bir kuralın ulaşıp
+  ulaşmadığını soruyor. (2) **Kaskad sırası:** `ghost` ve `danger`,
+  `border-color: transparent`'ı `QPushButton:focus`'un altında bildiriyor ve QSS
+  eşit özgüllüğü belge sırasıyla çözüyor — o iki değişkenin hiç odak halkası yoktu.
+  Değişken başına korkuluk altına alındı; o testin bariz versiyonu onlar bozukken
+  geçiyor, çünkü `seg:focus` altlarında durup bütün aile adına cevap veriyor.
+  (3) **Qt'nin desteklemediği bir seçici:** `QTabBar:disabled::tab` kabul ediliyor
+  ve hiçbir şey yapmıyor; `QTabBar::tab:disabled` çalışıyor. İkisini ayıran tek şey
+  ölçüm oldu. Ders şu: bir stil değişikliğinin yanına bir ölçüm iliştirilmeli,
+  çünkü "iyi görünüyor" ile "kural hiç uygulanmadı" aynı şeye benziyor.
+
+- **N4 — tur her sayfanın üstünü fotoğraflıyordu.** Her ayar sayfası bir kaydırma
+  alanında yaşıyor ve çekim sabit 1000×700'dü; yani Geçmiş sayfasının silme satırı
+  ile Tutanak sayfasının eylem satırı hiçbir koşunun hiçbir karesinde görünmedi. Bu
+  küçük bir kör nokta değil: dört sayfanın alt yarısı demek, ve düğme hiyerarşisi
+  işinin önce inançla yeniden sıralanıp ancak sonra kontrol edilebilmesinin sebebi.
+  `tools/shoot_ui.py` artık her sayfayı ölçüp pencereyi ona göre büyütüyor — kendi
+  yüksekliğinde 700 ile 2040 px arası — ve sıralama sonra kare üzerinde doğrulandı.
+
 Faz 1 sırasında:
 
 - **X3 büyük ölçüde yanlıştı** ve yanlışlığı taramanın kendi yönteminden
@@ -617,5 +676,5 @@ Faz 1 sırasında:
 ---
 
 *2026-09-12'de `master @ ffe8a5c` üzerinde salt-okunur bir incelemeyle
-başlandı; Faz 0 ve Faz 1 aynı gün uygulandı, Faz 2'nin tasarım sistemi teslimi de
-aynı gün başladı. İngilizce aslı: [`ROADMAP.md`](ROADMAP.md).*
+başlandı; Faz 0, 1 ve 2 aynı gün uygulandı. İngilizce aslı:
+[`ROADMAP.md`](ROADMAP.md).*

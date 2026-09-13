@@ -252,25 +252,35 @@ from two call shapes rather than one).
 frame by frame — every remaining English string in those frames is data (a model
 id, a provider id, a fixture's meeting title), not interface text.
 
-### Phase 2 — Design system — *in progress: T2.1, T2.2 and the colour half of T2.3 delivered 2026-09-12*
+### Phase 2 — Design system — **done 2026-09-12**
 
 | Task | State | What landed, and what proves it |
 |---|---|---|
 | T2.1 | **done** | The documented warm direction is now the only one. `ui/tokens.py` carries a warm-stone `LIGHT` and a warm-charcoal `DARK` and nothing else. **The six saturated colour rooms are retired.** They were a charcoal base mixed with one accent each — which is why all six read as the same dark interface with a differently coloured button, and why the app never looked like the design it claimed to follow. `RETIRED_THEMES` keeps the names so `normalize()` can be explicit about what replaced them instead of pretending they are still themes. |
 | T2.2 | **done** | `light` and `dark` map to themselves; the light theme is reachable for the first time. The default moves from `blue` to `dark` (`config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py`). The picker offers the two themes and its swatches carry a selection ring in palette ink, so a light swatch on a light sidebar no longer dissolves. |
-| T2.3 | **colour half done** | Every text pairing measured, not estimated: `fg` 12.2–12.7:1, `fg2` 7.5:1, `fg3` 5.5–5.6:1 at worst, status colours 4.6–6.5:1, filled button 14.5–17.0:1. `tests/test_theme.py` pins all of it as a contract, so a later palette edit cannot quietly undo it. **Still open:** the enabled / hover / focus / disabled distinctness review beyond buttons. |
-| T2.4 | **done** | The rhythm is declared once in `ui/tokens.py` (`CONTROL`, `ROW_HEIGHT`, `CELL`, `INDICATOR`) and nothing else picks its own height. Fields, combos, buttons, the segmented control and the sidebar rows all move to `CONTROL["md"]`, so a control and its neighbour line up by construction rather than by luck. Guarded: no literal `min-height` above 1px or `height` above 14px in the sheet, no `setFixedHeight` above 14 in code, both proven red before they were green. |
-| T2.5 | **mostly open** | Button hierarchy per page (U2) — *started*: the Save button is finally a primary action, and it is the only filled one. |
-| T2.6 | open | State coupling: a control whose master toggle is off is disabled (U8). |
+| T2.3 | **done** | Every text pairing measured against the background it is drawn on: `fg` 12.2–12.7:1, `fg2` 7.5:1, `fg3` 5.5–5.6:1 at worst, status colours 4.6–6.5:1 as chip labels on their own tint, filled button 14.5–17.0:1, and lines visible at 1.31–1.90:1. `tests/test_theme.py` pins all of it. The state review found the real defect: `ghost` and `danger` declared `border-color: transparent` *below* the focus rule, so QSS's document-order tie-break gave them no focus ring at all — fixed by putting one focus rule after every variant, guarded per variant. **Not verified:** that the ring paints, because focus does not resolve in an unfocused offscreen window. |
+| T2.4 | **done** | The rhythm is declared once in `ui/tokens.py` (`CONTROL`, `ROW_HEIGHT`, `CELL`, `INDICATOR`) and nothing else picks its own height. Fields, combos, buttons, the segmented control and the sidebar rows all move to `CONTROL["md"]`, so a control and its neighbour line up by construction rather than by luck. Guarded: no literal `min-height` above 1px or `height` above 14px in the sheet, no `setFixedHeight` above 14 in code. |
+| T2.5 | **done** | Button levels now mean what the reference says. `Reset to default` on the Agent and Meeting pages was `secondary`, and the reference names Reset as the ghost example — it is ghost now. The `Delete` that removes a downloaded model was `ghost`, i.e. the weight of a bookmark, on a confirmed destructive action — it is danger now. Both action rows put the destructive buttons past the stretch: History had Delete between Copy and the gap, and Minutes had the same shape in the opposite order, so the two pages disagreed with each other as well. Guarded: a danger button added before its row's stretch fails the suite. |
+| T2.6 | **done** | Audited every master toggle against its dependents. `auto_paste` and `skip_silent` were wired, and the cleanup page's prompt editors were gated by a hand-rolled copy of `ui.widgets.gate()` wrapped in `except Exception: pass` — a failed connect would have left the prompt editors live while the toggle said their prompts were not in use. It calls the shared helper now. The remaining switches (`result_overlay_enabled`, `live_transcript`, `keep_audio`) have no dependents: the corner picker belongs to the recording indicator, and the info note describes behaviour rather than gating a control. Verified by pixel: the prompt field renders `surface2`, the disabled background, with the toggle off. |
 
-**Verification, as delivered:** `unittest discover` 1498 tests OK in 79 s;
+**Verification, as delivered:** `unittest discover` 1500 tests OK in 85 s;
 `tools/quick_tests.py` 1361 in 14 s; `shoot_ui.py --check` drawn 60 frames across
 2 themes × 1 language with the surface manifest intact; the two themes proven
 distinct by pixel, not by filename.
 
-Two findings came out of doing this, both recorded in "Corrections" below: the
-tour had been rendering one palette for every theme name it claimed (N1), and
-terracotta cannot carry button text at any size the design uses (N2).
+One more thing came out of the button work: the tour could not have checked any of
+it. Every settings page lives in a scroll area, and the capture was a fixed
+1000×700, so the History page's delete row and the Minutes page's action row had
+never appeared in a single frame. Each page is now measured and the window grown
+to fit it, and the frames come out between 700 and 2040 px at their own height.
+The reorder was then confirmed on the picture: 101 px of danger-red text on the
+row, with a measured 250 px gap between it and the last safe action.
+
+Findings that came out of doing this, recorded in "Corrections" below: the tour
+had been rendering one palette for every theme name it claimed (N1), terracotta
+cannot carry button text at any size the design uses (N2), a style rule that
+matches nothing fails silently in two more ways (N3), and the tour was photographing
+only the top of every page (N4).
 
 ### Phase 3 — Surface-by-surface rebuild (10–14 d)
 
@@ -548,6 +558,28 @@ there was no card: the widget was built as a `QWidget` while the sheet styles ca
 as `QFrame#card`, so Qt matched nothing and drew nothing. The text was not faint,
 it was sitting on the bare sidebar.
 
+### 2026-09-12 — Phase 2, third delivery (T2.5, T2.6, and the focus ring)
+
+| File | Change |
+|---|---|
+| `ui/pages/agent.py`, `ui/pages/meeting.py` | `Reset to default` was secondary; the reference names Reset as the ghost example |
+| `ui/local_models.py` | the `Delete` that removes a downloaded model was ghost, the weight of a bookmark, on a confirmed destructive action |
+| `ui/pages/history.py`, `ui/pages/minutes.py` | the destructive buttons move past the stretch, and the two pages agree on the order |
+| `ui/pages/cleanup.py` | the hand-rolled gate is the shared `ui.widgets.gate()` |
+| `ui/qss.py` | one focus rule after every button variant; a disabled tab group dims |
+| `tools/shoot_ui.py` | each settings page is photographed whole instead of its top 700 px |
+| `tests/test_style_contracts.py` | three more contracts: destructive placement, focus survival, the rhythm (from the earlier delivery) |
+
+Measured, not read:
+
+```
+History page, before the tour fix   the delete row was not in any frame at all
+after                              101 px of danger-red text, 250 px from the
+                                   last safe action on the same row
+prompt field, toggle off           background surface2 (#f2ede1) = disabled
+                                   (the enabled field colour is #f7f3e9)
+```
+
 ### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
@@ -587,6 +619,33 @@ where it was wrong:
   and nothing wore it; and the actual Save button was unstyled, which is U2 (no
   button hierarchy) in its concrete form — repaired here by making Save a primary.
 
+- **N3 — a style rule that matches nothing fails silently, in three ways.** The
+  plan treated "the sheet has no effect" as one class of bug; doing the work found
+  three shapes of it, each of which renders a default-looking widget and raises
+  nothing. (1) **Wrong widget class:** the sidebar's engine card was a `QWidget`
+  while the sheet styles cards as `QFrame#card`, so the card had no surface and no
+  border — 0 px, where the fix produces 19 371. "The status line is too faint" had
+  been treated as a contrast problem through two palette revisions; no palette can
+  fix a missing card. `tests/test_style_contracts.py` now asks which widget class
+  received each objectName and whether any rule reaches it. (2) **Cascade order:**
+  `ghost` and `danger` set `border-color: transparent` below `QPushButton:focus`,
+  and QSS resolves equal specificity by document order, so those two variants had
+  no focus ring at all. Guarded per variant — the obvious version of that test
+  passes while they are broken, because `seg:focus` sits below them and answers for
+  the family. (3) **A selector Qt does not support:** `QTabBar:disabled::tab` is
+  accepted and does nothing, while `QTabBar::tab:disabled` works. Only measuring
+  told them apart. The lesson is that a style change needs a measurement attached,
+  because "it looks fine" and "the rule never applied" look identical.
+
+- **N4 — the tour was photographing the top of every page.** Every settings page
+  lives in a scroll area and the capture was a fixed 1000×700, so the History
+  page's delete row and the Minutes page's action row had never appeared in any
+  frame of any run. That is not a small blind spot: it is the lower half of four
+  pages, and it is why the button-hierarchy work had to be reordered on faith
+  before it could be checked at all. `tools/shoot_ui.py` now measures each page and
+  grows the window to fit it — 700 to 2040 px, at each page's own height — and the
+  reorder was then confirmed on the frame.
+
 And during Phase 1:
 
 - **X3 was largely wrong**, and wrong because of the survey's own method. It
@@ -607,6 +666,5 @@ And during Phase 1:
 
 ---
 
-*Begun from a read-only survey of `master @ ffe8a5c` on 2026-09-12; Phases 0 and 1
-executed the same day, and Phase 2's design-system delivery begun the same day.
-Turkish twin: [`ROADMAP-tr.md`](ROADMAP-tr.md).*
+*Begun from a read-only survey of `master @ ffe8a5c` on 2026-09-12; Phases 0, 1 and
+2 executed the same day. Turkish twin: [`ROADMAP-tr.md`](ROADMAP-tr.md).*
