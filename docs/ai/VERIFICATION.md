@@ -1,3 +1,49 @@
+# VERIFICATION — T4.8's fifth slice: a feature that vanished without a word
+
+## The number
+
+    265 silent handlers -> 251 (the fifth slice), "optional import" 55 -> 41. Twelve by
+    reporting, two freed by the counter widening below.
+
+## The class, and why this one is about the bundle
+
+An "optional import" is a guarded `import` — the module may not be importable here, and the
+fallback the caller already carries is the answer. That is true for the translations
+(`from i18n import t`) and false for the product's own features: if `ui/overlay_coordinator`
+cannot be imported, a dictation has no on-screen feedback at all, and the user is left
+pressing a hotkey at a window that never answers. T5.1's packaging work was a series of these
+in a different costume — a bundle whose imports were not where the source's were.
+
+Twelve sites now say what they lost, in the product's own words rather than an exception:
+the overlay coordinator ("no on-screen feedback for a dictation"), the thinking panel, the
+result card, the live preview, the settings that could not be applied at startup ("this run
+uses the defaults"), three retry paths that did nothing, `livetext`'s probe (live text off
+for the session), the Windows locale (the interface falls back to English), and two dashboard
+sections.
+
+Left alone on purpose: `dikte.py`'s fallback for `partialTranscript` — the comment beside it
+says the signal only exists for streaming-capable providers, so failing is the design.
+
+## The counter's fourth blind spot
+
+`REPORTING_ATTRS` did not include `traceback.print_exc()` — a traceback on stderr is about as
+loud as reporting gets, and `dikte.open_dashboard`'s fallback (print the traceback, then open
+the old settings window) was being counted as silence. Adding `print_exc`/`print_stack` freed
+two handlers across the tree. That is the fourth widening, each one found by reading a site
+the counter had mislabelled rather than by guessing.
+
+## My own mistake, and what it cost
+
+The twelve reports were inserted by a script, and the script's first version wrapped the
+messages as adjacent f-strings — the seam swallowed a space, so "has no on-screen feedback"
+came out **"has noon-screen feedback"**, and a second pass split a word at its hyphen into
+"no on- screen". Both were caught by reading the diff, not by a test: a message is data, and
+a script that formats data needs the same suspicion as one that writes it. The fix was to
+stop formatting by script and reduce each report to a single line, which the codebase already
+tolerates elsewhere. Two more mistakes came out of the same pass and are worth naming: the
+"longest matching message" heuristic gave `retry_voice_job` the *agent* retry's text, and
+twelve strings kept an `f` prefix with no placeholder in them.
+
 # VERIFICATION — T4.8's fourth slice: a control that does nothing
 
 ## The number
