@@ -282,7 +282,7 @@ cannot carry button text at any size the design uses (N2), a style rule that
 matches nothing fails silently in two more ways (N3), and the tour was photographing
 only the top of every page (N4).
 
-### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 2 of 7 delivered*
+### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 3 of 7 delivered*
 
 Rebuild in this order — most-visible first, and each surface has its own
 verification frame from T0.5. Each finding is re-checked against the code and a
@@ -294,8 +294,8 @@ U10), and all three were written from the old screenshots.
 |---|---|---|---|
 | 1 | **done** | Recording pill + paused/busy/warning/error states | U10 re-checked claim by claim: the timer *does* carry recording context (red dot, timer, Pause/Stop read as one control), Pause and Stop are *not* cramped, and the "missing drag affordance" contradicts documented behaviour — `i18n.py:887` tells the user the indicator "sürüklenemez", and Settings places it by corner. The one real defect was that the live-transcript button, Pause and Stop had **no name in any form**: the pill is a single custom-painted widget, only the meeting toggle ever set a tooltip or accessible description. Fixed, and the new region-name contract fails when a `_hover_*` flag is added without one. U11's busy-pill comparison is the next surface's job, since it needs both frames. |
 | 2 | **done** | Result overlay + live popup (content-sizing, empty state) | U6's first half held — the card really was a fixed 260 px box with three lines in it — and is fixed: it is now as tall as its text, 124 px for three lines, with the expanded state carrying a 24-line transcript at 460×460. Its second half was stale: the "no empty state" claim predates the placeholder the text area has always had. Sizing the card properly then exposed two defects that were hiding behind the fixed height: the card was a line short of its own text (the application stylesheet's 8 px padding on text areas was invisible to a margins-only count, so the last line scrolled out of sight while the card still had room), and the disabled expand arrow drew in the enabled colour (a palette colour does not reach a QToolButton whose text Qt resolves through QStyleSheetStyle). Both fixed and guarded. |
-| 3 | next | Thinking panel — same visual family as the pill | U11 |
-| 4 | | Tray menu — icons, separators, toggle state | U12 |
+| 3 | **done** | Thinking panel — same visual family as the pill | U11: first half true and worse than reported (the activity cue was a QLabel with nothing to draw — see N6b), second half unsupportable (the reference is a settings reference and says nothing about the indicator). Reading the file also found that the panel had no i18n at all and that showing it resets the interface language (N7). |
+| 4 | next | Tray menu — icons, separators, toggle state | U12 |
 | 5 | | Dashboard (stat semantics, empty states) | U4 |
 | 6 | | The nine settings pages | U2–U5, U9 |
 | 7 | | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
@@ -614,6 +614,37 @@ the disabled expand arrow            #585953 (fg3), was drawn in fg
 arrow disabled / enabled    active on three lines (nothing more to reveal)
 ```
 
+### 2026-09-12 — Phase 3, surface 3 (the thinking panel)
+
+| File | Change |
+|---|---|
+| `ui/thinking.py` | the activity cue is a widget that paints its own arc from the palette instead of an empty 14×14 QLabel repainted every tick; twelve user-visible strings go through `t()`; the spinner is told when the run is paused |
+| `tests/test_thinking.py` | new. The cue (it draws, it turns, a paused one holds still, the panel's own tick turns it) and the language (every label changes with the language, the paused panel is translated, the default stage is translated) |
+| `tests/test_style_contracts.py` | `Spinner` joins `SELF_PAINTED` — the sheet has no rule for it because it paints its own arc |
+| `tools/shoot_ui.py` | the panel is fed its stage through `t()`, like the pipeline does, so the Turkish frame stops showing English stage text |
+
+U11, claim by claim:
+
+| U11 claim | Verdict |
+|---|---|
+| "no activity indicator while its text says 'Cleaning up…'" | **True, and worse**: the cue was a bare `QLabel` — 14×14, empty, `update()`d every 33 ms, nothing ever painted |
+| "does not look like the same product — different radii, font sizes" | **Unsupportable.** `docs/design-reference.md` is a settings reference and says nothing about the indicator; a 72 px pill and a 380 px panel *should* size type differently. Narrower and defensible: the pill's 24 px corner is not one of the tokens' four radii (4/6/8/12) — the scale simply does not cover it. Recorded, not changed |
+
+Two defects found while checking it, neither of them reported:
+
+- **The panel had no i18n at all.** `ui/thinking.py` never imported `t`, so the English
+  interface showed "Dusunuyor…" with "Duraklat / Durdur / Kapat" under it — Turkish,
+  ASCII-folded, in every language. Fixed; the correct spelling comes with it.
+- **N7 — showing the panel resets the interface language.** `_reposition()` builds a
+  `cfg.Config` to read one value, and `Config.__init__` re-applies the stored
+  `ui_language` to the whole process. Harmless in the running app, where the two agree,
+  and invisible until a test set a language without storing it: the language flipped back
+  the moment the panel appeared. Not fixed — removing a side effect from `Config` reaches
+  every one of its callers.
+
+The tour also stops handing the panel an English stage literal, so the Turkish frame
+shows what a Turkish user sees.
+
 ### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
@@ -715,6 +746,18 @@ where it was wrong:
   QToolButton whose text Qt resolves through QStyleSheetStyle). The lesson is the
   converse of N4's: a wrong size hides other faults, so correcting one is worth a
   fresh look at everything that renders through it.
+
+- **N7 — reading a config value re-applies the interface language to the whole
+  process.** `Config.__init__` ends by calling `i18n.set_language(self.data["ui_language"])`,
+  so *constructing* a `Config` is not a read: it is a global side effect. `ThinkingPopup._reposition()`
+  builds one to look up `overlay_corner`, which means showing the panel quietly resets the
+  language to whatever is stored. Nothing is visibly wrong in the running app — the stored
+  language and the applied one are the same by construction — which is exactly why it went
+  unnoticed until a test set a language without storing it and watched it revert the moment
+  the panel appeared. Left unfixed on purpose: the fix is to move the call to the two places
+  that actually change the language, and that touches every caller of `Config` in a codebase
+  where `Config` is constructed freely, including on paint paths. Recorded so that the next
+  person who writes a language-sensitive test does not spend an hour on it.
 
 And during Phase 1:
 

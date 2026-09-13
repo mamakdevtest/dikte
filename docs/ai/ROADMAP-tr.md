@@ -286,7 +286,7 @@ düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kural�
 daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
 fotoğraflıyordu (N4).
 
-### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 2'si teslim edildi*
+### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 3'ü teslim edildi*
 
 Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi
 var. Her bulgu, hiçbir şey değiştirilmeden önce koda ve güncel bir kareye karşı
@@ -298,8 +298,8 @@ ekran görüntülerinden yazılmıştı.
 |---|---|---|---|
 | 1 | **bitti** | Kayıt pili + duraklatılmış/meşgul/uyarı/hata durumları | U10 iddia iddia kontrol edildi: zamanlayıcı kayıt bağlamını **taşıyor** (kırmızı nokta, zamanlayıcı ve Duraklat/Durdur tek bir kontrol olarak okunuyor), Duraklat ile Durdur **sıkışık değil**, ve "sürükleme tutamacı yok" belgelenmiş davranışa aykırı — `i18n.py:887` kullanıcıya göstergenin "sürüklenemez" olduğunu söylüyor ve onu Ayarlar köşeye göre yerleştiriyor. Tek gerçek kusur, canlı-yazı düğmesi ile Duraklat ve Durdur'un **hiçbir biçimde adı olmamasıydı**: pil tek bir elle çizilen widget ve yalnızca toplantı anahtarı hiç tooltip ya da erişilebilir açıklama kurmuştu. Düzeltildi; yeni bölge-adı sözleşmesi, bölge adı olmadan eklenen bir `_hover_*` bayrağında kırmızı oluyor. U11'in meşgul-pil karşılaştırması sıradaki yüzeyin işi, çünkü iki kareyi birden gerektiriyor. |
 | 2 | **bitti** | Sonuç overlay'i + canlı popup (içeriğe göre boyutlanma, boş durum) | U6'nın ilk yarısı tuttu — kart gerçekten 260 px sabit bir kutu ve içinde üç satır vardı — ve düzeltildi: artık metni kadar uzun, üç satır için 124 px; genişletilmiş hâli 24 satırlık bir transkripti 460×460'ta taşıyor. İkinci yarısı eskimişti: "boş durum yok" iddiası, metin alanının baştan beri taşıdığı placeholder'dan önceye ait. Kartı doğru boyutlandırmak, sabit yüksekliğin arkasına saklanmış iki kusuru ortaya çıkardı: kart her zaman kendi metninden bir satır kısaydı (uygulama stil sayfasının metin alanlarına verdiği 8 px dolgu, yalnızca kenar boşluklarından yapılan bir sayıma görünmez, bu yüzden son satır kartın hâlâ yeri varken kayıp gidiyordu) ve pasif genişletme oku etkin renginde çiziliyordu (Qt bir QToolButton'ın metnini QStyleSheetStyle üzerinden çözdüğü için palet rengi oraya ulaşmıyor). İkisi de düzeltildi ve korkuluk altında. |
-| 3 | sıradaki | Düşünme paneli — pille aynı görsel aile | U11 |
-| 4 | | Tepsi menüsü — ikonlar, ayırıcılar, aç/kapat durumu | U12 |
+| 3 | **bitti** | Düşünme paneli — pille aynı görsel aile | U11'in ilk yarısı doğru ve bildirilenden kötüydü (hareket göstergesi çizecek bir şeyi olmayan bir QLabel'dı — N6b), ikinci yarısı desteklenemez (referans bir ayarlar referansı, gösterge hakkında hiçbir şey söylemiyor). Dosyayı okumak ayrıca panelin hiç i18n'i olmadığını ve gösterilmesinin arayüz dilini sıfırladığını (N7) buldu. |
+| 4 | sıradaki | Tepsi menüsü — ikonlar, ayırıcılar, açık/kapalı durumu | U12 |
 | 5 | | Kontrol paneli (istatistik anlamı, boş durumlar) | U4 |
 | 6 | | Dokuz ayar sayfası | U2–U5, U9 |
 | 7 | | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
@@ -619,6 +619,36 @@ pasif genişletme oku          #585953 (fg3); eskiden fg ile çiziliyordu
 ok pasif / etkin              üç satırda etkin değil (gösterecek bir şey yok)
 ```
 
+### 2026-09-12 — Faz 3, yüzey 3 (düşünme paneli)
+
+| Dosya | Değişiklik |
+|---|---|
+| `ui/thinking.py` | hareket göstergesi artık her tick'te yeniden boyanan boş bir 14×14 QLabel değil, paletten kendi yayını çizen bir widget; on iki kullanıcı-görünür dizi `t()` üzerinden geçiyor; spinner'a koşunun duraklatıldığı söyleniyor |
+| `tests/test_thinking.py` | yeni. Gösterge (çiziyor, dönüyor, duraklatılmış olan duruyor, panelin kendi tick'i onu döndürüyor) ve dil (her etiket dille değişiyor, duraklatılmış panel de çevrili, varsayılan aşama çevrili) |
+| `tests/test_style_contracts.py` | `Spinner` `SELF_PAINTED`'a katıldı — sheet'in onun için kuralı yok, çünkü kendi yayını çiziyor |
+| `tools/shoot_ui.py` | panele aşaması, boru hattının yaptığı gibi `t()` üzerinden veriliyor; Türkçe kare artık İngilizce aşama metni göstermiyor |
+
+U11, iddia iddia:
+
+| U11 iddiası | Karar |
+|---|---|
+| "metni 'Temizleniyor…' derken hiç hareket göstergesi yok" | **Doğru ve daha kötüsü**: gösterge çıplak bir `QLabel`'dı — 14×14, boş, 33 ms'de bir `update()` ediliyor, hiçbir şey çizilmiyordu |
+| "aynı üründen gelmiyor — farklı yarıçaplar, yazı boyutları" | **Desteklenemez.** `docs/design-reference.md` bir ayarlar referansı ve gösterge hakkında hiçbir şey söylemiyor; 72 px'lik bir pil ile 380 px'lik bir panelin yazıyı *farklı* boyutlandırması gerekir. Daha dar ve savunulabilir olan: pilin 24 px köşesi token'ların dört yarıçapından (4/6/8/12) biri değil — ölçek onu kapsamıyor. Kaydedildi, değiştirilmedi |
+
+Kontrol ederken bulunan, ikisi de bildirilmemiş iki kusur:
+
+- **Panelin hiç i18n'i yoktu.** `ui/thinking.py` `t`'yi hiç import etmiyordu, yani İngilizce
+  arayüz "Dusunuyor…" ve altında "Duraklat / Durdur / Kapat" gösteriyordu — her dilde,
+  ASCII'ye katlanmış Türkçe. Düzeltildi; doğru yazım da beraberinde geldi.
+- **N7 — paneli göstermek arayüz dilini sıfırlıyor.** `_reposition()` tek bir değer okumak
+  için `cfg.Config` kuruyor ve `Config.__init__` kayıtlı `ui_language`'ı tüm sürece yeniden
+  uyguluyor. Çalışan uygulamada ikisi aynı olduğu için zararsız; bir test dili kaydetmeden
+  ayarlayana kadar görünmez kaldı: panel göründüğü anda dil geri döndü. Düzeltilmedi —
+  `Config`'ten bir yan etkiyi kaldırmak onun bütün çağıranlarına ulaşır.
+
+Tur da panele artık İngilizce aşama literali vermiyor, böylece Türkçe kare bir Türkçe
+kullanıcının gördüğünü gösteriyor.
+
 ### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
@@ -722,6 +752,18 @@ gösterenden daha kötüdür:
   QToolButton'ın metnini QStyleSheetStyle üzerinden çözdüğünde palet rengi oraya
   hiç ulaşmıyor). Ders N4'ün tersi: yanlış bir boy başka kusurları saklıyor, yani
   birini düzeltmek onun üzerinden çizilen her şeye yeniden bakmaya değer.
+
+- **N7 — bir ayar değerini okumak, arayüz dilini tüm sürece yeniden uyguluyor.**
+  `Config.__init__` sonunda `i18n.set_language(self.data["ui_language"])` çağırıyor, yani bir
+  `Config` *kurmak* okuma değil: global bir yan etki. `ThinkingPopup._reposition()`
+  `overlay_corner`'a bakmak için bir tane kuruyor; bu da paneli göstermenin, dili sessizce
+  kayıtlı olana sıfırladığı anlamına geliyor. Çalışan uygulamada görünürde yanlış bir şey
+  yok — kayıtlı dil ile uygulanan dil zaten aynı — ve tam da bu yüzden, bir test dili
+  kaydetmeden ayarlayıp panel göründüğü anda geri döndüğünü görene kadar fark edilmedi.
+  Bilerek düzeltilmedi: çözüm, çağrıyı dili gerçekten değiştiren iki yere taşımak ve bu,
+  `Config`'in serbestçe (boyama yollarında bile) kurulduğu bir kod tabanında onun bütün
+  çağıranlarına dokunur. Not düşüldü ki dile duyarlı bir test yazan bir sonraki kişi bir
+  saatini buna harcamasın.
 
 Faz 1 sırasında:
 
