@@ -2,7 +2,7 @@
   "why": "Broad handlers that report nothing: they neither print, raise nor warn, so the caller cannot tell the swallowed failure apart from success. Recorded per module:function — a line number would move on every unrelated edit, and a bare count would let one silent handler be swapped for another (the hole L6 found in the i18n counter). This is a floor: it may only shrink, and every step of the burn-down rewrites it with `python tools/except_audit.py --write`.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 293,
+  "count": 291,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -14,7 +14,7 @@
     "cli.py:<module>": 1,
     "cli.py:_safe_print": 1,
     "cli.py:cmd_config_set": 2,
-    "config.py:<module>": 3,
+    "config.py:<module>": 1,
     "config.py:Config._clamped_ai_levels": 1,
     "config.py:Config._clamped_edit_level": 1,
     "config.py:Config.cleanup_prompt": 1,

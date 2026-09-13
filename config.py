@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import sys
+import threading
 try:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -1470,31 +1471,22 @@ def _ai_policy_text(edit_level, *args, **kwargs):
         return f"{header}\n\n{level}\n\n{length}\n\n{injection}"
 
 
-_history_lock = None
-try:
-    import threading as _cfg_thread
-    _history_lock = _cfg_thread.Lock()
-except Exception:
-    _history_lock = None
-
-_meetings_lock = None
-try:
-    import threading as _cfg_thread2
-    _meetings_lock = _cfg_thread2.Lock()
-except Exception:
-    _meetings_lock = None
+# The history and meetings files are written from more than one thread — the worker
+# appends a history row while the window is reading the list — so the writes are
+# serialised. `threading` is the standard library and cannot be absent from a running
+# interpreter; these used to be built inside a `try` that left them `None` on failure,
+# with every write site keeping an unlocked copy of itself for that case. A lock that
+# can silently disappear is not a lock, and the second copy of each write was a body
+# that could drift from the first.
+_history_lock = threading.Lock()
+_meetings_lock = threading.Lock()
 
 
 def append_history(entry):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    lock = globals().get("_history_lock")
-    if lock is not None:
-        with lock:
-            with open(HISTORY_FILE, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        return
-    with open(HISTORY_FILE, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    with _history_lock:
+        with open(HISTORY_FILE, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 def read_history(limit=None):
@@ -1517,20 +1509,12 @@ def read_history(limit=None):
 
 def _write_history(lines):
     """Replace the file in one go, so a crash cannot leave it half written."""
-    lock = globals().get("_history_lock")
-    if lock is not None:
-        with lock:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            tmp = HISTORY_FILE.with_suffix(".jsonl.tmp")
-            with open(tmp, "w", encoding="utf-8") as fh:
-                fh.writelines(lines)
-            tmp.replace(HISTORY_FILE)
-        return
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = HISTORY_FILE.with_suffix(".jsonl.tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.writelines(lines)
-    tmp.replace(HISTORY_FILE)
+    with _history_lock:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = HISTORY_FILE.with_suffix(".jsonl.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.writelines(lines)
+        tmp.replace(HISTORY_FILE)
 
 
 def trim_history(limit):
@@ -1557,16 +1541,10 @@ def delete_history(rows):
     doomed = {_row_key(row) for row in rows}
     if not doomed:
         return
-    lock = globals().get("_history_lock")
-    if lock is not None:
-        with lock:
-            kept = [json.dumps(row, ensure_ascii=False) + "\n"
-                    for row in _read_history_locked() if _row_key(row) not in doomed]
-            _write_history_locked(kept)
-        return
-    kept = [json.dumps(row, ensure_ascii=False) + "\n"
-            for row in read_history() if _row_key(row) not in doomed]
-    _write_history(kept)
+    with _history_lock:
+        kept = [json.dumps(row, ensure_ascii=False) + "\n"
+                for row in _read_history_locked() if _row_key(row) not in doomed]
+        _write_history_locked(kept)
 
 
 def _read_history_locked():
@@ -1609,11 +1587,8 @@ def delete_all_user_data():
 
     import voice_jobs
 
-    lock = globals().get("_history_lock")
-    if lock is not None:
-        with lock:
-            HISTORY_FILE.unlink(missing_ok=True)
-    else:
+    lock = _history_lock
+    with lock:
         HISTORY_FILE.unlink(missing_ok=True)
     for job in voice_jobs.read_voice_jobs():
         audio = (job.get("audio_path") or "") if isinstance(job, dict) else ""
@@ -1681,67 +1656,38 @@ def read_meetings():
 
 
 def _write_meetings(rows):
-    lock = globals().get("_meetings_lock")
-    if lock is not None:
-        with lock:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            tmp = MEETINGS_FILE.with_suffix(".jsonl.tmp")
-            with open(tmp, "w", encoding="utf-8") as fh:
-                for row in rows:
-                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-            tmp.replace(MEETINGS_FILE)
-        return
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = MEETINGS_FILE.with_suffix(".jsonl.tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-    tmp.replace(MEETINGS_FILE)
+    with _meetings_lock:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = MEETINGS_FILE.with_suffix(".jsonl.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        tmp.replace(MEETINGS_FILE)
 
 
 def save_meeting(entry):
     """Insert the row, or replace the one with the same base."""
-    lock = globals().get("_meetings_lock")
-    if lock is not None:
-        with lock:
-            rows = _read_meetings_locked()
-            for index, row in enumerate(rows):
-                if row["base"] == entry["base"]:
-                    rows[index] = entry
-                    break
-            else:
-                rows.append(entry)
-            _write_meetings_locked(rows)
-        return
-    rows = read_meetings()
-    for index, row in enumerate(rows):
-        if row["base"] == entry["base"]:
-            rows[index] = entry
-            break
-    else:
-        rows.append(entry)
-    _write_meetings(rows)
+    with _meetings_lock:
+        rows = _read_meetings_locked()
+        for index, row in enumerate(rows):
+            if row["base"] == entry["base"]:
+                rows[index] = entry
+                break
+        else:
+            rows.append(entry)
+        _write_meetings_locked(rows)
 
 
 def update_meeting(base, **changes):
     """Patch one row and hand it back, or None when it is gone."""
-    lock = globals().get("_meetings_lock")
-    if lock is not None:
-        with lock:
-            rows = _read_meetings_locked()
-            for row in rows:
-                if row["base"] == base:
-                    row.update(changes)
-                    _write_meetings_locked(rows)
-                    return row
-            return None
-    rows = read_meetings()
-    for row in rows:
-        if row["base"] == base:
-            row.update(changes)
-            _write_meetings(rows)
-            return row
-    return None
+    with _meetings_lock:
+        rows = _read_meetings_locked()
+        for row in rows:
+            if row["base"] == base:
+                row.update(changes)
+                _write_meetings_locked(rows)
+                return row
+        return None
 
 
 def _read_meetings_locked():
@@ -1777,13 +1723,9 @@ def delete_meetings(bases):
     doomed = set(bases)
     if not doomed:
         return
-    lock = globals().get("_meetings_lock")
-    if lock is not None:
-        with lock:
-            rows = _read_meetings_locked()
-            _write_meetings_locked([row for row in rows if row["base"] not in doomed])
-    else:
-        _write_meetings([row for row in read_meetings() if row["base"] not in doomed])
+    with _meetings_lock:
+        rows = _read_meetings_locked()
+        _write_meetings_locked([row for row in rows if row["base"] not in doomed])
     for base in doomed:
         for path in meeting_paths(base):
             try:
