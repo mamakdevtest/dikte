@@ -371,6 +371,55 @@ class DestructiveActionsAreSetApart(unittest.TestCase):
             "from doing its job:\n  " + "\n  ".join(offenders)))
 
 
+class FocusSurvivesTheVariants(unittest.TestCase):
+    """A variant must not take the keyboard focus ring away.
+
+    Qt resolves two rules of equal specificity by document order, so a
+    `border-color` written below the focus rule wins over it. That is exactly how
+    `ghost` and `danger` ended up with no ring at all: both set
+    `border-color: transparent` further down the sheet than `QPushButton:focus`.
+    Nothing about reading either rule shows it; only their order does.
+    """
+
+    def test_every_variant_that_sets_a_border_keeps_its_focus_ring(self):
+        """Per variant, not one rule for the whole family.
+
+        The obvious shape of this test asks for the *last* focus rule and checks
+        nothing below it sets a border. That passes while `ghost` and `danger` are
+        broken, because `seg:focus` sits below them and answers for the family.
+        The question has to be asked per variant: does anything re-state the ring
+        for this one after its border?
+        """
+        lines = (REPO / "ui" / "qss.py").read_text(encoding="utf-8").splitlines()
+        variant_rule = re.compile(r'QPushButton\[variant="([a-z]+)"\]')
+
+        borders = {}
+        for i, line in enumerate(lines):
+            match = variant_rule.search(line)
+            if not match or ":disabled" in line or ":focus" in line:
+                continue
+            if "border" in line:
+                borders.setdefault(match.group(1), i)
+
+        rings = []          # (line index, variant it names or None for the base)
+        for i, line in enumerate(lines):
+            if "QPushButton" not in line or ":focus" not in line:
+                continue
+            match = variant_rule.search(line)
+            rings.append((i, match.group(1) if match else None))
+
+        offenders = [
+            f'ui/qss.py:{at + 1} variant "{name}" sets a border, and no focus '
+            "rule covering it is declared below"
+            for name, at in sorted(borders.items())
+            if not any(i > at and (covers is None or covers == name)
+                       for i, covers in rings)
+        ]
+        self.assertEqual([], offenders, (
+            "a variant declared below the focus rule wins over it, so the button "
+            "loses its ring:\n  " + "\n  ".join(offenders)))
+
+
 class TheRhythmIsDeclaredOnce(unittest.TestCase):
     """Control heights come from ui.tokens, not from a number typed in the sheet.
 

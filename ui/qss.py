@@ -254,6 +254,16 @@ QPushButton[variant="seg"]:checked:disabled, QPushButton[variant="seg"][active="
     background: {mix(ink_btn, c["surface2"], 0.45)}; color: {c["fg3"]};
     border-color: {c["border"]}; }}
 
+/* Focus, last on purpose. `ghost` and `danger` set `border-color: transparent`
+   and declare it after the base `:focus` rule above; a rule of equal specificity
+   that comes later wins in QSS, so those two lost their focus ring entirely.
+   Keeping one focus rule after every variant means a new variant cannot silently
+   take the ring away from keyboard users again. */
+QPushButton:focus,
+QPushButton[variant="secondary"]:focus,
+QPushButton[variant="ghost"]:focus,
+QPushButton[variant="danger"]:focus {{ border-color: {sage_dark}; }}
+
 /* ---- checkboxes (toggles) --------------------------------------------- */
 QCheckBox[kind="toggle"] {{ spacing: 0; }}
 QCheckBox[kind="toggle"]::indicator {{ width: {INDICATOR["toggle"][0]}px;
