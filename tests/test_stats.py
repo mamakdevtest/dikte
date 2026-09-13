@@ -1,6 +1,9 @@
+import contextlib
 import datetime
+import io
 import json
 import unittest
+from unittest import mock
 
 import config as cfg
 from tests.support import DikteTest
@@ -64,3 +67,44 @@ class StatsTests(DikteTest):
         cfg.append_history({"ts": f"{today} 11:00:00", "text": "b", "duration": 1, "provider": "local"})
         pu = stats.provider_usage()
         self.assertEqual(pu.get("local"), 2)
+
+
+class AHistoryThatCouldNotBeRead(DikteTest):
+    """An unreadable history is not an empty one.
+
+    Falling back to "no rows" made the two look identical, so the dashboard printed
+    `0 dictations` — a claim about the user's data, and a false one. The figures stay
+    usable and the caller is told through `unreadable`; the terminal gets the reason.
+    """
+
+    def _failing(self, name):
+        return mock.patch.object(cfg, name, side_effect=OSError("the disk went away"))
+
+    def test_history_stats_flag_a_read_that_failed(self):
+        with self._failing("read_history"), contextlib.redirect_stderr(io.StringIO()) as err:
+            hs = stats.history_stats(limit=200)
+        self.assertTrue(hs.get("unreadable"))
+        self.assertEqual(0, hs["total"])
+        self.assertIn("could not read the history", err.getvalue())
+        self.assertIn("the disk went away", err.getvalue())
+
+    def test_meetings_stats_flag_a_read_that_failed(self):
+        with self._failing("read_meetings"), contextlib.redirect_stderr(io.StringIO()) as err:
+            ms = stats.meetings_stats()
+        self.assertTrue(ms.get("unreadable"))
+        self.assertEqual(0, ms["total"])
+        self.assertIn("could not read the meetings", err.getvalue())
+
+    def test_the_charts_and_the_usage_list_still_report(self):
+        """They cannot carry the flag, so the terminal is where they say it."""
+        with self._failing("read_history"), contextlib.redirect_stderr(io.StringIO()) as err:
+            # The days are still returned, each with nothing in it: an empty chart is the
+            # honest drawing of a chart with no bars, and the cards above carry the flag.
+            self.assertEqual([0, 0, 0], [c for _, c in stats.daily_counts(days=3)])
+            self.assertEqual({}, stats.provider_usage())
+        self.assertEqual(err.getvalue().count("could not read the history"), 2)
+
+    def test_a_read_that_works_is_not_flagged(self):
+        """The flag has to mean something: an empty history is empty, not unreadable."""
+        self.assertFalse(stats.history_stats(limit=200).get("unreadable"))
+        self.assertFalse(stats.meetings_stats().get("unreadable"))

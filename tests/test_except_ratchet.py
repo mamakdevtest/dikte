@@ -39,12 +39,18 @@ def _is_broad(handler):
     return bool(names & BROAD)
 
 
-def _reports(handler):
+def _reports(handler, reporters=frozenset()):
     """Does the handler body say anything about the failure?
 
     Printing, raising, warning and emitting all count as saying something. Assigning
     a fallback value and carrying on does not — that is the shape being ratcheted,
     because the caller cannot tell it apart from success.
+
+    `reporters` is the set of this module's own functions that report when called, so a
+    handler that hands its message to a helper has reported. Without it the counter
+    treated `_could_not_read(...)` as silence — four sites in `ui/stats.py` were
+    reporting the failure to the terminal and still counted as saying nothing, which is
+    the same blind spot as a static scan that only sees the one shape it was written for.
     """
     for node in ast.walk(handler):
         if node is handler:
@@ -53,11 +59,19 @@ def _reports(handler):
             return True
         if isinstance(node, ast.Call):
             func = node.func
-            if isinstance(func, ast.Name) and func.id in ("print", "warn"):
+            if isinstance(func, ast.Name) and (func.id in ("print", "warn")
+                                               or func.id in reporters):
                 return True
             if isinstance(func, ast.Attribute) and func.attr in REPORTING_ATTRS:
                 return True
     return False
+
+
+def _reporting_helpers(tree):
+    """The module's own functions that say something when they are called."""
+    return {node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and _reports(node)}
 
 
 def product_files(root=ROOT):
@@ -74,8 +88,9 @@ def silent_handlers(root=ROOT):
         except (OSError, SyntaxError, UnicodeDecodeError):
             continue
         rel = str(path.relative_to(root))
+        helpers = frozenset(_reporting_helpers(tree))
         for handler, context in _handlers(tree):
-            if _is_broad(handler) and not _reports(handler):
+            if _is_broad(handler) and not _reports(handler, helpers):
                 found[f"{rel}:{context}"] += 1
     return dict(found)
 

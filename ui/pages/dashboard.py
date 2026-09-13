@@ -1,5 +1,7 @@
 """Dashboard home page — 4 stat cards, 2 QPainter charts, recent lists."""
 
+import sys
+
 from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QFont
 from PyQt6.QtWidgets import (
@@ -226,9 +228,15 @@ def build(window):
         ms = meetings_stats()
         dc = daily_counts(days=14)
         pu = provider_usage()
-    except Exception:
-        hs = {"total": 0, "last_7d": 0, "avg_duration": 0, "success_rate": 0}
-        ms = {"total": 0, "last_30d": 0, "total_duration": 0}
+    except Exception as exc:
+        # The four calls above report their own reads; this covers an import or an
+        # aggregation error the page cannot do anything about either. Both end the same
+        # way: the cards say they do not know, instead of printing a zero that reads
+        # like a fact about the user's data.
+        print(f"dikte: the dashboard could not gather its figures ({exc})", file=sys.stderr)
+        hs = {"total": 0, "last_7d": 0, "avg_duration": 0, "success_rate": 0,
+              "unreadable": True}
+        ms = {"total": 0, "last_30d": 0, "total_duration": 0, "unreadable": True}
         dc = []
         pu = {}
 
@@ -238,13 +246,23 @@ def build(window):
     # 4 cards
     cards = QHBoxLayout()
     cards.setSpacing(10)
+    # "—" and not 0: a history that could not be read is not a history with nothing in
+    # it, and a zero on these cards reads as a statement about the user's data.
     avg_txt = (f"{fmt.seconds(hs.get('avg_duration', 0))} {t('avg')}"
                if hs.get('total') else "—")
-    cards.addWidget(_stat_card(t("Total dictations"), hs.get("total", 0), avg_txt))
-    cards.addWidget(_stat_card(t("Last 7 days"), hs.get("last_7d", 0), f"{hs.get('success_rate',0):.0f}% {t('success')}"))
-    cards.addWidget(_stat_card(t("Meetings"), ms.get("total", 0), f"{ms.get('last_30d',0)} {t('last 30 days')}"))
-    total_min = int(ms.get("total_duration", 0) // 60)
-    cards.addWidget(_stat_card(t("Meeting time"), f"{total_min} {t('min')}", t("total duration")))
+    if hs.get("unreadable"):
+        cards.addWidget(_stat_card(t("Total dictations"), "—", t("history could not be read")))
+        cards.addWidget(_stat_card(t("Last 7 days"), "—", t("history could not be read")))
+    else:
+        cards.addWidget(_stat_card(t("Total dictations"), hs.get("total", 0), avg_txt))
+        cards.addWidget(_stat_card(t("Last 7 days"), hs.get("last_7d", 0), f"{hs.get('success_rate',0):.0f}% {t('success')}"))
+    if ms.get("unreadable"):
+        cards.addWidget(_stat_card(t("Meetings"), "—", t("meetings could not be read")))
+        cards.addWidget(_stat_card(t("Meeting time"), "—", t("meetings could not be read")))
+    else:
+        cards.addWidget(_stat_card(t("Meetings"), ms.get("total", 0), f"{ms.get('last_30d',0)} {t('last 30 days')}"))
+        total_min = int(ms.get("total_duration", 0) // 60)
+        cards.addWidget(_stat_card(t("Meeting time"), f"{total_min} {t('min')}", t("total duration")))
     outer.addLayout(cards)
 
     # charts row

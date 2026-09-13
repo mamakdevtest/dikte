@@ -125,3 +125,38 @@ with mock.patch.object(settings_ui.SettingsWindow, "_fetch_cli_versions", lambda
             w.deleteLater()
             QApplication.sendPostedEvents(w, QEvent.Type.DeferredDelete)
             _app.processEvents()
+
+
+class TheCardsSayTheyDoNotKnow(DikteTest):
+    """`0 dictations` is a claim about the user's data.
+
+    When the history cannot be read, the card must not make it: the two states — an
+    empty history and an unreadable one — looked identical on screen, and the second
+    one is the one that means something is wrong.
+    """
+
+    def test_a_history_that_could_not_be_read_shows_a_dash(self):
+        code = """
+import sys
+from PyQt6.QtWidgets import QApplication, QLabel
+app = QApplication(sys.argv)
+from unittest import mock
+import config
+import settings_ui
+import ui.stats as stats
+unreadable = {"total": 0, "last_7d": 0, "by_provider": {}, "avg_duration": 0,
+              "success_rate": 0, "unreadable": True}
+from ui.app_window import DashboardWindow
+conf = config.Config()
+with mock.patch.object(settings_ui.SettingsWindow, "_fetch_cli_versions", lambda self, defs: None), \\
+     mock.patch.object(settings_ui.SettingsWindow, "_load_audio_devices", lambda self: None), \\
+     mock.patch.object(stats, "history_stats", lambda limit=500: dict(unreadable)):
+    w = DashboardWindow(conf, meetings=None)
+    texts = [lab.text() for lab in w.findChildren(QLabel)]
+print("dash:", texts.count("\\u2014"), "told:", "history could not be read" in texts)
+w.close()
+app.quit()
+"""
+        r = _run_subprocess(code)
+        self.assertEqual(r.returncode, 0, msg=r.stderr + r.stdout)
+        self.assertIn("dash: 2 told: True", r.stdout, msg=r.stdout)

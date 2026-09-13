@@ -1,7 +1,20 @@
 """Aggregation for dashboard charts — pure read of history/meetings."""
 
+import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+
+
+def _could_not_read(what, exc):
+    """A read that failed is not an empty file, and the dashboard must not say it is.
+
+    Falling back to "no rows" made a history that could not be read look exactly like a
+    history with nothing in it: the dashboard showed `0 dictations`, which is a claim
+    about the user's data and a false one. So the failure is reported — to the terminal,
+    and to the caller through `unreadable` on the result, which is what the cards read
+    before they print a number.
+    """
+    print(f"dikte: could not read the {what} for the dashboard ({exc})", file=sys.stderr)
 
 
 def _parse_ts(ts):
@@ -28,8 +41,10 @@ def history_stats(limit=200):
     try:
         import config
         rows = config.read_history(limit)
-    except Exception:
-        rows = []
+    except Exception as exc:
+        _could_not_read("history", exc)
+        return {"total": 0, "last_7d": 0, "by_provider": {}, "avg_duration": 0,
+                "success_rate": 0, "unreadable": True}
     total = len(rows)
     # last 7 days: count rows whose ts date within last 7 days (if ts parseable)
     today = datetime.now().date()
@@ -75,8 +90,10 @@ def meetings_stats():
     try:
         import config
         rows = config.read_meetings()
-    except Exception:
-        rows = []
+    except Exception as exc:
+        _could_not_read("meetings", exc)
+        return {"total": 0, "by_status": {}, "total_duration": 0, "last_30d": 0,
+                "unreadable": True}
     total = len(rows)
     by_status = Counter()
     total_duration = 0
@@ -108,7 +125,11 @@ def daily_counts(days=14):
     try:
         import config
         rows = config.read_history(limit=500)
-    except Exception:
+    except Exception as exc:
+        # Reported, not flagged: this feeds a bar chart, and an empty chart is the honest
+        # drawing of "no bars to draw". The cards above it carry the flag, so the reader
+        # is told why the chart is empty.
+        _could_not_read("history", exc)
         rows = []
     today = datetime.now().date()
     wanted = [(today - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
@@ -124,7 +145,10 @@ def provider_usage():
     try:
         import config
         rows = config.read_history(limit=500)
-    except Exception:
+    except Exception as exc:
+        # Reported, not flagged: the caller wants provider -> count, and `unreadable`
+        # would arrive as a provider named "unreadable" with a True count.
+        _could_not_read("history", exc)
         rows = []
     c = Counter()
     for r in rows:

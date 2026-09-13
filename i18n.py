@@ -1153,6 +1153,8 @@ TR = {
     "success": "başarılı",
     "total": "toplam",
     "total duration": "toplam süre",
+    "history could not be read": "geçmiş okunamadı",
+    "meetings could not be read": "toplantılar okunamadı",
     # ui/pages/providers.py
     "Automatic": "Otomatik",
     "Choose where speech-to-text and transcript cleanup run. Keys are stored only on this computer.": "Konuşmadan metne çevirme ve transkript temizliğinin nerede çalışacağını seç. Anahtarlar yalnızca bu bilgisayarda saklanır.",
