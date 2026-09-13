@@ -37,12 +37,15 @@ identical values so existing ``theme.palette()`` callers keep working.
 
 ## Contrast
 
-Every text pairing clears WCAG AA (4.5:1) against the background it is actually
-drawn on, measured rather than estimated: in the light theme the worst case is
-``fg`` 12.5:1, ``fg2`` 6.1:1, ``fg3`` 4.8:1; in the dark, 13.6:1, 7.5:1 and
-4.8:1. Status colours are read as chip text on their own tint of the surface, so
-that pairing is measured too. `tests/test_theme.py` pins these numbers, because a
-palette is the one thing a later edit can quietly ruin for everybody.
+Every text pairing is solved, not eyeballed, against the background it is drawn
+on — the sidebar in the light theme and the hovering surface in the dark, since
+those are each theme's worst case. `fg` lands at 12.2:1 light and 12.7:1 dark,
+`fg2` at 7.5:1 and 7.5:1, `fg3` at 5.6:1 and 5.5:1, and the status colours are
+measured as chip labels on their own tint of the surface (4.6–6.5:1). One pairing
+that cannot reach AA is recorded rather than hidden: the bright terracotta holds
+only 3.5:1 against the button text, which is why the one filled button is ink, and
+`tests/test_theme.py` asserts that it still fails — the day that ratio passes, the
+decision behind it has to be revisited.
 """
 
 SIDEBAR_WIDTH = 226
@@ -53,6 +56,15 @@ RADIUS = {"r1": 4, "r2": 6, "r3": 8, "r4": 12}
 RADII = RADIUS
 
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 20, "xxl": 24}
+
+# How much of a status colour goes into the background it is read on. The QSS
+# builds the tint from these numbers and tests/test_theme.py measures the label
+# against that same background — one dict on purpose, because when the two were
+# written out separately the test was quietly measuring a tint the product did
+# not use, and would have passed a chip nobody could read.
+CHIP_TINT = {"ok": 0.12, "warn": 0.14, "err": 0.14, "info": 0.14}
+NOTE_TINT = {"ok": 0.08, "warn": 0.11, "err": 0.07, "info": 0.07}
+SAGE_CHIP_TINT = 0.30
 
 FONTS = {
     "sans": '"Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif',
@@ -71,50 +83,57 @@ TYPE = {
     "mono": {"size": 11.5, "weight": 400},
 }
 
-# Warm stone, from the reference. The text tiers and the status colours are the
-# reference's hues tuned until each one clears 4.5:1 on its own background: the
-# reference's own `fg3` measured 2.75:1, which is the "helper text is too faint"
-# complaint, and its `warn` measured 3.75:1 as chip text.
+# Warm stone, from the reference. Two deliberate departures from the reference's
+# own numbers, both forced by measurement: its text tiers were too faint to read
+# (`fg3` measured 2.75:1, which is exactly the "helper text is too faint"
+# complaint) and its surfaces were so close to white that a card, a field and a
+# page all read as the same flat sheet. So the canvas and sidebar are two steps
+# deeper, which gives a card something to sit on, `field` is a shade off
+# `surface` so an input looks like an input, and every text tier is solved until
+# it clears its target on the darkest background it is actually drawn on — the
+# sidebar, which is where the status line lives.
 LIGHT = {
-    "canvas": "#F4F1EA",
-    "sidebar": "#EEE9DE",
-    "surface": "#FBFAF6",
-    "surface2": "#F1EEE6",
-    "field": "#FBFAF6",
-    "border": "#D8D2C6",
-    "borderStrong": "#C7C1B5",
-    "fg": "#242628",
-    "fg2": "#535754",
-    "fg3": "#636663",
+    "canvas": "#F1EDE2",
+    "sidebar": "#EAE4D6",
+    "surface": "#FBF8F1",
+    "surface2": "#F2EDE1",
+    "field": "#F7F3E9",
+    "border": "#D5CDBC",
+    "borderStrong": "#BFB6A2",
+    "fg": "#262420",
+    "fg2": "#454640",
+    "fg3": "#585953",
     "accent": "#E4573D",
     "accentDeep": "#C4462F",
     "sage": "#A7B8AA",
-    "sageDark": "#536A5E",
-    "ok": "#446F52",
-    "warn": "#805D2A",
-    "err": "#A94B41",
-    "info": "#3F6E86",
+    "sageDark": "#4D6157",
+    "ok": "#3D6E4D",
+    "warn": "#885A18",
+    "err": "#A84237",
+    "info": "#3C6B83",
     # Legacy aliases — identical values, old names keep working.
     "terra": "#E4573D",
     "terraDeep": "#C4462F",
-    "inkBtn": "#242628",
-    "onInk": "#FBFAF6",
+    "inkBtn": "#262420",
+    "onInk": "#FBF8F1",
 }
 
 # The same family after dark: warm charcoal rather than a blue-black, so the two
 # themes read as one product and neither looks like the generic dark dashboard
-# the reference explicitly argues against.
+# the reference explicitly argues against. Here the *lightest* surface is the
+# worst background — the hovering one — so that is what the tiers are solved
+# against.
 DARK = {
-    "canvas": "#1C1A17",
-    "sidebar": "#171512",
-    "surface": "#232019",
-    "surface2": "#2B2721",
-    "field": "#201D19",
-    "border": "#3A342B",
-    "borderStrong": "#4E463A",
-    "fg": "#EFEAE2",
-    "fg2": "#B8AFA3",
-    "fg3": "#948A7D",
+    "canvas": "#191713",
+    "sidebar": "#141210",
+    "surface": "#221F1A",
+    "surface2": "#2A261F",
+    "field": "#1F1C17",
+    "border": "#38332A",
+    "borderStrong": "#4C4539",
+    "fg": "#F0EBE2",
+    "fg2": "#BEB6AB",
+    "fg3": "#A49C90",
     "accent": "#E4755A",
     "accentDeep": "#AF4C33",
     "sage": "#7C8F80",
@@ -126,8 +145,8 @@ DARK = {
     # Legacy aliases — identical values, old names keep working.
     "terra": "#E4755A",
     "terraDeep": "#AF4C33",
-    "inkBtn": "#0F0D0B",
-    "onInk": "#F2EDE4",
+    "inkBtn": "#0D0B09",
+    "onInk": "#F3EEE5",
 }
 
 # The two themes, light first so the picker reads light-then-dark.

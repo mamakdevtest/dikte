@@ -7,6 +7,7 @@ needs an inline ``setStyleSheet``.
 """
 
 from .tokens import FONTS
+from .tokens import CHIP_TINT, NOTE_TINT, SAGE_CHIP_TINT
 from .tokens import mix
 
 
@@ -125,37 +126,37 @@ QLabel[dot="info"] {{ background: {c["info"]}; border-radius: 4px; }}
 QLabel[dot="idle"] {{ background: {c["fg3"]}; border-radius: 4px; }}
 QLabel[dot="rec"]  {{ background: {accent}; border-radius: 4px; }}
 
-QFrame[chip="sage"] {{ background: {mix(sage, c["surface"], 0.30)};
+QFrame[chip="sage"] {{ background: {mix(sage, c["surface"], SAGE_CHIP_TINT)};
                        color: {sage_dark}; border: 1px solid {mix(sage_dark, c["canvas"], 0.22)};
                        border-radius: 11px; }}
 QFrame[chip="sage"] QLabel {{ font-size: 11.5px; color: {sage_dark}; }}
 QFrame[chip="gray"] {{ background: {c["surface2"]}; color: {c["fg2"]};
                        border: 1px solid {c["border"]}; border-radius: 11px; }}
 QFrame[chip="gray"] QLabel {{ font-size: 11.5px; color: {c["fg2"]}; }}
-QFrame[chip="tan"]  {{ background: {mix(c["warn"], c["surface"], 0.14)};
+QFrame[chip="tan"]  {{ background: {mix(c["warn"], c["surface"], CHIP_TINT["warn"])};
                        color: {c["warn"]}; border: 1px solid {mix(c["warn"], c["canvas"], 0.34)};
                        border-radius: 11px; }}
 QFrame[chip="tan"] QLabel {{ font-size: 11.5px; color: {c["warn"]}; }}
-QFrame[chip="red"]  {{ background: {mix(c["err"], c["surface"], 0.10)};
+QFrame[chip="red"]  {{ background: {mix(c["err"], c["surface"], CHIP_TINT["err"])};
                        color: {c["err"]}; border: 1px solid {mix(c["err"], c["canvas"], 0.28)};
                        border-radius: 11px; }}
 QFrame[chip="red"] QLabel {{ font-size: 11.5px; color: {c["err"]}; }}
-QFrame[chip="ok"]   {{ background: {mix(c["ok"], c["surface"], 0.12)};
+QFrame[chip="ok"]   {{ background: {mix(c["ok"], c["surface"], CHIP_TINT["ok"])};
                        color: {c["ok"]}; border: 1px solid {mix(c["ok"], c["canvas"], 0.28)};
                        border-radius: 11px; }}
 QFrame[chip="ok"] QLabel {{ font-size: 11.5px; color: {c["ok"]}; }}
 
 /* ---- notes ------------------------------------------------------------- */
-QLabel[note="info"] {{ background: {mix(c["info"], c["surface"], 0.07)};
+QLabel[note="info"] {{ background: {mix(c["info"], c["surface"], NOTE_TINT["info"])};
                        color: {c["fg2"]}; border: 1px solid {mix(c["info"], c["canvas"], 0.24)};
                        border-radius: 6px; padding: 8px 12px; }}
-QLabel[note="warn"] {{ background: {mix(c["warn"], c["surface"], 0.11)};
+QLabel[note="warn"] {{ background: {mix(c["warn"], c["surface"], NOTE_TINT["warn"])};
                        color: {c["fg2"]}; border: 1px solid {mix(c["warn"], c["canvas"], 0.38)};
                        border-radius: 6px; padding: 8px 12px; }}
-QLabel[note="err"]  {{ background: {mix(c["err"], c["surface"], 0.07)};
+QLabel[note="err"]  {{ background: {mix(c["err"], c["surface"], NOTE_TINT["err"])};
                        color: {c["fg2"]}; border: 1px solid {mix(c["err"], c["canvas"], 0.26)};
                        border-radius: 6px; padding: 8px 12px; }}
-QLabel[note="ok"]   {{ background: {mix(c["ok"], c["surface"], 0.08)};
+QLabel[note="ok"]   {{ background: {mix(c["ok"], c["surface"], NOTE_TINT["ok"])};
                        color: {c["fg2"]}; border: 1px solid {mix(c["ok"], c["canvas"], 0.26)};
                        border-radius: 6px; padding: 8px 12px; }}
 

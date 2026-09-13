@@ -16,7 +16,8 @@ from PyQt6.QtWidgets import QApplication
 from tests.support import DikteTest
 from ui import theme
 from ui.tokens import (
-    DARK, LIGHT, RETIRED_THEMES, THEMES, contrast_ratio, mix,
+    CHIP_TINT, DARK, LIGHT, NOTE_TINT, RETIRED_THEMES, SAGE_CHIP_TINT, THEMES,
+    contrast_ratio, mix,
 )
 
 _app = QApplication.instance() or QApplication([])
@@ -94,19 +95,33 @@ class Legible(DikteTest):
     """WCAG AA, measured, on the background each colour is really drawn on."""
 
     TEXT_TIERS = ("fg", "fg2", "fg3")
-    BACKGROUNDS = ("canvas", "sidebar", "surface")
-    # The chips draw their colour as text on a tint of that same colour.
-    CHIPS = {"ok": 0.12, "warn": 0.14, "err": 0.10, "info": 0.07}
+    # Every plane a tier can land on, including the field an input's text sits
+    # in and the hover tone — the palette is solved against the worst of them.
+    BACKGROUNDS = ("canvas", "sidebar", "surface", "surface2", "field")
+    # AA is the floor, not the target. These are what the palette actually
+    # measures, pinned so a later edit cannot quietly walk a tier back down to
+    # "technically passes": `fg` 12.2:1, `fg2` 7.5:1, `fg3` 5.6:1 at worst.
+    MINIMUMS = {"fg": 12.0, "fg2": 7.0, "fg3": 5.5}
 
-    def test_every_text_tier_clears_aa_on_every_background(self):
+    def test_every_text_tier_clears_its_target_on_every_background(self):
         for name, tokens in sorted(THEMES.items()):
             for tier in self.TEXT_TIERS:
                 for background in self.BACKGROUNDS:
                     with self.subTest(theme=name, tier=tier, on=background):
                         ratio = contrast_ratio(tokens[tier], tokens[background])
                         self.assertGreaterEqual(
-                            round(ratio, 2), AA,
-                            f"{name}: {tier} on {background} is {ratio:.2f}:1")
+                            round(ratio, 2), self.MINIMUMS[tier],
+                            f"{name}: {tier} on {background} is {ratio:.2f}:1, "
+                            f"below the {self.MINIMUMS[tier]}:1 this palette holds")
+
+    def test_a_line_is_visible_against_what_it_divides(self):
+        """A border nobody can see is not a border."""
+        for name, tokens in sorted(THEMES.items()):
+            for key in ("border", "borderStrong"):
+                with self.subTest(theme=name, line=key):
+                    ratio = contrast_ratio(tokens[key], tokens["surface"])
+                    self.assertGreaterEqual(round(ratio, 2), 1.3,
+                                            f"{name}: {key} is invisible on surface")
 
     def test_the_tiers_descend(self):
         """fg is the loudest, fg3 the quietest, and the order is visible."""
@@ -119,14 +134,31 @@ class Legible(DikteTest):
                 self.assertGreater(middle, quiet)
 
     def test_status_colours_clear_aa_as_chip_text(self):
+        """A chip reads its colour as text on a tint of that same colour.
+
+        The tint share comes from ui.tokens, the same dict the QSS builds the
+        chip from. Written out twice, this test measured a background the
+        product did not draw and would have passed a chip nobody could read.
+        """
         for name, tokens in sorted(THEMES.items()):
-            for key, share in self.CHIPS.items():
+            for key, share in sorted(CHIP_TINT.items()):
                 with self.subTest(theme=name, chip=key):
                     tint = mix(tokens[key], tokens["surface"], share)
                     ratio = contrast_ratio(tokens[key], tint)
                     self.assertGreaterEqual(
                         round(ratio, 2), AA,
                         f"{name}: the {key} chip is {ratio:.2f}:1 on its own tint")
+
+    def test_note_labels_clear_aa_on_their_tint(self):
+        """A note reads `fg2` on a faint tint, which is a different pairing."""
+        for name, tokens in sorted(THEMES.items()):
+            for key, share in sorted(NOTE_TINT.items()):
+                with self.subTest(theme=name, note=key):
+                    tint = mix(tokens[key], tokens["surface"], share)
+                    ratio = contrast_ratio(tokens["fg2"], tint)
+                    self.assertGreaterEqual(
+                        round(ratio, 2), AA,
+                        f"{name}: the {key} note label is {ratio:.2f}:1")
 
     def test_the_sage_link_clears_aa(self):
         for name, tokens in sorted(THEMES.items()):
@@ -135,7 +167,7 @@ class Legible(DikteTest):
                     ratio = contrast_ratio(tokens["sageDark"], tokens[background])
                     self.assertGreaterEqual(round(ratio, 2), AA,
                                             f"{name}: sageDark on {background}")
-                tint = mix(tokens["sage"], tokens["surface"], 0.30)
+                tint = mix(tokens["sage"], tokens["surface"], SAGE_CHIP_TINT)
                 self.assertGreaterEqual(
                     round(contrast_ratio(tokens["sageDark"], tint), 2), AA)
 
