@@ -1,5 +1,6 @@
 {
   "why": "Broad handlers that report nothing: they neither print, raise nor warn, so the caller cannot tell the swallowed failure apart from success. Recorded per module:function — a line number would move on every unrelated edit, and a bare count would let one silent handler be swapped for another (the hole L6 found in the i18n counter). This is a floor: it may only shrink, and every step of the burn-down rewrites it with `python tools/except_audit.py --write`.",
+  "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
   "count": 286,
@@ -182,5 +183,585 @@
     "worker.py:Pipeline._discard": 1,
     "worker.py:Pipeline._retry_cleanup_only": 3,
     "worker.py:Pipeline._work": 5
+  },
+  "reasons": {
+    "assistant.py:_ask_antigravity": {
+      "worker that is gone": 2
+    },
+    "assistant.py:_ask_opencode_go": {
+      "worker that is gone": 1
+    },
+    "assistant.py:_ask_opencode_go._watch_abort": {
+      "worker that is gone": 1
+    },
+    "assistant.py:_ask_plain_http._watch_abort": {
+      "worker that is gone": 1
+    },
+    "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": {
+      "value of the wrong shape": 1,
+      "worker that is gone": 1
+    },
+    "chunked_session.py:ChunkedLiveRecorder._pump": {
+      "unclassified": 1
+    },
+    "chunked_session.py:ChunkedLiveRecorder.stop": {
+      "worker that is gone": 1,
+      "teardown that is already done": 1
+    },
+    "cli.py:<module>": {
+      "optional widget": 1
+    },
+    "cli.py:_safe_print": {
+      "unclassified": 1
+    },
+    "cli.py:cmd_config_set": {
+      "value of the wrong shape": 2
+    },
+    "config.py:<module>": {
+      "optional widget": 1
+    },
+    "config.py:Config._clamped_ai_levels": {
+      "value of the wrong shape": 1
+    },
+    "config.py:Config._clamped_edit_level": {
+      "value of the wrong shape": 1
+    },
+    "config.py:Config.cleanup_prompt": {
+      "value of the wrong shape": 1
+    },
+    "config.py:Config.load": {
+      "value of the wrong shape": 2
+    },
+    "dikte.py:<module>": {
+      "optional widget": 1
+    },
+    "dikte.py:Dikte.__init__": {
+      "unclassified": 1,
+      "optional widget": 2
+    },
+    "dikte.py:Dikte._apply_settings": {
+      "unclassified": 1,
+      "optional widget": 2
+    },
+    "dikte.py:Dikte._build_tray": {
+      "presentation that may not resolve": 1,
+      "optional widget": 1,
+      "teardown that is already done": 1
+    },
+    "dikte.py:Dikte._capture_is_available": {
+      "value of the wrong shape": 1
+    },
+    "dikte.py:Dikte._current_seconds": {
+      "worker that is gone": 1
+    },
+    "dikte.py:Dikte._new_result_overlay": {
+      "optional widget": 1
+    },
+    "dikte.py:Dikte._on_error": {
+      "unclassified": 1
+    },
+    "dikte.py:Dikte._on_finished": {
+      "value of the wrong shape": 2
+    },
+    "dikte.py:Dikte._on_live_transcript": {
+      "view refreshed after the fact": 1
+    },
+    "dikte.py:Dikte._on_meeting_progress": {
+      "view refreshed after the fact": 1
+    },
+    "dikte.py:Dikte._on_result_copy": {
+      "unclassified": 1
+    },
+    "dikte.py:Dikte._retire_activity": {
+      "view refreshed after the fact": 1
+    },
+    "dikte.py:Dikte._toggle_live_popup": {
+      "unclassified": 1
+    },
+    "dikte.py:Dikte._tray_icon": {
+      "presentation that may not resolve": 1
+    },
+    "dikte.py:Dikte.open_dashboard": {
+      "optional widget": 2
+    },
+    "dikte.py:Dikte.open_settings": {
+      "value of the wrong shape": 1
+    },
+    "dikte.py:Dikte.restart": {
+      "optional widget": 1
+    },
+    "dikte.py:Dikte.retry_agent_from_job": {
+      "absent file or row": 1
+    },
+    "dikte.py:Dikte.retry_meeting_from_base": {
+      "unclassified": 1
+    },
+    "dikte.py:Dikte.retry_voice_job": {
+      "absent file or row": 1
+    },
+    "dikte.py:Dikte.start_meeting": {
+      "value of the wrong shape": 1
+    },
+    "dikte.py:Dikte.stop": {
+      "worker that is gone": 1
+    },
+    "dikte.py:Dikte.stop_ask": {
+      "worker that is gone": 1
+    },
+    "dikte.py:HintMenu.paintEvent": {
+      "presentation that may not resolve": 1
+    },
+    "dikte.py:HintMenu.sizeHint": {
+      "value of the wrong shape": 1
+    },
+    "dikte.py:_win32_message_box": {
+      "value of the wrong shape": 1
+    },
+    "dikte.py:run_app": {
+      "unclassified": 2
+    },
+    "hotkey.py:WindowsHotkey._pump": {
+      "value of the wrong shape": 1
+    },
+    "i18n.py:_windows_locale": {
+      "value of the wrong shape": 1
+    },
+    "livetext.py:LiveTranscriber._probe": {
+      "value of the wrong shape": 1
+    },
+    "meeting.py:MeetingPipeline._work": {
+      "value of the wrong shape": 1
+    },
+    "meeting.py:MeetingPipeline.run": {
+      "unclassified": 1
+    },
+    "meeting.py:MeetingPipeline.stop": {
+      "unclassified": 1
+    },
+    "meeting.py:prune_audio": {
+      "unclassified": 1
+    },
+    "overlay.py:<module>": {
+      "lookup that is not there": 1
+    },
+    "overlay.py:Overlay._draw_dismiss": {
+      "view refreshed after the fact": 1
+    },
+    "overlay.py:Overlay._draw_level_rail": {
+      "value of the wrong shape": 1
+    },
+    "overlay.py:Overlay._expand_button_rect": {
+      "view refreshed after the fact": 1
+    },
+    "overlay.py:Overlay._live_level": {
+      "value of the wrong shape": 1
+    },
+    "overlay.py:Overlay._sync_state_property": {
+      "optional widget": 1
+    },
+    "overlay.py:Overlay.mouseMoveEvent": {
+      "optional widget": 2,
+      "unclassified": 1
+    },
+    "overlay.py:Overlay.mousePressEvent": {
+      "optional widget": 1,
+      "view refreshed after the fact": 1
+    },
+    "overlay.py:Overlay.paintEvent": {
+      "presentation that may not resolve": 1
+    },
+    "overlay.py:Overlay.set_live_transcript": {
+      "value of the wrong shape": 1
+    },
+    "overlay.py:Overlay.set_thinking_status": {
+      "value of the wrong shape": 1
+    },
+    "overlay.py:_palette_colors": {
+      "presentation that may not resolve": 1
+    },
+    "paste.py:_ensure_win32_clipboard_prototypes": {
+      "lookup that is not there": 1
+    },
+    "paste.py:_windows_copy_text": {
+      "value of the wrong shape": 1
+    },
+    "paste.py:_windows_read_clipboard": {
+      "platform path not taken here": 1
+    },
+    "paste.py:_windows_ready": {
+      "platform path not taken here": 1
+    },
+    "providers.py:test_provider": {
+      "unclassified": 1
+    },
+    "settings_ui.py:<module>": {
+      "unclassified": 1
+    },
+    "settings_ui.py:HistoryDetailsDialog.__init__._val_label": {
+      "presentation that may not resolve": 1
+    },
+    "settings_ui.py:SettingsWindow.__init__": {
+      "unclassified": 1,
+      "optional widget": 3,
+      "view refreshed after the fact": 1
+    },
+    "settings_ui.py:SettingsWindow._after_theme_change": {
+      "unclassified": 1,
+      "optional widget": 2,
+      "view refreshed after the fact": 1
+    },
+    "settings_ui.py:SettingsWindow._ai_edit_changed": {
+      "value of the wrong shape": 1,
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._cleanup_provider_changed": {
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._deferred_load": {
+      "unclassified": 1
+    },
+    "settings_ui.py:SettingsWindow._is_dirty": {
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._load": {
+      "value of the wrong shape": 2,
+      "optional widget": 5,
+      "unclassified": 1
+    },
+    "settings_ui.py:SettingsWindow._load_assistant_gateway_models.work": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._load_audio_devices.work": {
+      "unclassified": 4
+    },
+    "settings_ui.py:SettingsWindow._load_history": {
+      "unclassified": 1
+    },
+    "settings_ui.py:SettingsWindow._load_meeting_models.work": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._load_models.work": {
+      "value of the wrong shape": 2
+    },
+    "settings_ui.py:SettingsWindow._load_opencode_go_models": {
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._load_transcribe_models.work": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._load_voice_jobs": {
+      "absent file or row": 1
+    },
+    "settings_ui.py:SettingsWindow._meeting_provider_changed": {
+      "optional widget": 5
+    },
+    "settings_ui.py:SettingsWindow._minutes_style_key": {
+      "optional widget": 1,
+      "lookup that is not there": 1
+    },
+    "settings_ui.py:SettingsWindow._on_assistant_gateway_models_loaded": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._on_audio_defaults_loaded": {
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._on_audio_monitors_loaded": {
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._on_audio_sources_loaded": {
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._on_meeting_models_loaded": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._on_models_loaded": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._on_opencode_go_models_loaded": {
+      "optional widget": 2
+    },
+    "settings_ui.py:SettingsWindow._on_sidebar_compact_toggled": {
+      "absent file or row": 1,
+      "presentation that may not resolve": 1
+    },
+    "settings_ui.py:SettingsWindow._on_tab_change_requested": {
+      "view refreshed after the fact": 2
+    },
+    "settings_ui.py:SettingsWindow._on_transcribe_models_loaded": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._open_prompt_creator": {
+      "absent file or row": 1
+    },
+    "settings_ui.py:SettingsWindow._polish_minutes": {
+      "unclassified": 1,
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._provider_changed": {
+      "view refreshed after the fact": 2
+    },
+    "settings_ui.py:SettingsWindow._refresh_engine_card": {
+      "unclassified": 1,
+      "optional widget": 2
+    },
+    "settings_ui.py:SettingsWindow._refresh_shortcut_status": {
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._retry_voice_job": {
+      "optional widget": 3,
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._save": {
+      "optional widget": 4
+    },
+    "settings_ui.py:SettingsWindow._save_minutes_md": {
+      "value of the wrong shape": 1
+    },
+    "settings_ui.py:SettingsWindow._shortcut_row": {
+      "optional widget": 2
+    },
+    "settings_ui.py:SettingsWindow._show_minutes": {
+      "worker that is gone": 1,
+      "value of the wrong shape": 1,
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow._snapshot_settings": {
+      "optional widget": 4,
+      "value of the wrong shape": 2
+    },
+    "settings_ui.py:SettingsWindow._update_ai_descriptions": {
+      "value of the wrong shape": 2,
+      "optional widget": 2
+    },
+    "settings_ui.py:SettingsWindow.closeEvent": {
+      "view refreshed after the fact": 1
+    },
+    "settings_ui.py:SettingsWindow.preview_overlay_corner": {
+      "view refreshed after the fact": 1,
+      "optional widget": 1
+    },
+    "settings_ui.py:SettingsWindow.resizeEvent": {
+      "value of the wrong shape": 1,
+      "unclassified": 2,
+      "optional widget": 1
+    },
+    "ui/app_window.py:<module>": {
+      "lookup that is not there": 2
+    },
+    "ui/app_window.py:DashboardWindow.__init__": {
+      "optional widget": 3,
+      "teardown that is already done": 1,
+      "lookup that is not there": 1,
+      "unclassified": 2
+    },
+    "ui/app_window.py:DashboardWindow.showEvent": {
+      "optional widget": 1
+    },
+    "ui/components.py:Button.__init__": {
+      "optional widget": 1
+    },
+    "ui/components.py:Dropdown.__init__": {
+      "optional widget": 2
+    },
+    "ui/icons.py:_default_color": {
+      "unclassified": 1,
+      "presentation that may not resolve": 1
+    },
+    "ui/icons.py:icon": {
+      "presentation that may not resolve": 1
+    },
+    "ui/icons.py:pixmap": {
+      "value of the wrong shape": 1,
+      "presentation that may not resolve": 1
+    },
+    "ui/icons.py:svg": {
+      "absent file or row": 1
+    },
+    "ui/live_popup.py:<module>": {
+      "lookup that is not there": 1
+    },
+    "ui/live_popup.py:LivePopup._refresh_palette": {
+      "presentation that may not resolve": 2,
+      "optional widget": 1,
+      "unclassified": 1
+    },
+    "ui/live_popup.py:LivePopup.paintEvent": {
+      "presentation that may not resolve": 1
+    },
+    "ui/live_popup.py:LivePopup.set_expanded": {
+      "optional widget": 1
+    },
+    "ui/overlay_coordinator.py:<module>": {
+      "lookup that is not there": 1
+    },
+    "ui/overlay_coordinator.py:OverlayCoordinator._activity_height": {
+      "value of the wrong shape": 1
+    },
+    "ui/overlay_coordinator.py:OverlayCoordinator._activity_width": {
+      "value of the wrong shape": 1
+    },
+    "ui/overlay_coordinator.py:OverlayCoordinator._screen_area": {
+      "unclassified": 1
+    },
+    "ui/overlay_coordinator.py:OverlayCoordinator.recompute_geometry": {
+      "lookup that is not there": 1,
+      "value of the wrong shape": 1
+    },
+    "ui/pages/__init__.py:apply_page_margins_for_width": {
+      "optional widget": 1
+    },
+    "ui/pages/__init__.py:update_margins": {
+      "view refreshed after the fact": 1
+    },
+    "ui/pages/agent.py:_CardForm.isRowVisible": {
+      "optional widget": 2
+    },
+    "ui/pages/agent.py:_CardForm.setRowVisible": {
+      "optional widget": 2
+    },
+    "ui/pages/agent.py:_provider_card._set_title": {
+      "optional widget": 1
+    },
+    "ui/pages/agent.py:_provider_card._title": {
+      "optional widget": 1
+    },
+    "ui/pages/dashboard.py:DailyBarChart.mouseMoveEvent": {
+      "optional widget": 1
+    },
+    "ui/pages/dashboard.py:DailyBarChart.paintEvent": {
+      "value of the wrong shape": 1
+    },
+    "ui/pages/dashboard.py:_goto_tab": {
+      "optional widget": 1
+    },
+    "ui/pages/dashboard.py:_make_handler._fn": {
+      "optional widget": 1
+    },
+    "ui/pages/dashboard.py:_quick_actions": {
+      "optional widget": 1
+    },
+    "ui/pages/dashboard.py:build": {
+      "optional widget": 2
+    },
+    "ui/pages/dashboard.py:build.refresh": {
+      "optional widget": 1
+    },
+    "ui/pages/general.py:build._on_picker_changed": {
+      "view refreshed after the fact": 1,
+      "optional widget": 1
+    },
+    "ui/pages/history.py:build": {
+      "optional widget": 1
+    },
+    "ui/pages/meeting.py:_CardForm.isRowVisible": {
+      "optional widget": 2
+    },
+    "ui/pages/meeting.py:_CardForm.setRowVisible": {
+      "optional widget": 2
+    },
+    "ui/pages/meeting.py:build": {
+      "unclassified": 1
+    },
+    "ui/pages/minutes.py:build": {
+      "optional widget": 1
+    },
+    "ui/pages/providers.py:_CardForm.isRowVisible": {
+      "optional widget": 2
+    },
+    "ui/pages/providers.py:_CardForm.setRowVisible": {
+      "optional widget": 2
+    },
+    "ui/result_overlay.py:<module>": {
+      "lookup that is not there": 1
+    },
+    "ui/result_overlay.py:ResultOverlay._copy": {
+      "unclassified": 1,
+      "optional widget": 1
+    },
+    "ui/result_overlay.py:ResultOverlay._sync_expanded_property": {
+      "optional widget": 1
+    },
+    "ui/result_overlay.py:_palette_colors": {
+      "presentation that may not resolve": 1,
+      "value of the wrong shape": 1
+    },
+    "ui/shell.py:AppShell._apply_collapse_icon": {
+      "optional widget": 1
+    },
+    "ui/shell.py:AppShell._apply_compact_layout": {
+      "optional widget": 1
+    },
+    "ui/shell.py:AppShell._engine_card": {
+      "unclassified": 1
+    },
+    "ui/shell.py:AppShell._sync_nav": {
+      "optional widget": 1
+    },
+    "ui/shell.py:AppShell._toggle_compact": {
+      "value of the wrong shape": 1
+    },
+    "ui/shell.py:AppShell.setCompact": {
+      "optional widget": 1,
+      "unclassified": 1
+    },
+    "ui/shell.py:AppShell.setCompact._on_val": {
+      "value of the wrong shape": 1
+    },
+    "ui/shell.py:AppShell.set_engine_model": {
+      "optional widget": 2
+    },
+    "ui/shell.py:AppShell.set_theme": {
+      "unclassified": 1
+    },
+    "ui/shell.py:_t": {
+      "unclassified": 1
+    },
+    "ui/stats.py:_parse_ts": {
+      "value of the wrong shape": 1
+    },
+    "ui/stats.py:history_stats": {
+      "value of the wrong shape": 2
+    },
+    "ui/stats.py:meetings_stats": {
+      "value of the wrong shape": 2
+    },
+    "ui/theme.py:_chevron_disabled_path": {
+      "value of the wrong shape": 1,
+      "absent file or row": 1
+    },
+    "ui/theme.py:_chevron_path": {
+      "value of the wrong shape": 2,
+      "absent file or row": 1
+    },
+    "ui/thinking.py:Spinner.paintEvent": {
+      "presentation that may not resolve": 1
+    },
+    "ui/thinking.py:ThinkingPopup._apply_theme": {
+      "presentation that may not resolve": 2,
+      "view refreshed after the fact": 1
+    },
+    "ui/thinking.py:ThinkingPopup._reposition": {
+      "unclassified": 1
+    },
+    "ui/thinking.py:ThinkingPopup.set_paused": {
+      "optional widget": 1
+    },
+    "ui/thinking.py:ThinkingPopup.show_thinking": {
+      "optional widget": 1
+    },
+    "ui/widgets.py:SettingRow.setNarrow": {
+      "unclassified": 1
+    },
+    "worker.py:Pipeline._discard": {
+      "value of the wrong shape": 1
+    },
+    "worker.py:Pipeline._retry_cleanup_only": {
+      "unclassified": 3
+    },
+    "worker.py:Pipeline._work": {
+      "optional widget": 1,
+      "unclassified": 3,
+      "value of the wrong shape": 1
+    }
   }
 }

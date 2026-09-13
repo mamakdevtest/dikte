@@ -74,6 +74,115 @@ def _reporting_helpers(tree):
             and _reports(node)}
 
 
+# Why a handler may say nothing, and the evidence that decides which. The set is small on
+# purpose: 286 hand-written comments would be 286 chances to write a plausible one, and a
+# wrong reason is worse than none. Each entry is matched against the calls the *guarded*
+# body attempted — what the handler was actually doing — so a site's reason comes from the
+# code instead of from a label someone felt like giving it.
+REASONS = {
+    # 33 sites guard a `hasattr`; a page's widgets are built independently of each other,
+    # and one that is not there yet (or is already gone) is normal, not a failure.
+    "optional widget": (
+        "hasattr", "getattr", "setProperty", "setVisible", "isHidden", "setHidden",
+        "setIcon", "setEnabled", "setDisabled", "setText", "currentText", "currentIndex",
+        "setChecked", "isChecked", "connect", "rowCount", "addWidget", "setRowVisible",
+        "setPlaceholderText", "setToolTip", "setStyleSheet", "blockSignals", "text",
+        "count", "setCurrentIndex", "setCurrentText", "clear", "removeWidget", "widget",
+    ),
+    # A stored value that is the wrong shape or from an older release: coerced if it can
+    # be, left alone if it cannot. Throwing the whole settings file away would be worse.
+    "value of the wrong shape": (
+        "int", "bool", "float", "str", "max", "min", "strip", "split", "normalize_models",
+        "json", "loads", "len", "strptime", "date", "fromisoformat", "timestamp",
+    ),
+    # A file, row or recording that is already gone: absence is the ordinary case here,
+    # not an error, and the operation was cleanup or a best-effort read.
+    "absent file or row": (
+        "open", "Path", "unlink", "save", "read_text", "write_text", "read_json",
+        "get_voice_job", "stat", "exists", "glob", "read_voice_jobs", "sorted",
+    ),
+    # Polling a worker, thread or timer that may have finished between the check and the
+    # read. The next tick sees the truth; nothing is lost by not shouting about it.
+    "worker that is gone": (
+        "should_stop", "elapsed", "stop", "_rt", "instance", "isRunning", "wait",
+        "isFinished", "terminate", "kill", "quit", "close",
+    ),
+    # A platform's own path, exercised on a platform that does not have it — the Windows
+    # clipboard prototypes on Linux, the shortcut registry where there is none.
+    "platform path not taken here": (
+        "_ensure_win32_clipboard_prototypes", "windll", "ctypes", "platform",
+        "desktop_name", "WINFUNCTYPE", "user32", "winreg",
+    ),
+    # A colour, font, icon or cursor looked up by name: a theme that does not define one
+    # still has to draw, and the fallback the widget already carries is the answer.
+    "presentation that may not resolve": (
+        "palette", "QColor", "QIcon", "QPixmap", "font", "cursor", "setFont", "color",
+        "brush", "pen", "gradient", "size", "width", "height", "rect", "_rt",
+    ),
+    # Re-drawing a view after something else already changed: the state is committed and
+    # the operation has returned, so a failed re-render is a stale pixel, not a lost
+    # result. The named pages' own refresh helpers belong here for the same reason.
+    "view refreshed after the fact": (
+        "_refresh_engine_card", "_snapshot_settings", "_reposition", "_coordinator_notify",
+        "update", "polish", "unpolish", "style", "_layout", "repaint", "updateGeometry",
+        "setUpdatesEnabled", "set_live_transcript", "dismiss", "show_busy",
+    ),
+    # Tearing down an object that may already be gone — a dialog the user closed, a timer
+    # that fired into a deleted widget. Second teardown of the same thing is not an error.
+    "teardown that is already done": (
+        "deleteLater", "_terminate_process", "terminate", "disconnect", "removeEventFilter",
+        "closeEvent", "setParent",
+    ),
+}
+# No call at all in the guarded body: an attribute, an index or a dict key. The reason is
+# the same one in every case — the lookup was allowed to come up empty.
+LOOKUP_REASON = "lookup that is not there"
+UNCLASSIFIED = "unclassified"
+
+
+def _call_names(nodes):
+    """The call names a body attempts, in order, without repeats."""
+    names = []
+    for node in nodes:
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call):
+                func = inner.func
+                if isinstance(func, ast.Name):
+                    names.append(func.id)
+                elif isinstance(func, ast.Attribute):
+                    names.append(func.attr)
+    out = []
+    for name in names:
+        if name not in out:
+            out.append(name)
+    return out
+
+
+def _guarded_calls(tree):
+    """{id(handler): [call names in its guarded body]} for every Try in the tree.
+
+    An `ExceptHandler` does not contain its own `Try`, so this pairing cannot come out of
+    `_handlers` and has to be built here.
+    """
+    pairs = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Try):
+            calls = _call_names(node.body)
+            for handler in node.handlers:
+                pairs[id(handler)] = calls
+    return pairs
+
+
+def reason_for(calls):
+    """The reason a handler that says nothing is allowed to say nothing."""
+    if not calls:
+        return LOOKUP_REASON
+    for reason, markers in REASONS.items():
+        if any(call in markers for call in calls):
+            return reason
+    return UNCLASSIFIED
+
+
 def product_files(root=ROOT):
     files = sorted(root.glob("*.py")) + sorted(root.glob("ui/**/*.py"))
     return [p for p in files if "__pycache__" not in p.parts]
@@ -93,6 +202,30 @@ def silent_handlers(root=ROOT):
             if _is_broad(handler) and not _reports(handler, helpers):
                 found[f"{rel}:{context}"] += 1
     return dict(found)
+
+
+def silent_reasons(root=ROOT):
+    """{module:function: {reason: count}} — the same sites, classified from their code.
+
+    This is what makes the record a list of reasons rather than a list of places: T4.8
+    asks for a site to be "explicitly listed with a reason", and the reason is derived
+    from the calls the guarded body made, so it cannot be asserted into existence.
+    """
+    found = {}
+    for path in product_files(root):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            continue
+        rel = str(path.relative_to(root))
+        helpers = frozenset(_reporting_helpers(tree))
+        guarded = _guarded_calls(tree)
+        for handler, context in _handlers(tree):
+            if _is_broad(handler) and not _reports(handler, helpers):
+                reason = reason_for(guarded.get(id(handler), []))
+                slot = found.setdefault(f"{rel}:{context}", Counter())
+                slot[reason] += 1
+    return {key: dict(value) for key, value in found.items()}
 
 
 def _handlers(node, context=""):
@@ -149,6 +282,49 @@ class SilentlySwallowedFailures(unittest.TestCase):
         self.assertEqual(total, self.recorded["count"],
                          "the record's own total must match its entries")
         self.assertEqual(total, sum(self.recorded["silent"].values()))
+
+    def test_every_recorded_site_carries_its_reason(self):
+        """A place is not a reason (T4.8).
+
+        The reason is derived from the calls the guarded body makes, so this fails when a
+        handler's guarded body changes shape rather than when somebody forgets a comment:
+        the classification is checked against the code it claims to describe.
+        """
+        derived = silent_reasons()
+        recorded = self.recorded.get("reasons", {})
+        missing = sorted(set(derived) - set(recorded))
+        changed = sorted(site for site in set(derived) & set(recorded)
+                         if derived[site] != recorded[site])
+        offenders = [f"{site}: recorded {recorded.get(site)}, now {derived[site]}"
+                     for site in missing + changed]
+        self.assertEqual([], offenders, (
+            "every silent site is listed with a reason, derived from its own code; "
+            "rewrite with `python tools/except_audit.py --write`:\n  "
+            + "\n  ".join(offenders)))
+
+    def test_the_reasons_are_sanctioned_ones(self):
+        """A hand-edited record must not be able to invent a reason."""
+        allowed = set(REASONS) | {LOOKUP_REASON, UNCLASSIFIED}
+        stray = sorted({reason for by in self.recorded.get("reasons", {}).values()
+                        for reason in by} - allowed)
+        self.assertEqual([], stray,
+                         f"tests/except_silent.json carries reasons that do not exist: {stray}")
+
+    def test_the_reasons_still_pending_may_only_shrink(self):
+        """The sites with no reason yet are recorded rather than papered over.
+
+        Writing a plausible label for each of them would be 38 more chances to be wrong,
+        and a wrong reason is worse than an absent one. So the absences are the list, it
+        cannot grow, and shrinking it is the burn-down.
+        """
+        now = {site for site, by in silent_reasons().items() if UNCLASSIFIED in by}
+        before = {site for site, by in self.recorded.get("reasons", {}).items()
+                  if UNCLASSIFIED in by}
+        grown = sorted(now - before)
+        self.assertEqual([], grown, (
+            "a silent site arrived with no reason derivable from its code — decide what "
+            "it is, add the marker to REASONS, then rewrite the record:\n  "
+            + "\n  ".join(grown)))
 
 
 if __name__ == "__main__":

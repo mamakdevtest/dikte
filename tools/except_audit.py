@@ -4,7 +4,8 @@
     python tools/except_audit.py --list       # every site, as file:line
     python tools/except_audit.py --allowlist  # print the list to fill in
     python tools/except_audit.py --silent     # the handlers that report nothing
-    python tools/except_audit.py --write      # record the silent set (the ratchet)
+    python tools/except_audit.py --write      # record the silent set and its reasons
+    python tools/except_audit.py --reasons    # the reasons, and anything unclassified
 
 `ai/workflows.md` requires that "a persistence failure and a runtime-apply
 failure are distinct outcomes and must be reported honestly", and AGENTS.md says
@@ -70,9 +71,10 @@ def audit():
 
 
 def main(argv):
-    if "--silent" in argv or "--write" in argv:
-        from tests.test_except_ratchet import RECORD, silent_handlers
+    if "--silent" in argv or "--write" in argv or "--reasons" in argv:
+        from tests.test_except_ratchet import RECORD, silent_handlers, silent_reasons
         found = silent_handlers()
+        reasons = silent_reasons()
         total = sum(found.values())
         if "--write" in argv:
             payload = {
@@ -86,14 +88,35 @@ def main(argv):
                     "step of the burn-down rewrites it with "
                     "`python tools/except_audit.py --write`."
                 ),
+                "why_reasons": (
+                    "Each site is also listed with its reason, derived from the calls "
+                    "its guarded body made (REASONS in tests/test_except_ratchet.py) "
+                    "rather than written by hand: 286 comments would be 286 chances to "
+                    "write a plausible one. `unclassified` should stay empty; when it "
+                    "is not, the reason set needs a decision, not a label."
+                ),
                 "burn_down": "docs/ai/ROADMAP.md T4.8",
                 "recorded": time.strftime("%Y-%m-%d"),
                 "count": total,
                 "silent": dict(sorted(found.items())),
+                "reasons": dict(sorted(reasons.items())),
             }
             RECORD.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                               encoding="utf-8")
             print(f"recorded {total} silent handlers in {RECORD}")
+            return 0
+        if "--reasons" in argv:
+            tally = {}
+            for by in reasons.values():
+                for reason, count in by.items():
+                    tally[reason] = tally.get(reason, 0) + count
+            for reason, count in sorted(tally.items(), key=lambda kv: (-kv[1], kv[0])):
+                print(f"  {count:>4}  {reason}")
+            lost = sorted(site for site, by in reasons.items() if "unclassified" in by)
+            if lost:
+                print(f"\nunclassified ({len(lost)} sites) — each needs a reason:")
+                for site in lost:
+                    print(f"  {site}")
             return 0
         for key, count in sorted(found.items(), key=lambda kv: (-kv[1], kv[0])):
             print(f"  {count:>3}  {key}")
