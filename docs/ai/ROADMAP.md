@@ -220,7 +220,7 @@ Nothing here is user-visible. Evidence for every row is in §9.
 | T0.2 | `requires-python` widened to `>=3.11,<3.15`; `"3.14"` added to all three CI matrices. The old bound excluded a configuration the suite already passed on, so it described packaging policy rather than the code. | 1477 tests pass on 3.14.7 locally; Windows/macOS 3.14 explicitly marked unverified in the workflow |
 | T0.3 | The count ratchet replaced by an **exact-set record** — `tests/i18n_untranslated.json`, 104 entries each with call sites — plus `tools/i18n_gaps.py` as the generator. The scan now follows the `_t` alias. Both directions fail. | proven red twice: dropping `Ask` → `['Ask']`; inventing `Nobody translated this` → `['Nobody translated this']` |
 | T0.4 | New `tests/test_icon_contracts.py`, and the two dead keys it found are fixed: `settings_ui.py:507` asks for `monitor`, and `ui/icons.py` gains a `history` glyph. | proven red first, naming both defects: `settings_ui.py:503 add_page('history')`, `settings_ui.py:507 add_page('pip')`, `ui.shell.NAV → ['history']` |
-| T0.5 | `tools/shoot_ui.py` grows a surface manifest, a page-count cross-check against the source, and `--check`; wired into the Linux CI job so it runs without being remembered. | proven red in both branches: `missing: blue_en_overlay_somehow_missing.png` and `blank: blue_tr_overlay_rec.png`; green run reports `30 surfaces x 2 theme-and-language runs, all drawn` |
+| T0.5 | `tools/shoot_ui.py` grows a surface manifest, a page-count cross-check against the source, and `--check`; wired into the Linux CI job so it runs without being remembered. | proven red in both branches: `missing: blue_en_overlay_somehow_missing.png` and `blank: blue_tr_overlay_rec.png` (the tour's themes were `blue,orange` then; it runs `light,dark` now); green run reports `30 surfaces x 2 theme-and-language runs, all drawn` |
 | T0.6 | New `tools/except_audit.py`. | first census: **313 handlers in 36 modules**, 102 of them in `settings_ui.py` → finding H4 |
 | T0.7 | Graph refreshed. | `5372 nodes, 9509 edges, 311 communities`; `Built from commit: ffe8a5c7` (= HEAD) |
 | — | Full suite after the phase | `Ran 1477 tests in 101.1s — OK` (was 1473). `git diff --check` clean. |
@@ -250,19 +250,25 @@ from two call shapes rather than one).
 frame by frame — every remaining English string in those frames is data (a model
 id, a provider id, a fixture's meeting title), not interface text.
 
-### Phase 2 — Design system (4–6 d) — *blocked on Q2*
+### Phase 2 — Design system — *in progress: T2.1, T2.2 and the colour half of T2.3 delivered 2026-09-12*
 
-| Task | What | Files |
+| Task | State | What landed, and what proves it |
 |---|---|---|
-| T2.1 | **Lock one visual direction** and write it into a single source of truth (see Q2) | `ui/tokens.py`, `docs/design-reference.md` |
-| T2.2 | **Restore a reachable light theme.** Fix `normalize()` so `light`/`dark` map to themselves, or retire them honestly and delete `LIGHT`. A config value must not silently become a different theme. | `ui/tokens.py` |
-| T2.3 | Rebuild the contrast scale: `fg2`/`fg3` to a verified contrast ratio, and distinct enabled / hover / focus / **disabled** states | `ui/tokens.py`, `ui/qss.py` |
-| T2.4 | Define the control-height and spacing rhythm once; make every page inherit it (fixes U5) | `ui/tokens.py`, `ui/qss.py`, `ui/widgets.py` |
-| T2.5 | Button hierarchy: exactly one primary per page, positioned per platform convention; destructive actions visually separated (U2) | `ui/widgets.py`, `ui/shell.py`, all pages |
-| T2.6 | State-coupling rule: a control whose master toggle is off is disabled, not merely described as inactive (U8) | page modules |
+| T2.1 | **done** | The documented warm direction is now the only one. `ui/tokens.py` carries a warm-stone `LIGHT` and a warm-charcoal `DARK` and nothing else. **The six saturated colour rooms are retired.** They were a charcoal base mixed with one accent each — which is why all six read as the same dark interface with a differently coloured button, and why the app never looked like the design it claimed to follow. `RETIRED_THEMES` keeps the names so `normalize()` can be explicit about what replaced them instead of pretending they are still themes. |
+| T2.2 | **done** | `light` and `dark` map to themselves; the light theme is reachable for the first time. The default moves from `blue` to `dark` (`config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py`). The picker offers the two themes and its swatches carry a selection ring in palette ink, so a light swatch on a light sidebar no longer dissolves. |
+| T2.3 | **colour half done** | Every text pairing measured, not estimated: `fg` 12.5–14.6:1, `fg2` 6.5–7.5:1, `fg3` 4.7–4.8:1, status colours 4.6–5.2:1 on the tint of themselves they are drawn on, filled button 14.5–16.6:1. `tests/test_theme.py` pins all of it as a contract, so a later palette edit cannot quietly undo it. **Still open:** the enabled / hover / focus / disabled distinctness review beyond buttons. |
+| T2.4 | open | Control-height and spacing rhythm (U5). |
+| T2.5 | open | Button hierarchy per page (U2) — *started*: the Save button is finally a primary action. |
+| T2.6 | open | State coupling: a control whose master toggle is off is disabled (U8). |
 
-**Verification:** contrast ratios measured and recorded; the tour captured in
-both themes; a written token table in the repo; `tests/test_theme.py` extended.
+**Verification, as delivered:** `unittest discover` 1492 tests OK in 77 s;
+`tools/quick_tests.py` 1361 in 14 s; `shoot_ui.py --check` drawn 60 frames across
+2 themes × 1 language with the surface manifest intact; the two themes proven
+distinct by pixel, not by filename.
+
+Two findings came out of doing this, both recorded in "Corrections" below: the
+tour had been rendering one palette for every theme name it claimed (N1), and
+terracotta cannot carry button text at any size the design uses (N2).
 
 ### Phase 3 — Surface-by-surface rebuild (10–14 d)
 
@@ -487,6 +493,33 @@ text: `whisper-1` (a model id), `openai` / `ask` (provider ids in the donut
 legend), and the fixture's own `Shot meeting` and `What is the capital of
 Turkey?`.
 
+### 2026-09-12 — Phase 2, first delivery (T2.1, T2.2, colour half of T2.3)
+
+| File | Change |
+|---|---|
+| `ui/tokens.py` | rewritten: warm-stone `LIGHT` and warm-charcoal `DARK`, `THEMES = {light, dark}`, `DEFAULT_THEME`, `RETIRED_THEMES`, and `mix` / `relative_luminance` / `contrast_ratio` so the palette's claims are checkable |
+| `ui/qss.py` | the two hardcoded colours are gone (`#FFF8F5` on filled buttons, `#8A6A14` on the tan chip); `mix` now comes from `ui/tokens` |
+| `ui/theme.py` | the six room exports removed; `toggle()` swaps two themes |
+| `ui/pages/general.py` | picker offers light and dark; swatch edge and selection ring come from palette ink |
+| `config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py` | default theme `blue` → `dark` so the locked direction is what a new install gets |
+| `settings_ui.py` | the Save button is a `primary`: it was unstyled, so no page had a primary action at all |
+| `tools/shoot_ui.py`, `.github/workflows/tests.yml` | the tour runs `light,dark`, and tells the config which theme it is presenting |
+| `tests/test_theme.py` | extended into a contract: reachability, tier ordering, every text pairing, no bare colour in the engine, the filled button is ink |
+
+Raw result of the tour, read from the pixels rather than the file names:
+
+```
+light_tr_page01.png  sha=4d78bde6b7f4  [('#fbfaf6', 37952), ('#f4f1ea', 20645), ('#eee9de', 14204)]
+dark_tr_page01.png   sha=f34094f439e7  [('#232019', 35341), ('#1c1a17', 20645), ('#171512', 14204)]
+light_tr_page03.png  sha=b8ce7847213e  [('#f4f1ea', 24996), ('#fbfaf6', 17883), ('#eee9de', 14281)]
+dark_tr_page03.png   sha=a22a6b35fb0e  [('#1c1a17', 24996), ('#232019', 16135), ('#171512', 14281)]
+```
+
+The canvas and sidebar pixel counts are identical across the two themes
+(20645 / 14204) — one layout, two palettes, which is the property the colour
+contract promised. The measured palette is now the one the design reference
+describes, and the two themes differ by SHA, not just by name.
+
 ### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
@@ -503,6 +536,28 @@ where it was wrong:
   goldens are not deterministic across Qt versions and platforms, which this
   repository forbids. Delivered as a presence-and-non-blankness check instead,
   with the reason written into the tool.
+- **N1 — the screenshot tour was lying about the theme it captured.** `theme.apply(thm)`
+  in `tools/shoot_ui.py` set the application sheet, but the settings window applies
+  the *saved* theme as it opens (`settings_ui.py:558`), so every frame was drawn in
+  the config default. It was invisible for as long as the tool's default (`blue,orange`)
+  happened to share its first entry with the config default (`blue`): the `orange`
+  run was rendering blue, and nothing said so. Found only because the default moved
+  to `dark` and the "light" frames came out dark — and then proven, not assumed:
+  `light_tr_page01.png` and `dark_tr_page01.png` were byte-identical
+  (`sha=4d78bde6b7f4` both), and distinct after the fix. Fixed by giving the tour's
+  config the theme it is presenting. **A verification tool that cannot fail loudly is
+  not verification**, and this one had been silently passing for its whole life.
+
+- **N2 — terracotta cannot carry button text.** `docs/design-reference.md` says the
+  primary action is "ink charcoal, bg #242628, NOT orange" and it turns out to be a
+  constraint, not a preference: the button's label measures 3.51:1 on the light
+  theme's `accent` and 2.58:1 on the dark one's, both under AA, and `accentDeep`
+  only just clears it (4.72 / 4.61) — too close to spend on a filled control. So
+  the filled button is ink (14.5 / 16.6:1) and terracotta is what the reference says
+  it is: the recording signal. Two consequences worth recording. The QSS carried a
+  terracotta `variant="primary"` that **no call site used**, so the styling existed
+  and nothing wore it; and the actual Save button was unstyled, which is U2 (no
+  button hierarchy) in its concrete form — repaired here by making Save a primary.
 
 And during Phase 1:
 
@@ -525,4 +580,5 @@ And during Phase 1:
 ---
 
 *Begun from a read-only survey of `master @ ffe8a5c` on 2026-09-12; Phases 0 and 1
-executed the same day. Turkish twin: [`ROADMAP-tr.md`](ROADMAP-tr.md).*
+executed the same day, and Phase 2's design-system delivery begun the same day.
+Turkish twin: [`ROADMAP-tr.md`](ROADMAP-tr.md).*

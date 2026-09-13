@@ -224,7 +224,7 @@ görünmüyor. Her satırın kanıtı §9'da.
 | T0.2 | `requires-python` `>=3.11,<3.15` oldu; üç CI matrisine de `"3.14"` eklendi. Eski sınır, takımın zaten geçtiği bir yapılandırmayı dışlıyordu; yani kodu değil paketleme politikasını anlatıyordu. | 1477 test 3.14.7'de yerelde geçiyor; Windows/macOS 3.14 doğrulanmadı diye açıkça işaretlendi |
 | T0.3 | Sayaç korkuluğu **tam-küme kaydıyla** değiştirildi — `tests/i18n_untranslated.json`, çağrı yerleriyle birlikte 104 kayıt — üretici olarak da `tools/i18n_gaps.py`. Tarama artık `_t` takma adını da izliyor. İki yön de kırmızı oluyor. | iki kez kırmızı kanıtlandı: `Ask` düşürülünce → `['Ask']`; `Nobody translated this` uydurulunca → `['Nobody translated this']` |
 | T0.4 | Yeni `tests/test_icon_contracts.py`, ve bulduğu iki ölü anahtar düzeltildi: `settings_ui.py:507` artık `monitor` istiyor, `ui/icons.py` bir `history` glifi kazandı. | önce kırmızı kanıtlandı, iki kusuru da adıyla: `settings_ui.py:503 add_page('history')`, `settings_ui.py:507 add_page('pip')`, `ui.shell.NAV → ['history']` |
-| T0.5 | `tools/shoot_ui.py` bir yüzey manifestosu, kaynaktan türeyen sayfa-sayısı çapraz kontrolü ve `--check` kazandı; hatırlanmaya gerek kalmadan koşması için Linux CI işine bağlandı. | iki dal da kırmızı kanıtlandı: `missing: blue_en_overlay_somehow_missing.png` ve `blank: blue_tr_overlay_rec.png`; yeşil koşu `30 surfaces x 2 theme-and-language runs, all drawn` diyor |
+| T0.5 | `tools/shoot_ui.py` bir yüzey manifestosu, kaynaktan türeyen sayfa-sayısı çapraz kontrolü ve `--check` kazandı; hatırlanmaya gerek kalmadan koşması için Linux CI işine bağlandı. | iki dal da kırmızı kanıtlandı: `missing: blue_en_overlay_somehow_missing.png` ve `blank: blue_tr_overlay_rec.png` (turun temaları o zaman `blue,orange`'dı; şimdi `light,dark` koşuyor); yeşil koşu `30 surfaces x 2 theme-and-language runs, all drawn` diyor |
 | T0.6 | Yeni `tools/except_audit.py`. | ilk sayım: **36 modülde 313 yer**, bunların 102'si `settings_ui.py`'de → bulgu H4 |
 | T0.7 | Grafik tazelendi. | `5372 nodes, 9509 edges, 311 communities`; `Built from commit: ffe8a5c7` (= HEAD) |
 | — | Faz sonrası tam takım | `Ran 1477 tests in 101.1s — OK` (önce 1473). `git diff --check` temiz. |
@@ -254,19 +254,25 @@ değil iki tanesinden türetilmek zorunda kalmasının sebebi bu).
 okundu — o karelerde kalan her İngilizce metin arayüz değil veri (bir model
 kimliği, bir sağlayıcı kimliği, fixture'ın kendi toplantı başlığı).
 
-### Faz 2 — Tasarım sistemi (4–6 g) — *Q2'ye bağlı*
+### Faz 2 — Tasarım sistemi — *sürüyor: T2.1, T2.2 ve T2.3'ün renk yarısı 2026-09-12'de teslim edildi*
 
-| Görev | Ne | Dosyalar |
+| Görev | Durum | Teslim edilen ve bunu neyin kanıtladığı |
 |---|---|---|
-| T2.1 | **Tek bir görsel yön kilitle** ve tek doğruluk kaynağına yaz (bkz. Q2) | `ui/tokens.py`, `docs/design-reference.md` |
-| T2.2 | **Erişilebilir bir açık temayı geri getir.** `normalize()`'ı `light`/`dark`'ı kendine eşleyecek şekilde düzelt ya da dürüstçe emekliye ayırıp `LIGHT`'ı sil. Bir yapılandırma değeri sessizce başka bir temaya dönüşmemeli. | `ui/tokens.py` |
-| T2.3 | Kontrast ölçeğini yeniden kur: `fg2`/`fg3` doğrulanmış kontrast oranına, ve etkin / hover / odak / **pasif** durumlar birbirinden ayrı | `ui/tokens.py`, `ui/qss.py` |
-| T2.4 | Kontrol yüksekliği ve boşluk ritmini bir kez tanımla; her sayfa bundan türesin (U5'i çözer) | `ui/tokens.py`, `ui/qss.py`, `ui/widgets.py` |
-| T2.5 | Buton hiyerarşisi: sayfa başına tam olarak bir birincil eylem, platform geleneğine göre konumlanmış; yıkıcı eylemler görsel olarak ayrılmış (U2) | `ui/widgets.py`, `ui/shell.py`, tüm sayfalar |
-| T2.6 | Durum bağlama kuralı: ana anahtarı kapalı bir kontrol, "etkin değil" diye tarif edilmek yerine devre dışı bırakılır (U8) | sayfa modülleri |
+| T2.1 | **bitti** | Belgelenen sıcak yön artık tek yön. `ui/tokens.py` bir sıcak-taş `LIGHT` ve bir sıcak-kömür `DARK` taşıyor, başka hiçbir şey yok. **Altı doygun renk odası emekliye ayrıldı.** Her biri bir kömür tabanın tek bir vurguyla karışımıydı — altısının da "aynı koyu arayüz, farklı renkli düğme" olarak okunmasının ve uygulamanın takip ettiğini iddia ettiği tasarıma hiç benzememesinin sebebi buydu. `RETIRED_THEMES` adlarını saklıyor, böylece `normalize()` hâlâ tema sanmak yerine yerlerine ne geçtiğini açıkça söyleyebiliyor. |
+| T2.2 | **bitti** | `light` ve `dark` kendine eşleniyor; açık tema ilk kez erişilebilir. Varsayılan `blue`'dan `dark`'a taşındı (`config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py`). Seçici iki temayı sunuyor ve dairelerin seçim halkası paletin mürekkebinden geliyor; böylece açık bir daire açık kenar çubuğunda artık kaybolmuyor. |
+| T2.3 | **renk yarısı bitti** | Her metin eşleşmesi tahmin değil ölçüm: `fg` 12,5–14,6:1, `fg2` 6,5–7,5:1, `fg3` 4,7–4,8:1, durum renkleri üzerlerine çizildikleri kendi tonlarında 4,6–5,2:1, dolgulu düğme 14,5–16,6:1. `tests/test_theme.py` bunların hepsini sözleşme olarak sabitliyor, yani sonraki bir palet düzenlemesi sessizce geri alamaz. **Hâlâ açık:** düğmelerin ötesinde etkin / hover / odak / pasif ayrışma gözden geçirmesi. |
+| T2.4 | açık | Kontrol yüksekliği ve boşluk ritmi (U5). |
+| T2.5 | açık | Sayfa başına buton hiyerarşisi (U2) — *başlandı*: Kaydet düğmesi nihayet bir birincil eylem. |
+| T2.6 | açık | Durum bağlama: ana anahtarı kapalı bir kontrol devre dışı olur (U8). |
 
-**Doğrulama:** kontrast oranları ölçülüp kaydedilir; tur iki temada da alınır;
-depoda yazılı bir token tablosu; `tests/test_theme.py` genişletilir.
+**Teslim edildiği hâliyle doğrulama:** `unittest discover` 1492 test OK, 77 sn;
+`tools/quick_tests.py` 1361 test, 14 sn; `shoot_ui.py --check` 2 tema × 1 dil
+boyunca 60 kare çizdi ve yüzey manifestosu bozulmadı; iki temanın farklı olduğu
+dosya adıyla değil **pikselle** kanıtlandı.
+
+Bunu yaparken iki bulgu çıktı, ikisi de aşağıdaki "Düzeltmeler"de kayıtlı: tur,
+iddia ettiği her tema adı için tek bir palet çiziyordu (N1) ve terrakota, tasarımın
+kullandığı hiçbir boyutta düğme metnini taşıyamıyor (N2).
 
 ### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g)
 
@@ -491,6 +497,33 @@ model kimliği), `openai` / `ask` (halka grafiğin lejantındaki sağlayıcı
 kimlikleri) ve fixture'ın kendi `Shot meeting` ile `What is the capital of
 Turkey?` metinleri.
 
+### 2026-09-12 — Faz 2, ilk teslim (T2.1, T2.2, T2.3'ün renk yarısı)
+
+| Dosya | Değişiklik |
+|---|---|
+| `ui/tokens.py` | yeniden yazıldı: sıcak-taş `LIGHT` ve sıcak-kömür `DARK`, `THEMES = {light, dark}`, `DEFAULT_THEME`, `RETIRED_THEMES` ve paletin iddialarını denetlenebilir kılmak için `mix` / `relative_luminance` / `contrast_ratio` |
+| `ui/qss.py` | iki gömülü renk gitti (dolgulu düğmelerde `#FFF8F5`, tan çipte `#8A6A14`); `mix` artık `ui/tokens`'tan geliyor |
+| `ui/theme.py` | altı oda dışa aktarımı kaldırıldı; `toggle()` iki tema arasında geçiyor |
+| `ui/pages/general.py` | seçici açık ve koyu sunuyor; daire kenarı ve seçim halkası paletin mürekkebinden |
+| `config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py` | varsayılan tema `blue` → `dark`, böylece yeni kurulum kilitli yönü alıyor |
+| `settings_ui.py` | Kaydet düğmesi artık bir `primary`: stilsizdi, yani hiçbir sayfada birincil eylem yoktu |
+| `tools/shoot_ui.py`, `.github/workflows/tests.yml` | tur `light,dark` koşuyor ve sunduğu temayı yapılandırmaya söylüyor |
+| `tests/test_theme.py` | sözleşmeye genişletildi: erişilebilirlik, katman sırası, her metin eşleşmesi, motorda çıplak renk yok, dolgulu düğme mürekkep |
+
+Turun ham sonucu — dosya adından değil pikselden okundu:
+
+```
+light_tr_page01.png  sha=4d78bde6b7f4  [('#fbfaf6', 37952), ('#f4f1ea', 20645), ('#eee9de', 14204)]
+dark_tr_page01.png   sha=f34094f439e7  [('#232019', 35341), ('#1c1a17', 20645), ('#171512', 14204)]
+light_tr_page03.png  sha=b8ce7847213e  [('#f4f1ea', 24996), ('#fbfaf6', 17883), ('#eee9de', 14281)]
+dark_tr_page03.png   sha=a22a6b35fb0e  [('#1c1a17', 24996), ('#232019', 16135), ('#171512', 14281)]
+```
+
+Zemin ve kenar çubuğu piksel sayıları iki temada birebir aynı (20645 / 14204) —
+tek düzen, iki palet; renk sözleşmesinin vaat ettiği özellik tam da bu. Ölçülen
+palet artık tasarım referansının tarif ettiği palet ve iki tema adıyla değil
+SHA'sıyla ayrışıyor.
+
 ### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
@@ -509,6 +542,30 @@ gösterenden daha kötüdür:
   görüntüler Qt sürümleri ve platformlar arasında deterministik değil ki bu depo
   bunu yasaklıyor. Bunun yerine, gerekçesi aracın içine yazılarak
   varlık-ve-boş-olmama denetimi teslim edildi.
+
+- **N1 — ekran görüntüsü turu, yakaladığı tema hakkında yalan söylüyordu.**
+  `tools/shoot_ui.py` içindeki `theme.apply(thm)` uygulama stil sayfasını kuruyordu,
+  ama ayar penceresi açılırken *kayıtlı* temayı uyguluyor (`settings_ui.py:558`), yani
+  her kare yapılandırmanın varsayılanıyla çiziliyordu. Aracın varsayılanı
+  (`blue,orange`) yapılandırmanın varsayılanıyla (`blue`) ilk girdiyi paylaştığı
+  sürece görünmez kaldı: `orange` koşusu mavi çiziyordu ve bunu söyleyen hiçbir şey
+  yoktu. Ancak varsayılan `dark`'a taşınınca ve "light" kareleri koyu çıkınca
+  bulundu — sonra varsayılmadı, kanıtlandı: `light_tr_page01.png` ile
+  `dark_tr_page01.png` bayt bayt aynıydı (ikisi de `sha=4d78bde6b7f4`) ve düzeltmeden
+  sonra ayrıştılar. Turun yapılandırmasına sunduğu temayı vermekle düzeltildi.
+  **Yüksek sesle başarısız olamayan bir doğrulama aracı, doğrulama değildir** — ve bu
+  araç ömrü boyunca sessizce "geçiyordu".
+
+- **N2 — terrakota düğme metnini taşıyamıyor.** `docs/design-reference.md` birincil
+  eylemin "mürekkep kömürü, bg #242628, turuncu DEĞİL" olduğunu söylüyor ve bunun bir
+  tercih değil bir kısıt olduğu çıktı: düğme etiketi açık temanın `accent`'inde
+  3,51:1, koyu temanınkinde 2,58:1 ölçülüyor, ikisi de AA'nın altında; `accentDeep`
+  ise eşiği ancak geçiyor (4,72 / 4,61) — dolgulu bir kontrol için harcanamayacak
+  kadar yakın. Bu yüzden dolgulu düğme mürekkep (14,5 / 16,6:1) ve terrakota
+  referansın söylediği şey: kayıt sinyali. Kayda değer iki sonuç: QSS, **hiçbir
+  çağrı yerinin kullanmadığı** bir terrakota `variant="primary"` taşıyordu, yani
+  stil vardı ve onu giyen yoktu; ve gerçek Kaydet düğmesi stilsizdi — U2'nin (buton
+  hiyerarşisi yok) somut hâli bu, burada Kaydet'i birincil yaparak onarıldı.
 
 Faz 1 sırasında:
 
@@ -532,5 +589,5 @@ Faz 1 sırasında:
 ---
 
 *2026-09-12'de `master @ ffe8a5c` üzerinde salt-okunur bir incelemeyle
-başlandı; Faz 0 ve Faz 1 aynı gün uygulandı. İngilizce aslı:
-[`ROADMAP.md`](ROADMAP.md).*
+başlandı; Faz 0 ve Faz 1 aynı gün uygulandı, Faz 2'nin tasarım sistemi teslimi de
+aynı gün başladı. İngilizce aslı: [`ROADMAP.md`](ROADMAP.md).*
