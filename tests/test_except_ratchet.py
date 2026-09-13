@@ -40,7 +40,7 @@ def _is_broad(handler):
     return bool(names & BROAD)
 
 
-def _reports(handler, reporters=frozenset()):
+def _reports(handler, reporters=frozenset(), widgets=frozenset()):
     """Does the handler body say anything about the failure?
 
     Printing, raising, warning and emitting all count as saying something. Assigning
@@ -54,6 +54,11 @@ def _reports(handler, reporters=frozenset()):
     still counted as saying nothing, and `Tee.write` was caught the same way a second time.
     A check that only sees the shape it was written for needs its shape widened each time
     that happens, and the widening is worth recording rather than hiding.
+
+    `widgets` is the third widening, and the same lesson: an `InfoNote` is "a note-info /
+    note-warn / note-err box", so a handler that writes one has told the user in the place
+    the user is looking. That is reporting, and the counter called it silence until a
+    wizard's "that could not be saved" was counted as saying nothing.
     """
     for node in ast.walk(handler):
         if node is handler:
@@ -68,14 +73,49 @@ def _reports(handler, reporters=frozenset()):
             if isinstance(func, ast.Attribute) and (func.attr in REPORTING_ATTRS
                                                     or func.attr in reporters):
                 return True
+            if _says_it_on_screen(node, widgets):
+                return True
     return False
+
+
+# The project's own message widgets (`ui/widgets.py`) — an InfoNote is literally "a
+# note-info / note-warn / note-err box" — and the calls that put words in one.
+MESSAGE_WIDGETS = ("InfoNote", "StatusChip")
+SCREEN_ATTRS = ("setText", "setPlainText")
+
+
+def _message_widgets(tree):
+    """{attribute name} built from a message widget here: `self.mic_note = InfoNote(…)`.
+
+    Read from the module's own assignments rather than guessed from the attribute's name:
+    a widget called `note` that is a plain QLabel is a different thing from one built by
+    the note widget, and only the second is this project's way of saying something.
+    """
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            built = (getattr(node.value.func, "id", None)
+                     or getattr(node.value.func, "attr", None))
+            if built in MESSAGE_WIDGETS:
+                names.update(getattr(target, "attr", "") for target in node.targets
+                             if getattr(target, "attr", ""))
+    return names
+
+
+def _says_it_on_screen(call, widgets):
+    if not widgets or not isinstance(call.func, ast.Attribute):
+        return False
+    if call.func.attr not in SCREEN_ATTRS:
+        return False
+    return getattr(call.func.value, "attr", "") in widgets
 
 
 def _reporting_helpers(tree):
     """The module's own functions that say something when they are called."""
+    widgets = frozenset(_message_widgets(tree))
     return {node.name for node in ast.walk(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and _reports(node)}
+            and _reports(node, widgets=widgets)}
 
 
 # Why a handler may say nothing, and the evidence that decides which. The set is small on
@@ -230,8 +270,9 @@ def silent_handlers(root=ROOT):
             continue
         rel = str(path.relative_to(root))
         helpers = frozenset(_reporting_helpers(tree))
+        widgets = frozenset(_message_widgets(tree))
         for handler, context in _handlers(tree):
-            if _is_broad(handler) and not _reports(handler, helpers):
+            if _is_broad(handler) and not _reports(handler, helpers, widgets):
                 found[f"{rel}:{context}"] += 1
     return dict(found)
 
@@ -251,9 +292,10 @@ def silent_reasons(root=ROOT):
             continue
         rel = str(path.relative_to(root))
         helpers = frozenset(_reporting_helpers(tree))
+        widgets = frozenset(_message_widgets(tree))
         guarded = _guarded_calls(tree)
         for handler, context in _handlers(tree):
-            if _is_broad(handler) and not _reports(handler, helpers):
+            if _is_broad(handler) and not _reports(handler, helpers, widgets):
                 calls, imports = guarded.get(id(handler), ([], False))
                 reason = reason_for(calls, imports)
                 slot = found.setdefault(f"{rel}:{context}", Counter())
@@ -279,9 +321,10 @@ def explicit_reasons(root=ROOT):
         lines = source.splitlines()
         rel = path.relative_to(root)
         helpers = frozenset(_reporting_helpers(tree))
+        widgets = frozenset(_message_widgets(tree))
         guarded = _guarded_calls(tree)
         for handler, context in _handlers(tree):
-            if not (_is_broad(handler) and not _reports(handler, helpers)):
+            if not (_is_broad(handler) and not _reports(handler, helpers, widgets)):
                 continue
             calls, imports = guarded.get(id(handler), ([], False))
             if reason_for(calls, imports) != UNCLASSIFIED:
