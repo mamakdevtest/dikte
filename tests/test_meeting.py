@@ -7,6 +7,7 @@ after the transcription and must not pay for it twice.
 """
 
 import contextlib
+import io
 import os
 import time
 import unittest
@@ -473,6 +474,28 @@ class Pipeline(DikteTest):
         # Zero means nothing is ever old enough to leave.
         self.assertEqual(meeting.prune_audio(0), 0)
         self.assertTrue(fresh.exists())
+
+    def test_an_unreadable_meeting_list_prunes_nothing(self):
+        """The promise this function makes, kept when it cannot check it.
+
+        `prune_audio` may only delete recordings that are *not* the sole recovery source
+        for an unfinished meeting. That list comes from `read_meetings()`, and when the
+        read failed the fallback was an empty set — which is not "protect nothing", it is
+        "the guard is off": every old recording went, including the ones the docstring
+        says are never touched. A read failure now prunes nothing and says why.
+        """
+        old = cfg.MEETINGS_DIR / "unfinished.wav"
+        cfg.MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
+        old.write_bytes(b"the only copy of a meeting that is not finished")
+        week_ago = time.time() - 8 * 86400
+        os.utime(old, (week_ago, week_ago))
+
+        with mock.patch.object(cfg, "read_meetings", side_effect=OSError("locked")):
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(0, meeting.prune_audio(7))
+        self.assertTrue(old.exists(),
+                        "an unreadable list must not turn into an unguarded delete")
+        self.assertIn("no recording was pruned", err.getvalue())
 
     def test_the_transcript_is_attributed_by_channel(self):
         self.conf["meeting_self_name"] = "Yusuf"

@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -120,6 +121,8 @@ class MeetingPipeline(QObject):
         try:
             self._aborter = api.Aborter()
         except Exception:
+            # reason: Without an aborter the meeting still runs to the end; only Stop goes
+            #         inert, and `stop()` reports that rather than pretending it worked.
             self._aborter = None
         self._base = entry.get("base", "")
         self._thread = threading.Thread(target=self._work, args=(dict(entry),),
@@ -134,6 +137,8 @@ class MeetingPipeline(QObject):
             try:
                 aborter.abort()
             except Exception:
+                # reason: Aborting a pipeline that has already finished: the state machine
+                #         has moved on and stopping again is not a failure.
                 pass
 
     def _check(self):
@@ -866,9 +871,15 @@ def prune_audio(days):
     # Build set of bases whose status is still recoverable — never prune their wav
     try:
         rows = cfg.read_meetings()
-        recoverable = {r.get("base") for r in rows if r.get("status") not in ("done", "transcribed")}
-    except Exception:
-        recoverable = set()
+    except Exception as exc:
+        # The list of recordings that are the only recovery source could not be read, and
+        # pruning with an empty list deletes exactly the recordings this function promises
+        # never to touch: fail-open turned a read failure into data loss. Nothing is pruned
+        # while the question cannot be answered, and the reason is said out loud.
+        print(f"dikte: could not read the meeting list, so no recording was pruned "
+              f"({exc})", file=sys.stderr)
+        return 0
+    recoverable = {r.get("base") for r in rows if r.get("status") not in ("done", "transcribed")}
     cutoff = time.time() - days * 86400
     removed = 0
     for wav in cfg.MEETINGS_DIR.glob("*.wav"):
