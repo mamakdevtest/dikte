@@ -171,10 +171,15 @@ Canlı depo verisiyle (GitHub API / PyPI, 2026-09-12'de alındı):
 
 Proje bugün GPL-3.0 beyan ediyor, dolayısıyla **PyQt6 yasal ve teknik olarak
 geçme sebebi yok** — API neredeyse aynı, geçiş çoğunlukla içe aktarma adı
-değişikliği (`pyqtSignal`→`Signal`, `pyqtSlot`→`Slot`). Ama `pyproject.toml` MIT
-diyor ve bu PyQt6 ile bağdaşmıyor. **Birini seçin:** ya üst veriyi GPL-3.0 olarak
-düzeltip kalın, ya PySide6'ya geçip GPL dışı bir yapı seçeneğini elinizde tutun.
-Bu, §7'deki **Q1** sorusu.
+değişikliği (`pyqtSignal`→`Signal`, `pyqtSlot`→`Slot`). `pyproject.toml` MIT
+diyordu ve bu PyQt6 ile bağdaşmıyordu; açık kalan soru §7'deki **Q1**'di.
+
+**13.09.2026'da cevaplandı: üst veri `GPL-3.0-only` olarak düzeltildi ve PyQt6
+kalıyor.** Permissif yol bir lisans seçimi değil bir göçtü — copyleft seçen
+bir projenin ihtiyacı olmayan üst veriyi satın almak için PySide6'ya geçmek —
+o yüzden tartılıp reddedildi. Yani Faz 5'in yapıları GPL-3.0 yapıları; zaten
+fiilen öyleydiler, değişen şey paketleme üst verisinin bunu artık söylüyor
+olması. `docs/ai/DECISIONS.md`'ye kaydedildi.
 
 ## 4. Görsel yön sorunu — "arayüz düzgün görünmüyor" şikâyetinin kök nedeni
 
@@ -222,7 +227,7 @@ görünmüyor. Her satırın kanıtı §9'da.
 
 | Görev | Teslim edilen | Nasıl çalıştığı gösterildi |
 |---|---|---|
-| T0.1 | Lisans çelişkisi **belgelendi, çözülmedi** — Q1 hâlâ açık. `pyproject.toml` içindeki bir yorum çelişkiyi yazıyor ve Q1'e işaret ediyor. | `pyproject.toml:10-15` |
+| T0.1 ✅ | Lisans çelişkisi **13.09.2026'da çözüldü** — `pyproject.toml` `GPL-3.0-only` beyan ediyor, `LICENSE` ve iki README ile uyuşuyor, PyQt6 kalıyor (Q1, karar `docs/ai/DECISIONS.md`'de). | `pyproject.toml:11` |
 | T0.2 | `requires-python` `>=3.11,<3.15` oldu; üç CI matrisine de `"3.14"` eklendi. Eski sınır, takımın zaten geçtiği bir yapılandırmayı dışlıyordu; yani kodu değil paketleme politikasını anlatıyordu. | 1477 test 3.14.7'de yerelde geçiyor; Windows/macOS 3.14 doğrulanmadı diye açıkça işaretlendi |
 | T0.3 | Sayaç korkuluğu **tam-küme kaydıyla** değiştirildi — `tests/i18n_untranslated.json`, çağrı yerleriyle birlikte 104 kayıt — üretici olarak da `tools/i18n_gaps.py`. Tarama artık `_t` takma adını da izliyor. İki yön de kırmızı oluyor. | iki kez kırmızı kanıtlandı: `Ask` düşürülünce → `['Ask']`; `Nobody translated this` uydurulunca → `['Nobody translated this']` |
 | T0.4 | Yeni `tests/test_icon_contracts.py`, ve bulduğu iki ölü anahtar düzeltildi: `settings_ui.py:507` artık `monitor` istiyor, `ui/icons.py` bir `history` glifi kazandı. | önce kırmızı kanıtlandı, iki kusuru da adıyla: `settings_ui.py:503 add_page('history')`, `settings_ui.py:507 add_page('pip')`, `ui.shell.NAV → ['history']` |
@@ -427,7 +432,7 @@ Her faz için pazarlıksız, `ai/workflows.md`'den devralınmış:
 
 | # | Soru | Cevap |
 |---|---|---|
-| **Q1** | **Lisans niyeti**: GPL-3.0'da mı kalınacak (PyQt6 kalır) yoksa GPL dışı bir yapı seçeneği mi korunacak (PySide6'ya geçilir)? | **Ertelendi.** Faz 0 çelişkiyi `pyproject.toml` içinde belgeliyor ve üst veriyi olduğu gibi bırakıyor. **T5.5'i hâlâ bloke ediyor** — imzalı kapalı kaynak ikili dağıtım bu cevaplanmadan mümkün değil ve mevcut durum iki okumada da dağıtılabilir değil. |
+| **Q1 ✅** | **Lisans niyeti**: GPL-3.0'da mı kalınacak (PyQt6 kalır) yoksa GPL dışı bir yapı seçeneği mi korunacak (PySide6'ya geçilir)? | **13.09.2026'da cevaplandı — GPL-3.0-only, PyQt6 kalıyor.** Yanlış olan lisans değil üst veriydi; PySide6 yolu, projenin memnun olduğu copyleft sonucuna karşı kazanılmamış bir göç olarak reddedildi. **T5.5 açıldı**: imzalı ikililer GPL-3.0 yapıları olarak dağıtılır ve §6'daki kaynak yükümlülüğünü taşır. |
 | **Q2** | **Görsel yön** | **Cevap: belgelenen "Sıcak Teknik Minimalizm"e dönülüyor** — sıcak taş `#F4F1EA` zemin, kum `#EEE9DE` kenar çubuğu, fildişi `#FBFAF6` yüzeyler, mürekkep `#242628` metin, tek vurgu olarak terrakota `#E4573D` ve **gerçek bir açık + gerçek bir koyu tema**. Bu, `docs/design-reference.md`'yi yeniden bağlayıcı sözleşme yapıyor ve altı türetilmiş koyu renk odasını ürün yüzeyi olmaktan çıkarıyor. |
 | **Q3** | **Bağımlılık politikası** | **Cevap: stdlib + PyQt6 kuralı sürüyor.** Paketleme araçları **yalnızca derleme zamanı** istisnası; yani Faz 5'te PyInstaller serbest ve çalışma zamanına hiçbir yeni şey girmiyor. Dolayısıyla `ui/format.py` (T1.5) elle yazılıyor ve `sherpa-onnx` (§3.4) **alınmıyor**. |
 | **Q4** | **Dağıtım**: hangi kurulum dosyaları olmalı? | **Hâlâ açık.** Faz 5'i boyutlandırır; Faz 1 veya 2'ye başlamak için gerekli değil. |
@@ -469,7 +474,7 @@ Dokunulan dosyalar (6 değişti, 6 eklendi):
 
 | Dosya | Değişiklik |
 |---|---|
-| `pyproject.toml` | `requires-python` → `>=3.11,<3.15`; lisans çelişkisi yerinde belgelendi, Q1'e işaret ediyor |
+| `pyproject.toml` | `requires-python` → `>=3.11,<3.15`; lisans `GPL-3.0-only` olarak düzeltildi, yani deponun geri kalanının baştan beri söylediği şey (Q1 cevaplandı) |
 | `.github/workflows/tests.yml` | üç matrise de `"3.14"` eklendi, doğrulanmamış platformlar notuyla; yeni bir Linux adımı `tools/shoot_ui.py --check` koşuyor |
 | `tests/test_i18n.py` | sayaç korkuluğu tam-küme korkuluğuyla değiştirildi; `untranslated_strings()` ve `recorded_gaps()` üreticinin de paylaşabilmesi için modül seviyesine alındı |
 | `tests/i18n_untranslated.json` | yeni — kayıtlı boşluk kümesi, çağrı yerleriyle 104 kayıt |

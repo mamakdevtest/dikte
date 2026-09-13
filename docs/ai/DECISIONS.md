@@ -1,5 +1,23 @@
 # DECISIONS — Overlay / Voice Reliability Pass
 
+## Licence: GPL-3.0-only (2026-09-13 — Q1 answered)
+
+- **Decision** — Dikte is GPL-3.0-only. `LICENSE` and both READMEs already said GPL-3.0;
+  the packaging metadata was the odd one out and was corrected, not the licence.
+- **Why not the permissive escape** — PyQt6 is GPL-3.0-or-commercial, so a permissive
+  licence on a Dikte that imports PyQt6 was never shippable without buying a commercial
+  Qt licence. Moving the bindings to PySide6 (LGPL) was the only route that would have
+  kept the metadata free; it was rejected as an unearned migration — imports, signal and
+  slot names, the whole suite and the 120-frame surface tour — against a licensing
+  outcome the project does not need.
+- **What it costs, and what it now requires** — Dikte may not be shipped under a
+  permissive or proprietary licence. Phase 5's frozen builds therefore ship as GPL-3.0
+  object code (PyInstaller freezing is compatible with this), and GPL-3.0 §6 means
+  whoever distributes a build provides the Corresponding Source for it. That is a
+  packaging requirement Phase 5 inherits, not an obstacle to it: PyQt6's own GPL-3.0
+  terms and Dikte's now agree.
+- **Where it was written down** — `pyproject.toml:11`, `README.md:248`, `README.tr.md:239`.
+
 ## Reliability Remediation (2026-08-30)
 
 - **Activity ownership** — activities are per successful logical run, not

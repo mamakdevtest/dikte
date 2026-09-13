@@ -171,9 +171,15 @@ Grounded in live repository data (GitHub API / PyPI, fetched 2026-09-12):
 Today the project declares GPL-3.0, so **PyQt6 is legal and there is no
 technical reason to move** — the API is near-identical and the port is mostly
 import renaming (`pyqtSignal`→`Signal`, `pyqtSlot`→`Slot`, `exec()`→`exec()`).
-But `pyproject.toml` says MIT, which is incompatible with PyQt6. **Pick one:**
-either correct the metadata to GPL-3.0 and stay, or move to PySide6 and keep the
-option of a non-GPL build. This is question **Q1** in §7.
+`pyproject.toml` said MIT, which was incompatible with PyQt6, and that was the
+open question **Q1** in §7.
+
+**Answered 2026-09-13: the metadata was corrected to `GPL-3.0-only` and PyQt6
+stays.** The permissive route was not a licence choice but a migration — moving
+to PySide6 to buy metadata that a project choosing copyleft does not need — so it
+was weighed and rejected. Phase 5's builds are therefore GPL-3.0 builds, which
+they always were in effect; what changes is that the packaging metadata now says
+so. Recorded in `docs/ai/DECISIONS.md`.
 
 ## 4. The visual direction problem — root cause of "the UI doesn't look right"
 
@@ -218,7 +224,7 @@ Nothing here is user-visible. Evidence for every row is in §9.
 
 | Task | Delivered | How it was shown to work |
 |---|---|---|
-| T0.1 | Licence contradiction **documented, not resolved** — Q1 is still open. A comment in `pyproject.toml` states the conflict and points at Q1. | `pyproject.toml:10-15` |
+| T0.1 ✅ | Licence contradiction **resolved 2026-09-13** — `pyproject.toml` declares `GPL-3.0-only`, matching `LICENSE` and both READMEs, and PyQt6 stays (Q1, decided in `docs/ai/DECISIONS.md`). | `pyproject.toml:11` |
 | T0.2 | `requires-python` widened to `>=3.11,<3.15`; `"3.14"` added to all three CI matrices. The old bound excluded a configuration the suite already passed on, so it described packaging policy rather than the code. | 1477 tests pass on 3.14.7 locally; Windows/macOS 3.14 explicitly marked unverified in the workflow |
 | T0.3 | The count ratchet replaced by an **exact-set record** — `tests/i18n_untranslated.json`, 104 entries each with call sites — plus `tools/i18n_gaps.py` as the generator. The scan now follows the `_t` alias. Both directions fail. | proven red twice: dropping `Ask` → `['Ask']`; inventing `Nobody translated this` → `['Nobody translated this']` |
 | T0.4 | New `tests/test_icon_contracts.py`, and the two dead keys it found are fixed: `settings_ui.py:507` asks for `monitor`, and `ui/icons.py` gains a `history` glyph. | proven red first, naming both defects: `settings_ui.py:503 add_page('history')`, `settings_ui.py:507 add_page('pip')`, `ui.shell.NAV → ['history']` |
@@ -424,7 +430,7 @@ Recorded 2026-09-12. Anything still open blocks the phase that depends on it.
 
 | # | Question | Answer |
 |---|---|---|
-| **Q1** | **Licence intent**: stay GPL-3.0 (keep PyQt6) or keep the option of a non-GPL build (move to PySide6)? | **Deferred.** Phase 0 documents the contradiction in `pyproject.toml` and leaves the metadata as it is. **Still blocking T5.5** — signed closed-source binaries are not possible until this is answered, and the current state is unshippable under either reading. |
+| **Q1 ✅** | **Licence intent**: stay GPL-3.0 (keep PyQt6) or keep the option of a non-GPL build (move to PySide6)? | **Answered 2026-09-13 — GPL-3.0-only, PyQt6 stays.** The metadata was the part that was wrong, not the licence, and the PySide6 route was rejected as an unearned port against a copyleft outcome the project is content with. **T5.5 is unblocked**: signed binaries ship as GPL-3.0 builds and carry the source obligation in §6. |
 | **Q2** | **Visual direction** | **Answered: return to the documented "Warm Technical Minimalism"** — warm stone `#F4F1EA` canvas, sand `#EEE9DE` sidebar, ivory `#FBFAF6` surfaces, ink `#242628` text, terracotta `#E4573D` as the single accent, with a **real light and a real dark theme**. This makes `docs/design-reference.md` the binding contract again and retires the six derived dark colour rooms as the product surface. |
 | **Q3** | **Dependency policy** | **Answered: the stdlib + PyQt6 rule stands.** Packaging tooling is a **build-time-only** exception, so PyInstaller is allowed in Phase 5 and nothing new enters the runtime. `ui/format.py` (T1.5) is therefore hand-written, and `sherpa-onnx` (§3.4) is **not** adopted. |
 | **Q4** | **Distribution**: which installers must exist? | **Still open.** Sizes Phase 5; not needed to start Phase 1 or 2. |
@@ -465,7 +471,7 @@ Files touched (6 modified, 6 added):
 
 | File | Change |
 |---|---|
-| `pyproject.toml` | `requires-python` → `>=3.11,<3.15`; the licence conflict documented in place, pointing at Q1 |
+| `pyproject.toml` | `requires-python` → `>=3.11,<3.15`; the licence corrected to `GPL-3.0-only`, which is what the rest of the repository said (Q1 answered) |
 | `.github/workflows/tests.yml` | `"3.14"` added to all three matrices with the unverified-platforms caveat; a new Linux step runs `tools/shoot_ui.py --check` |
 | `tests/test_i18n.py` | the count ratchet replaced by an exact-set ratchet; `untranslated_strings()` and `recorded_gaps()` are module-level so the generator can share them |
 | `tests/i18n_untranslated.json` | new — the recorded gap set, 104 entries with call sites |

@@ -236,4 +236,4 @@ yerleştirir; orada XWayland devrede değil.
 
 ## Lisans
 
-GPL-3.0, [LICENSE](LICENSE) dosyasına bak.
+GPL-3.0-only, [LICENSE](LICENSE) dosyasına bak.

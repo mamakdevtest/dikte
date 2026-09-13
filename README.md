@@ -245,4 +245,4 @@ Windows and macOS place the window directly; no XWayland is involved there.
 
 ## License
 
-GPL-3.0, see [LICENSE](LICENSE).
+GPL-3.0-only, see [LICENSE](LICENSE).
