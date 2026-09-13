@@ -272,5 +272,59 @@ class ObjectNamesAreStyled(unittest.TestCase):
             f"repository: {stale_windows}"))
 
 
+class TheRhythmIsDeclaredOnce(unittest.TestCase):
+    """Control heights come from ui.tokens, not from a number typed in the sheet.
+
+    The sheet carried 26, 27, 28, 30, 32 and 34 px, which is why a field and the
+    button placed beside it were never the same height: the field was 30 and the
+    button 32. A literal that reappears here is a new step in a rhythm that is
+    meant to have three.
+    """
+
+    # What may still be written literally. These are shapes, not steps: a 1px
+    # separator, a 4px bar and the chevron's 14px arrow are the same on every
+    # page in every theme, so a token would add indirection without adding a
+    # decision. Anything taller than this is a control asking for its own height.
+    SHAPES = {"min-height": 1, "height": 14}
+    # A fixed height in code is the same decision made somewhere else.
+    CODE_CEILING = 14
+
+    def test_the_sheet_declares_no_control_height_as_a_literal(self):
+        text = (REPO / "ui" / "qss.py").read_text(encoding="utf-8")
+        offenders = []
+        for prop, ceiling in sorted(self.SHAPES.items()):
+            for match in re.finditer(rf"\b{prop}:\s*(\d+)px", text):
+                if int(match.group(1)) > ceiling:
+                    line = text[:match.start()].count("\n") + 1
+                    offenders.append(
+                        f"ui/qss.py:{line} {prop}: {match.group(1)}px is above "
+                        f"the {ceiling}px a shape may be, so it is a control "
+                        "step — take it from ui.tokens.CONTROL")
+        self.assertEqual([], offenders, "\n  ".join([""] + offenders))
+
+    def test_no_fixed_height_in_the_code_is_a_literal(self):
+        offenders = []
+        for path in _module_paths():
+            tree = _parse(path)
+            if tree is None:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if not (isinstance(func, ast.Attribute)
+                        and func.attr == "setFixedHeight"):
+                    continue
+                if not node.args or not isinstance(node.args[0], ast.Constant):
+                    continue
+                value = node.args[0].value
+                if isinstance(value, int) and value > self.CODE_CEILING:
+                    rel = path.relative_to(REPO)
+                    offenders.append(
+                        f"{rel}:{node.lineno} setFixedHeight({value}) — a fixed "
+                        "control height belongs in ui.tokens.CONTROL")
+        self.assertEqual([], offenders, "\n  ".join([""] + offenders))
+
+
 if __name__ == "__main__":
     unittest.main()

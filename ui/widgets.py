@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import theme
+from .tokens import CONTROL
 from . import icons as _icons
 
 
@@ -173,14 +174,18 @@ _VARIANTS = ("primary", "ink", "secondary", "ghost", "danger", "rec", "seg")
 
 def btn(text, variant="secondary", size=None, icon_name=None, icon_color=None,
         parent=None):
-    """A styled QPushButton; `size` is "sm" for the 26px-tall button."""
+    """A styled QPushButton; `size` is "sm" for the compact button.
+
+    The height comes from the control rhythm rather than a number chosen here, so
+    a button and the field beside it are the same height by construction.
+    """
     button = QPushButton(text, parent)
     button.setProperty("variant", variant if variant in _VARIANTS else "secondary")
     if size == "sm":
         button.setProperty("size", "sm")
-        button.setFixedHeight(26)
+        button.setFixedHeight(CONTROL["sm"])
     else:
-        button.setFixedHeight(32)
+        button.setFixedHeight(CONTROL["md"])
     if icon_name:
         button.setIcon(_icons.icon(icon_name, 15, icon_color or theme.palette()["fg2"]))
     return button
@@ -487,7 +492,7 @@ class SegmentedControl(QWidget):
         for label, value in options:
             b = QPushButton(label)
             b.setProperty("variant", "seg")
-            b.setFixedHeight(27)
+            b.setFixedHeight(CONTROL["md"])
             b.setCheckable(True)
             b.setAutoExclusive(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)

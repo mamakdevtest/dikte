@@ -8,6 +8,7 @@ needs an inline ``setStyleSheet``.
 
 from .tokens import FONTS
 from .tokens import CHIP_TINT, NOTE_TINT, SAGE_CHIP_TINT
+from .tokens import CONTROL, CONTROL_PAD, CELL, INDICATOR, ROW_HEIGHT, ROW_PAD
 from .tokens import mix
 
 
@@ -72,9 +73,9 @@ QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QLabel#brandName {{ font-family: {display}; font-size: 14.5px; font-weight: 700; }}
 QLabel#brandSub {{ font-size: 11px; color: {c["fg3"]}; }}
 QLabel#navLabel {{ font-size: 13px; font-weight: 500; color: {c["fg2"]}; }}
-QPushButton#navItem {{ text-align: left; padding: 0 9px; border-radius: 6px;
+QPushButton#navItem {{ text-align: left; padding: 0 {CONTROL_PAD["sm"]}px; border-radius: 6px;
                        border: none; background: transparent;
-                       min-height: 32px; }}
+                       min-height: {CONTROL["md"]}px; }}
 QPushButton#navItem[compact="true"] {{ text-align: center; padding: 0; }}
 QPushButton#navItem:hover {{ background: {mix(c["surface"], c["sidebar"], 0.55)}; }}
 QPushButton#navItem[active="true"] {{
@@ -164,8 +165,9 @@ QLabel[note="ok"]   {{ background: {mix(c["ok"], c["surface"], NOTE_TINT["ok"])}
 QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {{
     background: {c["field"]}; border: 1px solid {c["border"]};
     border-radius: 6px; color: {c["fg"]}; selection-background-color: {sage};
-    selection-color: {c["fg"]}; padding: 0 10px; min-height: 30px; }}
-QComboBox {{ min-height: 30px; padding-right: 28px; }}
+    selection-color: {c["fg"]}; padding: 0 {CONTROL_PAD["md"]}px;
+    min-height: {CONTROL["md"]}px; }}
+QComboBox {{ min-height: {CONTROL["md"]}px; padding-right: 28px; }}
 QComboBox#dropdown:focus {{ border-color: {sage_dark}; background: {c["field"]}; }}
 QComboBox QLineEdit {{ background: transparent; border: none; padding: 0; }}
 QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QPlainTextEdit:hover, QTextEdit:hover {{
@@ -176,23 +178,25 @@ QComboBox:on {{ border-color: {sage_dark}; }}
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
 QPlainTextEdit:disabled, QTextEdit:disabled {{
     background: {c["surface2"]}; color: {c["fg3"]}; border-color: {c["border"]}; }}
-QPlainTextEdit, QTextEdit {{ padding: 8px 10px; }}
+QPlainTextEdit, QTextEdit {{ padding: 8px {CONTROL_PAD["md"]}px; }}
 QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding; subcontrol-position: center right; }}
 {chev_rule}
 {chev_disabled_rule}
 QComboBox QAbstractItemView {{ background: {c["surface"]}; color: {c["fg"]};
     border: 1px solid {c["border"]}; selection-background-color: {c["surface2"]};
     selection-color: {c["fg"]}; outline: 0; }}
-QComboBox QAbstractItemView::item {{ min-height: 28px; padding: 4px 10px; border: none; }}
+QComboBox QAbstractItemView::item {{ min-height: {ROW_HEIGHT}px; padding: 4px {ROW_PAD}px; border: none; }}
 QComboBox QAbstractItemView::item:selected {{ background: {c["surface2"]}; color: {c["fg"]}; }}
 QComboBox QAbstractItemView::item:hover {{ background: {c["surface2"]}; }}
 QComboBox::down-arrow:disabled {{ opacity: 0.6; }}
 
 /* ---- buttons ----------------------------------------------------------- */
-QPushButton {{ min-height: 32px; padding: 0 13px; border-radius: 6px;
+QPushButton {{ min-height: {CONTROL["md"]}px; padding: 0 {CONTROL_PAD["md"]}px;
+               border-radius: 6px;
                font-size: 13px; font-weight: 500; border: 1px solid transparent; }}
 QPushButton:focus {{ border-color: {sage_dark}; }}
-QPushButton[size="sm"] {{ min-height: 26px; padding: 0 9px; font-size: 12px; }}
+QPushButton[size="sm"] {{ min-height: {CONTROL["sm"]}px; padding: 0 {CONTROL_PAD["sm"]}px;
+                          font-size: 12px; }}
 /* The one filled button, and the only place a solid fill carries text. It is
    ink, not terracotta: the reference says so, and terracotta cannot do it —
    the button text measures 3.5:1 on `accent` in the light theme and 2.6:1 in
@@ -227,7 +231,8 @@ QWidget#seg {{ background: {c["surface2"]}; border: 1px solid {c["border"]};
                border-radius: 7px; }}
 QPushButton[variant="seg"] {{ background: {field_mix};
     border: 1px solid {c["border"]}; color: {c["fg2"]};
-    border-radius: 5px; min-height: 27px; padding: 0 13px; font-size: 12.5px; }}
+    border-radius: 5px; min-height: {CONTROL["md"]}px; padding: 0 {CONTROL_PAD["md"]}px;
+    font-size: 12.5px; }}
 QPushButton[variant="seg"]:hover {{ background: {c["surface2"]}; color: {c["fg"]};
     border-color: {c["borderStrong"]}; }}
 QPushButton[variant="seg"]:focus {{ border-color: {sage_dark}; }}
@@ -245,14 +250,16 @@ QPushButton[variant="seg"]:checked:disabled, QPushButton[variant="seg"][active="
 
 /* ---- checkboxes (toggles) --------------------------------------------- */
 QCheckBox[kind="toggle"] {{ spacing: 0; }}
-QCheckBox[kind="toggle"]::indicator {{ width: 34px; height: 18px;
+QCheckBox[kind="toggle"]::indicator {{ width: {INDICATOR["toggle"][0]}px;
+    height: {INDICATOR["toggle"][1]}px;
     border-radius: 9px; border: 1px solid {c["borderStrong"]};
     background: {mix(c["borderStrong"], c["surface2"], 0.62)}; }}
 QCheckBox[kind="toggle"]::indicator:checked {{
     background: {sage_dark}; border-color: {sage_dark}; }}
 QCheckBox[kind="toggle"]::indicator:disabled {{ opacity: 0.4; }}
 QCheckBox {{ color: {c["fg"]}; spacing: 8px; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {c["borderStrong"]};
+QCheckBox::indicator {{ width: {INDICATOR["check"]}px; height: {INDICATOR["check"]}px;
+    border: 1px solid {c["borderStrong"]};
     border-radius: 4px; background: {c["field"]}; }}
 QCheckBox::indicator:checked {{ background: {sage_dark};
     border-color: {sage_dark}; }}
@@ -268,7 +275,7 @@ QListWidget::item:hover {{ background: {mix(c["surface2"], c["canvas"], 0.62)}; 
 /* ---- menus (tray) ------------------------------------------------------ */
 QMenu {{ background: {c["surface"]}; border: 1px solid {c["border"]};
         border-radius: 8px; padding: 5px; }}
-QMenu::item {{ height: 31px; padding: 0 10px 0 10px; margin: 0;
+QMenu::item {{ height: {ROW_HEIGHT}px; padding: 0 {ROW_PAD}px; margin: 0;
               border-radius: 6px; color: {c["fg"]}; }}
 QMenu::item:selected {{ background: {c["surface2"]}; color: {c["fg"]}; }}
 QMenu::item:disabled {{ color: {c["fg3"]}; }}
@@ -285,7 +292,9 @@ QProgressBar::chunk {{ background: {sage_dark}; border-radius: 6px; }}
 QWidget#cornerPicker {{ background: {c["surface2"]}; border: 1px solid {c["border"]};
                        border-radius: 6px; }}
 QPushButton[cornerCell="true"] {{ background: transparent; border: 1px solid transparent;
-                                 border-radius: 6px; min-width: 44px; min-height: 34px; }}
+                                 border-radius: 6px;
+                                 min-width: {CELL["width"]}px;
+                                 min-height: {CELL["height"]}px; }}
 QPushButton[cornerCell="true"]:hover {{ background: {mix(sage, c["surface"], 0.16)}; }}
 QPushButton[cornerCell="true"][active="true"] {{ background: {mix(sage, c["surface"], 0.32)};
                                                   border: 1px solid {sage_dark}; }}

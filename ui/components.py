@@ -5,6 +5,12 @@ knob); this module wraps it with the two newer faces the catalogue needs —
 ``Button`` (capitalised twin of ``btn()``) and ``Dropdown`` (editable combo
 with its focus ring from QSS) — and re-exports the rest under the exact same
 names so existing callers keep working.
+
+**Nothing imports this module.** No source file, test or document references it,
+and its ``Button`` is a copy of ``btn()``'s height logic rather than a call to it.
+It is recorded here rather than deleted because removing a module is its own
+change with its own review — the finding is H6 in the roadmap. Its heights are
+tied to the control rhythm in the meantime so it cannot drift while it waits.
 """
 
 from PyQt6.QtCore import Qt
@@ -12,6 +18,7 @@ from PyQt6.QtWidgets import QComboBox, QPushButton
 
 from . import icons as _icons
 from . import theme as _theme
+from .tokens import CONTROL
 from .widgets import (
     CornerPicker,
     Dot,
@@ -63,9 +70,9 @@ class Button(QPushButton):
                          variant if variant in _VARIANTS else "secondary")
         if size == "sm":
             self.setProperty("size", "sm")
-            self.setFixedHeight(26)
+            self.setFixedHeight(CONTROL["sm"])
         else:
-            self.setFixedHeight(32)
+            self.setFixedHeight(CONTROL["md"])
         if icon_name:
             try:
                 self.setIcon(_icons.icon(

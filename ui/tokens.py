@@ -57,6 +57,25 @@ RADII = RADIUS
 
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 20, "xxl": 24}
 
+# The control rhythm. Every interactive control is one of three heights and its
+# horizontal padding follows the same step, so a field and the button placed
+# beside it line up. The sheet carried 26, 27, 28, 30, 32 and 34 px before this,
+# which is exactly why they never did: the field was 30, the button 32, and the
+# segmented control 27.
+CONTROL = {"sm": 26, "md": 32, "lg": 38}
+CONTROL_PAD = {"sm": 8, "md": 12, "lg": 16}
+
+# Items read in a stack — list rows, menu entries, combo popup rows — are their
+# own step: nothing is placed beside them, so they take a shorter height.
+ROW_HEIGHT = 28
+ROW_PAD = 8
+
+# A click target in a grid (the overlay corner picker) is neither: it is a cell.
+CELL = {"width": 44, "height": 34}
+
+# Indicator geometry: a shape, not a step.
+INDICATOR = {"check": 16, "toggle": (34, 18)}
+
 # How much of a status colour goes into the background it is read on. The QSS
 # builds the tint from these numbers and tests/test_theme.py measures the label
 # against that same background — one dict on purpose, because when the two were
