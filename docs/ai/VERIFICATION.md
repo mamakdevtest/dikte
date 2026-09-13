@@ -1,3 +1,51 @@
+# VERIFICATION — T4.8's third slice: unknown is not "no"
+
+## The number
+
+    279 silent handlers -> 273 (the third slice). Six more out, all of them by reporting.
+
+## The defect this one is about: a probe that failed, telling the user about their hardware
+
+`can_concurrent_capture()` decides whether a meeting's microphone can be shared with a
+dictation. Two handlers treated a raised exception as `False`:
+
+    try:
+        shared = bool(audio.can_concurrent_capture())
+    except Exception:
+        shared = False
+
+`False` from that function means *the device cannot be shared*. A failed probe means *Dikte
+could not find out*. Collapsing them meant that when `pactl` was missing, or the sound server
+did not answer, the user was shown:
+
+    Cannot start dictation while the meeting microphone is active on this device.
+    Finish the meeting or choose a shareable input.
+
+— a claim about their hardware that nothing had verified, and advice that costs them a
+dictation. The refusal itself is right (disturbing a running meeting is the worse mistake);
+the explanation was not. Now the probe's failure is `None`, and the message says which of the
+two happened, in the same voice as the `unreadable` flag on the dashboard cards.
+
+Pinned by two tests in `tests/test_dikte_capture_contract.py` that assert both directions:
+a failed probe is *refused* but not blamed on the device, and a device that really cannot be
+shared still gets the original sentence.
+
+**And a bug avoided on the way**: naming the new handler's variable `exc` shadowed the
+enclosing handler's `exc`, which is the error the meeting row records — the probe's error
+would have been written where the pipeline's belongs. The type checker caught it before the
+tests did.
+
+## The other four
+
+- `meeting.py`: a transcript that cannot be read back is not the same answer as "there is
+  none" — the row is marked failed either way (the pipeline did fail), but this is why a
+  meeting can read "failed" while its transcript sits on disk. It prints now.
+- `worker.py`: recording that a job failed (for the jobs list's retry) itself failed and said
+  nothing, leaving a stale status behind a user who was told the job failed.
+- `cli.py` (two sites): `dikte config set` decided whether a custom cleanup prompt is set from
+  a value it could not read, which is how a failure switches a custom prompt off. An unread
+  value is now `None`, not `True`, and the flag is left exactly as the user had it.
+
 # VERIFICATION — T4.8's second slice, and the config that stopped the application
 
 ## The number
