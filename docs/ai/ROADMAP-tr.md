@@ -475,9 +475,9 @@ Her faz için pazarlıksız, `ai/workflows.md`'den devralınmış:
   korkulak şunlardır: `except` mandalı (`tests/test_except_ratchet.py` +
   `tools/except_audit.py`), i18n açık kümesi (`tools/i18n_gaps.py`), yüzey turu
   (`tools/shoot_ui.py --check`) ve Qt API sözleşmesi (`tests/test_qt_api_contract.py` —
-  ürünün andığı her `Qt.<ad>` koştuğu PyQt6'da var olmalı; `Qt.UniqueConnection`'ı
-  yakalayacak olan korkulak, ki o hata `settings_ui`'ye hiç çalışmamış bir
-  kaydedilmemiş-değişiklik korumasına mal oldu).
+  ürünün andığı her `Qt.<ad>` ve her `Q<Sınıf>.<ad>` koştuğu PyQt6'da var olmalı, takma adlı
+  import'lar dahil; `Qt.UniqueConnection`'ı yakalayacak olan korkulak, ki o hata
+  `settings_ui`'ye hiç çalışmamış bir kaydedilmemiş-değişiklik korumasına mal oldu).
 - Ekran turu yeniden alınır ve incelenir; varsayılmaz.
   - İki README sekiz kare gömüyor — ayar penceresinin sayfaları ve ilk-kurulum
     sihirbazı — ve bunlar **üretiliyor, elle yapılmıyor**:
