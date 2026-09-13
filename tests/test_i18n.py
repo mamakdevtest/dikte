@@ -211,6 +211,25 @@ class Table(unittest.TestCase):
                     self.assertTrue((REPO / path).is_file(), f"{path} no longer exists")
                     self.assertTrue(lineno.isdigit(), f"{site!r} has no line number")
 
+    def test_no_source_string_is_already_turkish(self):
+        """Source strings are English; the Turkish lives in the values.
+
+        A source written in Turkish is invisible to the gap guard above: the
+        guard asks whether an entry exists, and the entry did exist — as the
+        value of a key that was itself Turkish. The English window then showed
+        Turkish, and the Turkish window looked correct, so nothing complained.
+        `ui/pages/dashboard.py` shipped one subtitle that way until 2026-09-12.
+
+        The check is the letters: the Turkish alphabet has ı, İ, ş, ğ, ç, ö and
+        ü, and an English sentence has no business containing them.
+        """
+        turkish = set("ıİşŞğĞüÜöÖçÇ")
+        offenders = [key for key in i18n.TR if set(key) & turkish]
+        self.assertEqual([], offenders, (
+            "these keys are written in Turkish, so an English window shows "
+            "Turkish. Make the key English and move the Turkish into the "
+            f"value:\n  " + "\n  ".join(repr(k) for k in offenders)))
+
 
 class VoiceReliabilityParity(DikteTest):
     """Changed recovery/capture copy must not fall through to English in TR."""
