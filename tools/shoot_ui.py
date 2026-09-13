@@ -523,11 +523,25 @@ def main():
                 res.close()
 
                 live = LivePopup()
+                # Shown before it is fed: the card sizes itself from its text, and
+                # before the first layout pass there is no viewport to measure, so
+                # a hidden popup gets a size that is not the one it will have.
+                live.show()
+                app.processEvents()
                 live.set_text("merhaba dünya\nbu canlı önizleme metnidir\n"
                               "üçüncü satır burada")
+                app.processEvents()
                 shoot(app, live,
                       os.path.join(args.out, f"{tag}_live_collapsed.png"))
                 count += 1
+                # The expanded card exists for a transcript that has outgrown the
+                # compact one. With the card sized to its text, expanding three
+                # lines shows the same three lines — so the fixture needs enough
+                # words to reveal, or the frame documents a control that does
+                # nothing, which is the thing the sizing change was meant to stop.
+                live.set_text("\n".join(
+                    f"{i + 1}. satır: canlı önizleme metni buraya geliyor"
+                    for i in range(24)))
                 live.set_expanded(True)
                 shoot(app, live,
                       os.path.join(args.out, f"{tag}_live_expanded.png"))

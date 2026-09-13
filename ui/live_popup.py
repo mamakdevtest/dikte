@@ -19,11 +19,18 @@ except Exception:  # pragma: no cover - theme is always available in the app
     _theme = None
 
 WIDTH = 460
+# The card is as tall as the words in it (U6): a fixed height left three lines of
+# text sitting in four hundred pixels of empty card, which reads as a broken panel
+# rather than a quiet one. These two bounds only keep it sane — never a sliver, and
+# never taller than the compact cap until the reader asks for more. HEIGHT keeps
+# its name because it is still the height of a full compact card, and the size an
+# empty one is drawn at is MIN_HEIGHT.
+MIN_HEIGHT = 96
 HEIGHT = 260
 RADIUS = 14
-EXPAND_FACTOR = 1.8       # grown height target, in compact heights
-MAX_AREA_FRACTION = 0.6   # but never taller than this share of the screen
+MAX_AREA_FRACTION = 0.6   # the expanded card never exceeds this share of the screen
 NEAR_BOTTOM_SLACK = 8     # px from the bottom that still counts as "following"
+LIVE_FLOOR_PAD = 6        # breathing room under the last line
 
 
 def _palette():
@@ -58,7 +65,7 @@ class LivePopup(QWidget):
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.resize(WIDTH, HEIGHT)
+        self.resize(WIDTH, MIN_HEIGHT)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 34, 14, 12)
@@ -93,13 +100,31 @@ class LivePopup(QWidget):
         self._place_arrow()
 
     def _refresh_palette(self):
-        """Apply the current theme tone via QPalette (no frozen hex in QSS)."""
+        """Apply the current theme tone via QPalette and the arrow's own sheet.
+
+        The arrow takes its disabled colour from its stylesheet rather than the
+        palette: with the application sheet in play, Qt resolves a QToolButton's
+        text through QStyleSheetStyle, and a palette colour set on the widget is
+        simply not what gets drawn — the disabled arrow came out in the enabled
+        colour. The value is still taken from the live palette, so nothing is
+        frozen here; only the channel it travels on is different.
+        """
         try:
             p = _palette()
             fg = QColor(p.get("fg", "#E7F0EC"))
             fg3 = QColor(p.get("fg3", "#7C918A"))
         except Exception:
             return
+        self._arrow_fg, self._arrow_fg3 = fg, fg3
+        try:
+            self.arrow.setStyleSheet(
+                "QToolButton#live_popup_expand { background: transparent; "
+                "border: none; font-size: 12px; padding: 2px 8px; "
+                "border-radius: 6px; }\n"
+                "QToolButton#live_popup_expand:disabled "
+                f"{{ color: {fg3.name()}; }}")
+        except Exception:
+            pass
         try:
             pal = self.text.palette()
             pal.setColor(self.text.backgroundRole(), QColor(0, 0, 0, 0))
@@ -109,18 +134,6 @@ class LivePopup(QWidget):
             except Exception:
                 pass
             self.text.setPalette(pal)
-        except Exception:
-            pass
-        try:
-            apal = self.arrow.palette()
-            apal.setColor(apal.ColorRole.ButtonText, fg)
-            apal.setColor(apal.ColorRole.WindowText, fg)
-            self.arrow.setPalette(apal)
-        except Exception:
-            pass
-        try:
-            self.style().unpolish(self.arrow)
-            self.style().polish(self.arrow)
         except Exception:
             pass
 
@@ -139,6 +152,85 @@ class LivePopup(QWidget):
     def overlay_coordinator(self):
         return self._overlay_coordinator
 
+    def _chrome_height(self):
+        """Everything in the card that is not text.
+
+        Measured as the difference between the card and its text viewport, rather
+        than counted from the layout margins. With the application stylesheet
+        applied, the text area carries 8px of padding above and below that the
+        margins know nothing about — a margins-only estimate came up a whole line
+        short, so every card scrolled its last line out of sight.
+        """
+        viewport = self.text.viewport().height()
+        if viewport > 0:
+            return max(0, self.height() - viewport)
+        margins = self.layout().contentsMargins()
+        # Before the first layout pass there is no viewport to measure; the sheet
+        # gives text areas 8px above and below, which is exactly the part a
+        # margins-only estimate misses.
+        return margins.top() + margins.bottom() + 16
+
+    def _content_height(self):
+        """How tall the card has to be for the text it is holding.
+
+        Counted, not asked for. `QPlainTextEdit` lays its blocks out lazily:
+        `document().size()` answers with a block count rather than pixels, and
+        `blockBoundingRect` only knows about the blocks that have already been
+        drawn, so neither can be trusted for text that is scrolling. The height is
+        computed from the font metrics and the wrapped line count instead.
+        """
+        metrics = self.text.fontMetrics()
+        width = self.text.viewport().width()
+        if width <= 0:
+            # Before the first layout pass there is no viewport to measure.
+            margins = self.layout().contentsMargins()
+            width = max(1, WIDTH - margins.left() - margins.right())
+        lines = 0
+        block = self.text.document().begin()
+        while block.isValid():
+            advance = metrics.horizontalAdvance(block.text())
+            lines += max(1, -(-advance // width))    # ceil, without the import
+            block = block.next()
+        return int(max(1, lines) * max(1, metrics.lineSpacing())
+                   + 2 * self.text.document().documentMargin()
+                   + self._chrome_height() + LIVE_FLOOR_PAD)
+
+    def _expanded_cap(self):
+        area = self._screen_area()
+        if area is None:
+            return HEIGHT * 2
+        return int(area.height() * MAX_AREA_FRACTION)
+
+    def target_height(self):
+        """The height this card should be, given its text and its size state."""
+        needed = self._content_height()
+        cap = self._expanded_cap() if self._expanded else HEIGHT
+        # int() because the document margin is a float: Qt refuses a float height.
+        return int(max(MIN_HEIGHT, min(needed, cap)))
+
+    def _fit_height(self):
+        """Follow the text. Returns True when the height actually changed."""
+        target = self.target_height()
+        changed = target != self.height()
+        if changed:
+            self.resize(WIDTH, target)
+        self._update_arrow_availability()
+        return changed
+
+    def _update_arrow_availability(self):
+        """Offer the arrow only when there is more to reveal.
+
+        With the card sized to its text, a short transcript fits in both states, so
+        expanding would change nothing. A control that does nothing when pressed is
+        worse than one that is not offered.
+        """
+        more = max(MIN_HEIGHT, min(self._content_height(), self._expanded_cap())) \
+            > max(MIN_HEIGHT, min(self._content_height(), HEIGHT))
+        self.arrow.setEnabled(more)
+        if not more:
+            self.arrow.setToolTip("")
+            self.arrow.setAccessibleName("")
+
     def _place_arrow(self):
         self.arrow.resize(self.arrow.sizeHint())
         self.arrow.move(self.width() - self.arrow.width() - 8, 4)
@@ -152,10 +244,12 @@ class LivePopup(QWidget):
         self.set_expanded(not self._expanded)
 
     def set_expanded(self, expanded):
-        """Grow the card toward twice its height, or shrink it back.
+        """Give the card more room to show, or take it back.
 
-        The grown height is capped at a share of the screen's available
-        height, and the card is re-anchored so it stays fully on screen.
+        The height is the text's, in both states: expanding raises the cap rather
+        than forcing a size, so a long transcript gets the room it needs and a
+        short one does not grow a card full of nothing. The expanded cap is a share
+        of the screen, and the card is re-anchored afterwards so it stays on it.
         """
         expanded = bool(expanded)
         if expanded == self._expanded:
@@ -168,13 +262,7 @@ class LivePopup(QWidget):
             self.style().polish(self.arrow)
         except Exception:
             pass
-        if expanded:
-            area = self._screen_area()
-            cap = int(area.height() * MAX_AREA_FRACTION) if area is not None \
-                else int(HEIGHT * EXPAND_FACTOR)
-            self.resize(WIDTH, max(HEIGHT, min(int(HEIGHT * EXPAND_FACTOR), cap)))
-        else:
-            self.resize(WIDTH, HEIGHT)
+        self.resize(WIDTH, self.target_height())
         self.arrow.setText("▲" if expanded else "▼")
         self._apply_expanded_labels()
         self._reposition()
@@ -221,6 +309,11 @@ class LivePopup(QWidget):
         at_bottom = bar.value() >= bar.maximum() - NEAR_BOTTOM_SLACK
         held = bar.value()
         self.text.setPlainText(text)
+        # Fit before restoring the scroll: the fit decides how much of the
+        # document is visible, so it has to happen first or the position means
+        # something else by the time it is applied.
+        if self._fit_height():
+            self._reposition()
         if at_bottom:
             bar.setValue(bar.maximum())
         else:
