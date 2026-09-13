@@ -111,6 +111,76 @@ class TheFallbackSlot(unittest.TestCase):
         self.assertEqual(coordinator.FALLBACK_WIDTH, act.width())
 
 
+class TheWidgetsTellTheCoordinator(unittest.TestCase):
+    """The update trigger (T4.9): a card that resizes must reflow the stack.
+
+    The coordinator owns the geometry, but it cannot watch a widget resize itself, so
+    each overlay-family widget routes its own placement through
+    `coordinator.recompute_geometry()`. If one forgets, its neighbour keeps the old
+    position and the two cards overlap — and nothing raises. The pattern is already
+    copied three times by hand, so this runs each class rather than trusting the
+    fourth to be copied correctly.
+    """
+
+    class _Spy:
+        def __init__(self):
+            self.calls = 0
+
+        def recompute_geometry(self):
+            self.calls += 1
+            return []
+
+    def widget_classes(self):
+        return (overlay_module.Overlay, LivePopup, ResultOverlay)
+
+    def test_every_overlay_widget_hands_its_placement_to_the_coordinator(self):
+        for cls in self.widget_classes():
+            with self.subTest(widget=cls.__name__):
+                widget = cls()
+                self.addCleanup(widget.deleteLater)
+                spy = self._Spy()
+                widget.set_overlay_coordinator(spy)
+                widget._reposition()
+                self.assertEqual(1, spy.calls,
+                                 f"{cls.__name__} placed itself without telling the "
+                                 "coordinator, so the rest of the stack is stale")
+
+    def test_no_widget_places_itself_when_a_coordinator_is_managing_it(self):
+        """The coordinator must be the only authority once it is bound.
+
+        A widget that positions itself anyway is worse than one that forgets: it
+        fights the coordinator for the same corner and the last writer wins.
+        """
+        for cls in self.widget_classes():
+            with self.subTest(widget=cls.__name__):
+                widget = cls()
+                self.addCleanup(widget.deleteLater)
+                spy = self._Spy()
+                widget.set_overlay_coordinator(spy)
+                before = widget.pos()
+                widget._reposition()
+                self.assertEqual(before, widget.pos(),
+                                 f"{cls.__name__} moved itself while the coordinator "
+                                 "owns its placement")
+
+    def test_unbinding_gives_a_widget_its_own_placement_back(self):
+        """Retired views stay usable: a released widget places itself again.
+
+        `RetiredViewStaysUsable` covers the lifecycle; this is the other half of the
+        trigger — the coordinator must stop being the authority, not keep a reference
+        to a widget that has moved on.
+        """
+        widget = LivePopup()
+        self.addCleanup(widget.deleteLater)
+        spy = self._Spy()
+        widget.set_overlay_coordinator(spy)
+        widget.set_overlay_coordinator(None)
+        self.assertIsNone(widget._overlay_coordinator)
+        widget._reposition()
+        self.assertEqual(0, spy.calls, "a released widget still reported to the "
+                                       "coordinator it was released from")
+
+
 class DynamicActivityStack(unittest.TestCase):
     def activity(self, ident, order, widget):
         return Activity(id=ident, kind=ident, created_order=order,
