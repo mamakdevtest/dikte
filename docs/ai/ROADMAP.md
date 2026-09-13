@@ -86,7 +86,7 @@ Findings below are from the 60 captured frames, reviewed surface by surface.
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
 | X1 | S1 | **There is no distributable build for any platform.** Install is a source checkout plus a developer Python: `install.sh` writes shortcuts and expects `dikte` on `PATH`; `install.ps1` registers a Start-menu entry but still runs `pythonw dikte.py`. No `.exe`, `.dmg`/`.app`, AppImage or Flatpak. For a daily-driver utility this is the largest adoption blocker. | `install.sh`, `install.ps1`, no packaging config |
-| X2 | S1 | **The Linux overlay depends on XWayland.** `dikte.py:41` sets `QT_QPA_PLATFORM=xcb` so the indicator can be placed in a screen corner. On a Wayland-only session without XWayland the indicator cannot appear at all, and fractional scaling is unreliable through that path. | `dikte.py:41`, `README.md:236` |
+| X2 | S1 | **The Linux overlay depends on XWayland.** `dikte.py` sets `QT_QPA_PLATFORM=xcb` so the indicator can be placed in a screen corner; on a Wayland-only session without XWayland the indicator cannot be placed at all, and fractional scaling is unreliable through that path. **Closed as a documented, tested fallback on 2026-09-12:** the limitation stands (a layer-shell path needs a third-party module, which is a user decision, not an agent's), but the session that cannot place the window is now named rather than silent — `paste.indicator_platform()` returns `XCB` / `NATIVE` / `UNPLACED`, the Indicator page says so when it applies, the READMEs document it, and the import-time behaviour is tested in its own process. The cite in this row was `dikte.py:41`; the block had moved to 33–37. | `dikte.py:33-37`, `paste.py`, `README.md` |
 | X3 | S3 | **Corrected on 2026-09-12: this was largely wrong.** The shortcut field already picks its suggestion list per platform (`SHORTCUTS` / `WIN_SHORTCUTS` / `MAC_SHORTCUTS`, chosen by `hotkey.desktop_name()`), both shortcut defaults are empty so a fresh install shows no hint at all, and the KDE-only explanation is gated on `hotkey.shortcut_needs_restart()` with a separate macOS branch. The `Meta+A` the survey objected to came from `tools/shoot_ui.py`'s own fixture data, not from the product — **a screenshot harness manufactured a finding about the product.** What survives is L8: three superseded KDE-specific keys nothing asked for. | `settings_ui.py:127-141`, `hotkey.py:desktop_name`, `tools/shoot_ui.py:CHANGED` |
 | X4 | S2 | **Nothing builds or launches a frozen artifact on any OS.** CI runs the test suite on Linux, Windows **and macOS** (3.11–3.13; 3.14 added in Phase 0), so the macOS code paths are exercised — what no job does is produce or start a distributable build, which is why X1 stays open. | `.github/workflows/tests.yml` |
 | X5 | S2 | The suite's Windows-only code path has a history of being exercised on Linux (`ctypes.windll`); it is currently mocked away rather than run on Windows in CI. | `docs/ai/VERIFICATION.md` |
@@ -282,7 +282,7 @@ cannot carry button text at any size the design uses (N2), a style rule that
 matches nothing fails silently in two more ways (N3), and the tour was photographing
 only the top of every page (N4).
 
-### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 6 of 7 delivered*
+### Phase 3 — Surface-by-surface rebuild (10–14 d) — **done 2026-09-12, all 7 surfaces**
 
 Rebuild in this order — most-visible first, and each surface has its own
 verification frame from T0.5. Each finding is re-checked against the code and a
@@ -298,7 +298,7 @@ U10), and all three were written from the old screenshots.
 | 4 | **done** | Tray menu — icons, separators, toggle state | U12 re-checked claim by claim: 11 actions all carry an icon and `tests/test_icon_contracts.py` already guards those names; four separators group the menu into dictation / meetings / settings+restart / quit; state shows in the label, an icon accent and the tooltip, with PAUSED deliberately sharing RECORDING's label because pause is the overlay's button. The real defect was unreported: both ask tooltips named a fixed assistant — "recording for Claude", "talking to Claude" — under a `display_name(self.conf)` that already knew better, so Codex and local-model users were told the wrong program had the microphone. Fixed, with the choice moved into a testable `ask_tray_state()`. |
 | 5 | **done** | Dashboard (stat semantics, empty states) | U4's three claims: the History recovery card held **and was worse** — it rendered in every state, an empty list box and a dead Retry button in the page's best space (fixed: it hides when nothing is retryable); the Indicator page never centring its empty state held (fixed: it sits between two stretches); the dashboard's empty chart card could **not** be supported — the two chart cards share a row and the right-hand one holds a real donut, and the empty one centres its own "No data yet". The tour now seeds a retryable job, so the card is photographed both ways instead of only as an empty box. |
 | 6 | **done** | The nine settings pages | Two of the four claims did not survive measurement: **U5** (controls "do not share an edge") — they are right-aligned by design, so the right edges do share one line and the left edges vary by width, and the 976 px "overflow" is the page width without a scrollbar; **U9** (the five-way editing level is cramped) — each segment is 132×34. **U3** is closed by numbers: the muted tier is 6.06–6.67:1, a disabled button 5.54–6.06:1 and an enabled one 12.67–13.26:1, so disabled and enabled differ by 2.2× and both pass AA. **U2**'s hierarchy was already closed in Phase 2 (Save is `primary`); measuring the footer found what the audit had not — Save sat 3–4 px below Prompts on every page, because its height was declared twice (`setFixedHeight(CONTROL[...])` in `btn()` against the sheet's `min-height` + padding, so the pin silently lost). Fixed, and the T2.4 guard tightened: it only caught *literal* heights, so a token passed; the sheet is now the only place a control's height may be fixed. |
-| 7 | next | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
+| 7 | **done** | Native Wayland indicator path, or a documented, tested fallback (X2) | X2's limitation is real and stays: a Wayland session with no XWayland cannot place the indicator, and a layer-shell path needs a third-party module that `AGENTS.md` does not allow without a user decision. What was missing was the other half of the row — an honest account of the session that cannot do it: the decision is now `paste.indicator_platform()` (`XCB` / `NATIVE` / `UNPLACED`), `dikte.py` asks it before Qt loads, the Indicator page says so when it applies, and the READMEs document the fallback. Verified in its own process, because at test time the platform is already chosen |
 
 **Verification:** every captured frame reviewed against the locked direction;
 the golden-image manifest updated deliberately in each commit, never blindly.
@@ -714,6 +714,52 @@ not a literal. That is a miss of mine, and the guard now says what it meant: the
 is the only place a control's height is fixed. Containers may still cap their own (a
 140 px chart, a 110 px list) — a control is not a container, which is why only
 `setFixedHeight` counts.
+
+### 2026-09-12 — Phase 3, surface 7 (the Wayland indicator) and the phase closed
+
+| File | Change |
+|---|---|
+| `paste.py` | `indicator_platform()` owns the decision, beside `desktop()` which reads the same session: `XCB` (Wayland with XWayland — the documented path), `NATIVE` (X11, Windows, macOS) and `UNPLACED` (Wayland without XWayland). Qt-free on purpose: `dikte.py` consults it before Qt loads |
+| `dikte.py` | asks `paste.indicator_platform()` instead of keeping a private copy of the condition |
+| `ui/pages/overlay.py` | the Indicator page — where the corner is chosen, and the page that says "there is nothing to configure here" — says so when the session is `UNPLACED` |
+| `README.md`, `README.tr.md` | the fallback is documented, not just the XWayland path |
+| `tests/test_paste.py` | the three answers, the two OS cases, "read every time", and the import-time behaviour **in its own process** (at test time the platform is already chosen) |
+| `tests/test_empty_states.py` | the page says it when it applies, and stays quiet when it does not |
+
+X2 asked for a native path *or* a documented, tested fallback. The native path is
+blocked on a third-party module (layer-shell) that `AGENTS.md` does not allow without
+your decision, so this is the fallback half — and it is the half that was actually
+missing: the limitation was documented nowhere and the app said nothing.
+
+```
+wayland + DISPLAY      QT_QPA_PLATFORM=xcb    (XWayland can place the window)
+wayland, no DISPLAY    QT_QPA_PLATFORM unset  (Qt starts; the compositor decides)
+x11 / nothing said     QT_QPA_PLATFORM unset
+```
+
+### Phase 3 closed
+
+All seven surfaces. What the phase found, in one place:
+
+| Surface | The audit said | What measuring found |
+|---|---|---|
+| 1 the pill | 3 defects | 1 real (the three controls had **no name in any form**); the drag complaint contradicted `i18n.py:887`, which tells the user the indicator cannot be dragged |
+| 2 live card | 2 | 1 real, 1 stale — and fixing it exposed **two defects nobody had reported**: the card was a line short of its own text, and the disabled arrow drew in the enabled colour |
+| 3 thinking panel | 2 | 1 true and worse (the activity cue was an empty QLabel repainted every 33 ms); the other unsupportable. Reading the file found **two more**: the panel had no i18n at all, and showing it reset the interface language (N7) |
+| 4 tray menu | 3 | all three held; the defect was the one nobody reported — both tooltips named a **fixed** assistant |
+| 5 empty states | 3 | 2 real (one worse than reported), 1 unsupportable |
+| 6 settings pages | 4 | 1 real and unreported (the footer's Save sat 3–4 px below Prompts — a control height declared twice), 1 already closed by Phase 2, 2 unsupportable |
+| 7 Wayland | 1 | real, and the missing half was the honest fallback |
+
+The pattern is worth stating plainly, because it held for the whole phase: **the
+audit's claims about *what is on the screen* were mostly good, and its claims about
+*what is absent* were mostly wrong** — five of them (X3, `Promtlar`, U10's drag
+affordance, U6's empty state, U11's radius comparison) came from reading a screenshot
+of a state that happened to be populated. Meanwhile every defect that measurement and
+reading the file turned up — the unnamed controls, the missing line, the disabled
+colour, the empty spinner, the missing i18n, the language reset, the fixed assistant
+name, the always-rendered recovery card, the doubled height declaration — had been
+reported by nobody at all.
 
 ### Corrections made to this document while executing it
 

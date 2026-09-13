@@ -86,7 +86,7 @@ Aşağıdaki bulgular alınan 60 kareden, yüzey yüzey incelenerek çıkarıld�
 | # | Önem | Bulgu | Kanıt |
 |---|---|---|---|
 | X1 | S1 | **Hiçbir platform için dağıtılabilir bir yapı yok.** Kurulum, kaynak kopyası + geliştirici Python'u gerektiriyor: `install.sh` kısayol yazıyor ve `dikte`'nin `PATH`'te olmasını bekliyor; `install.ps1` Başlat menüsü girdisi ekliyor ama yine `pythonw dikte.py` çalıştırıyor. `.exe`, `.dmg`/`.app`, AppImage veya Flatpak yok. Günlük kullanılan bir araç için bu, benimsemedeki en büyük engel. | `install.sh`, `install.ps1`, paketleme yapılandırması yok |
-| X2 | S1 | **Linux tarafındaki overlay XWayland'e bağımlı.** `dikte.py:41` göstergeyi ekran köşesine yerleştirebilmek için `QT_QPA_PLATFORM=xcb` ayarlıyor. Yalnızca Wayland çalışan, XWayland'siz bir oturumda gösterge hiç görünemez; kesirli ölçekleme de bu yolda güvenilir değil. | `dikte.py:41`, `README.md:236` |
+| X2 | S1 | **Linux tarafındaki overlay XWayland'e bağımlı.** `dikte.py` göstergeyi ekran köşesine yerleştirebilmek için `QT_QPA_PLATFORM=xcb` ayarlıyor; yalnızca Wayland çalışan, XWayland'siz bir oturumda gösterge hiç yerleştirilemiyor ve kesirli ölçekleme de bu yolda güvenilir değil. **2026-09-12'de belgelenmiş, test edilmiş yedek olarak kapatıldı:** sınır duruyor (layer-shell yolu üçüncü taraf modül gerektirir; bu ajanın değil kullanıcının kararı), ama pencereyi yerleştiremeyen oturum artık sessiz değil — `paste.indicator_platform()` `XCB` / `NATIVE` / `UNPLACED` döndürüyor, Gösterge sayfası geçerli olduğunda söylüyor, README'ler belgeliyor ve import anındaki davranış kendi sürecinde test ediliyor. Bu satırdaki atıf `dikte.py:41`'di; blok 33–37'ye kaymıştı. | `dikte.py:33-37`, `paste.py`, `README.md` |
 | X3 | S3 | **2026-09-12'de düzeltildi: bu bulgu büyük ölçüde yanlıştı.** Kısayol alanı zaten platforma göre öneri listesi seçiyor (`SHORTCUTS` / `WIN_SHORTCUTS` / `MAC_SHORTCUTS`, `hotkey.desktop_name()` ile), iki kısayol varsayılanı da boş yani yeni kurulumda hiç ipucu görünmüyor, ve KDE'ye özel açıklama `hotkey.shortcut_needs_restart()` ile koşullu, macOS için ayrı bir dal var. Taramanın itiraz ettiği `Meta+A`, ürünün değil `tools/shoot_ui.py`'nin kendi test verisinden geliyordu — **bir ekran görüntüsü aracı, ürün hakkında bir bulgu uydurdu.** Ayakta kalan tek şey L8: kimsenin sormadığı üç KDE'ye özel anahtar. | `settings_ui.py:127-141`, `hotkey.py:desktop_name`, `tools/shoot_ui.py:CHANGED` |
 | X4 | S2 | **Hiçbir işletim sisteminde donmuş bir yapı derlenmiyor veya başlatılmıyor.** CI test takımını Linux, Windows **ve macOS** üzerinde çalıştırıyor (3.11–3.13; 3.14 Faz 0'da eklendi), yani macOS kod yolları gerçekten koşuyor — hiçbir işin yapmadığı şey dağıtılabilir bir yapı üretmek veya başlatmak; X1'in açık kalmasının sebebi bu. | `.github/workflows/tests.yml` |
 | X5 | S2 | Takımın Windows'a özel kod yolu daha önce Linux'ta çalıştırılıyordu (`ctypes.windll`); şu an CI'da gerçekten koşturmak yerine mock'lanıyor. | `docs/ai/VERIFICATION.md` |
@@ -286,7 +286,7 @@ düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kural�
 daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
 fotoğraflıyordu (N4).
 
-### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 6'sı teslim edildi*
+### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — **bitti 2026-09-12, yedi yüzeyin hepsi**
 
 Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi
 var. Her bulgu, hiçbir şey değiştirilmeden önce koda ve güncel bir kareye karşı
@@ -302,7 +302,7 @@ ekran görüntülerinden yazılmıştı.
 | 4 | **bitti** | Tepsi menüsü — ikonlar, ayırıcılar, açık/kapalı durumu | U12 iddia iddia kontrol edildi: 11 aksiyonun hepsi ikon taşıyor ve `tests/test_icon_contracts.py` o adları zaten koruyor; dört ayırıcı menüyü dikte / toplantılar / ayarlar+yeniden başlat / çık olarak grupluyor; durum etikette, ikon vurgusunda ve tooltip'te görünüyor — PAUSED bilerek RECORDING etiketini paylaşıyor, çünkü duraklatma overlay'in düğmesi. Gerçek kusur bildirilmemişti: iki soru tooltip'i sabit bir ajan adı söylüyordu — "recording for Claude", "talking to Claude" — ve bu, doğrusunu zaten bilen bir `display_name(self.conf)`'un hemen altındaydı; yani Codex ve yerel model kullanıcılarına mikrofonu yanlış programın tuttuğu söyleniyordu. Düzeltildi; seçim test edilebilir bir `ask_tray_state()`'e taşındı. |
 | 5 | **bitti** | Kontrol paneli (istatistik anlamı, boş durumlar) | U4'ün üç iddiası: Geçmiş'teki kurtarma kartı tuttu **ve daha kötüydü** — her durumda çiziliyordu, sayfanın en iyi yerinde boş bir liste kutusu ve ölü bir Yeniden dene düğmesi (düzeltildi: kurtarılabilir bir şey yokken gizleniyor); Gösterge sayfasının boş durumunu hiç ortalamaması tuttu (düzeltildi: iki stretch arasında duruyor); kontrol panelinin boş grafik kartı **desteklenemedi** — iki grafik kartı bir satırı paylaşıyor ve sağdaki gerçek bir donut taşıyor, boş olan da kendi "Henüz veri yok"unu ortalıyor. Tur artık kurtarılabilir bir iş serpiyor, böylece kart yalnızca boş bir kutu olarak değil iki hâliyle de fotoğraflanıyor. |
 | 6 | **bitti** | Dokuz ayar sayfası | Dört iddiadan ikisi ölçümden sağ çıkmadı: **U5** (kontroller "bir kenarı paylaşmıyor") — kontroller tasarım gereği sağa hizalı, yani sağ kenarlar tek çizgiyi paylaşıyor ve sol kenarlar genişliğe göre değişiyor; 976 px'lik "taşma" ise kaydırma çubuğu yokken sayfanın genişliği; **U9** (5'li düzenleme seviyesi sıkışık) — her segment 132×34. **U3** sayılarla kapandı: soluk katman 6.06–6.67:1, pasif düğme 5.54–6.06:1, etkin düğme 12.67–13.26:1; yani pasif ile etkin 2.2 kat farklı ve ikisi de AA üstü. **U2**'nin hiyerarşisi Faz 2'de zaten kapanmıştı (Kaydet `primary`); footer'ı ölçmek taramanın görmediğini buldu — Kaydet her sayfada Promptlar'ın 3–4 px altındaydı, çünkü yüksekliği iki kez bildiriliyordu (`btn()` içinde `setFixedHeight(CONTROL[...])`, sheet'in `min-height` + dolgusuna karşı; sabitleme sessizce kaybediyordu). Düzeltildi ve T2.4 korkuluğu sıkılaştırıldı: yalnızca *literal* yükseklikleri yakalıyordu, token geçiyordu; artık bir kontrolün yüksekliğinin sabitlendiği tek yer sheet. |
-| 7 | sıradaki | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
+| 7 | **bitti** | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek (X2) | X2'nin sınırı gerçek ve kalıyor: XWayland'siz bir Wayland oturumu göstergeyi yerleştiremez ve layer-shell yolu, `AGENTS.md`'nin kullanıcı kararı olmadan izin vermediği üçüncü taraf bir modül gerektiriyor. Eksik olan, satırın diğer yarısıydı — bunu yapamayan oturumun dürüst hesabı: karar artık `paste.indicator_platform()` (`XCB` / `NATIVE` / `UNPLACED`), `dikte.py` Qt yüklenmeden önce ona soruyor, Gösterge sayfası geçerli olduğunda söylüyor ve README'ler yedeği belgeliyor. Kendi sürecinde doğrulandı, çünkü test anında platform çoktan seçilmiş oluyor |
 
 **Doğrulama:** alınan her kare kilitlenen yöne karşı incelenir; altın-görüntü
 manifestosu her commit'te bilinçli güncellenir, asla körlemesine değil.
@@ -719,6 +719,51 @@ oluyordu; token literal değil. Bu benim kaçırmamdı ve korkulak artık ne dem
 söylüyor: bir kontrolün yüksekliğinin sabitlendiği tek yer sheet. Konteynerler kendi
 yüksekliklerini sınırlayabilir (140 px'lik grafik, 110 px'lik liste) — kontrol konteyner
 değildir, bu yüzden yalnızca `setFixedHeight` sayılıyor.
+
+### 2026-09-12 — Faz 3, yüzey 7 (Wayland göstergesi) ve fazın kapanışı
+
+| Dosya | Değişiklik |
+|---|---|
+| `paste.py` | kararı `indicator_platform()` veriyor, aynı oturumu okuyan `desktop()`'ın yanında: `XCB` (XWayland'li Wayland — belgelenen yol), `NATIVE` (X11, Windows, macOS) ve `UNPLACED` (XWayland'siz Wayland). Bilerek Qt'siz: `dikte.py` ona Qt yüklenmeden önce danışıyor |
+| `dikte.py` | koşulun özel bir kopyasını tutmak yerine `paste.indicator_platform()`'a soruyor |
+| `ui/pages/overlay.py` | Gösterge sayfası — köşenin seçildiği ve "burada ayarlayacağın bir şey yok" diyen sayfa — oturum `UNPLACED` olduğunda bunu söylüyor |
+| `README.md`, `README.tr.md` | yalnızca XWayland yolu değil, yedek de belgeleniyor |
+| `tests/test_paste.py` | üç cevap, iki işletim sistemi durumu, "her seferinde okunur" ve import anındaki davranış **kendi sürecinde** (test anında platform çoktan seçilmiş oluyor) |
+| `tests/test_empty_states.py` | sayfa geçerli olduğunda söylüyor, olmadığında susuyor |
+
+X2 ya native bir yol ya da belgelenmiş, test edilmiş bir yedek istiyordu. Native yol,
+`AGENTS.md`'nin senin kararın olmadan izin vermediği üçüncü taraf bir modüle
+(layer-shell) takılıyor; yani bu, yedek yarısı — ve gerçekte eksik olan yarısıydı:
+sınır hiçbir yerde belgelenmiyordu ve uygulama hiçbir şey söylemiyordu.
+
+```
+wayland + DISPLAY      QT_QPA_PLATFORM=xcb    (XWayland pencereyi yerleştirebilir)
+wayland, DISPLAY yok   QT_QPA_PLATFORM unset  (Qt başlar; besteci karar verir)
+x11 / hiçbir şey demez QT_QPA_PLATFORM unset
+```
+
+### Faz 3 kapandı
+
+Yedi yüzeyin hepsi. Fazın buldukları, tek yerde:
+
+| Yüzey | Tarama ne dedi | Ölçüm ne buldu |
+|---|---|---|
+| 1 pil | 3 kusur | 1 gerçek (üç kontrolün **hiçbir biçimde adı yoktu**); sürükleme şikâyeti `i18n.py:887` ile çelişiyor — orası kullanıcıya göstergenin sürüklenemeyeceğini söylüyor |
+| 2 canlı kart | 2 | 1 gerçek, 1 eskimiş — ve düzeltmek **kimsenin bildirmediği iki kusuru** çıkardı: kart kendi metninden bir satır kısaydı ve pasif ok etkin renkte çiziliyordu |
+| 3 düşünme paneli | 2 | 1 doğru ve daha kötüsü (gösterge 33 ms'de bir yeniden boyanan boş bir QLabel'dı); diğeri desteklenemez. Dosyayı okumak **iki tane daha** buldu: panelin hiç i18n'i yoktu ve gösterilmesi arayüz dilini sıfırlıyordu (N7) |
+| 4 tepsi menüsü | 3 | üçü de tuttu; kusur kimsenin bildirmediğiydi — iki tooltip **sabit** bir ajan adı söylüyordu |
+| 5 boş durumlar | 3 | 2 gerçek (biri bildirilenden kötü), 1 desteklenemez |
+| 6 ayar sayfaları | 4 | 1 gerçek ve bildirilmemiş (footer'da Kaydet Promptlar'ın 3–4 px altındaydı — iki kez bildirilen kontrol yüksekliği), 1 zaten Faz 2'de kapanmış, 2 desteklenemez |
+| 7 Wayland | 1 | gerçek, ve eksik yarısı dürüst yedekti |
+
+Deseni açıkça yazmakta fayda var, çünkü bütün faz boyunca geçerli oldu: **taramanın
+*ekranda olan* hakkındaki iddiaları çoğunlukla iyiydi, *olmayan* hakkındaki iddiaları
+çoğunlukla yanlıştı** — beşi (X3, `Promtlar`, U10'un sürükleme beklentisi, U6'nın boş
+durumu, U11'in yarıçap karşılaştırması) dolu olan bir durumun ekran görüntüsünü
+okumaktan geldi. Buna karşılık ölçümün ve dosyayı okumanın ortaya çıkardığı her kusuru
+— adsız kontroller, eksik satır, pasif renk, boş spinner, eksik i18n, dil sıfırlaması,
+sabit ajan adı, her durumda çizilen kurtarma kartı, ikiye katlanmış yükseklik
+bildirimi — **kimse bildirmemişti.**
 
 ### Bu belgede uygulama sırasında düzeltilenler
 
