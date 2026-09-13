@@ -1034,9 +1034,24 @@ class Config:
             # Runs while the retired gateways' keys exist only in `stored`:
             # the filter above has dropped them from self.data already.
             self._migrate_retired_gateways(stored)
+        elif stored is not None:
+            # A file holding a list or a number: `"key" in stored` raises on those, and the
+            # handler that used to catch it only knew how to keep going, not what to say.
+            print(f"dikte: the settings file holds {type(stored).__name__}, not an object, so "
+                  f"the defaults are used", file=sys.stderr)
+            stored = None
         self.data["overlay_corner"] = _CORNER_MIGRATION.get(
             self.data["overlay_corner"], self.data["overlay_corner"]
         )
+        # A hand-edited or fork-written file can hold a number, a list or a dict where the
+        # rest of this method expects text, and `.strip()` on an int took the whole
+        # application down at startup: a settings file that cannot be loaded is worse than a
+        # setting that is ignored, so the value is replaced and the replacement is said.
+        for key in ("cleanup_prompt", "file_cleanup_prompt"):
+            if not isinstance(self.data.get(key), str):
+                print(f"dikte: {key} in the settings file is not text, so it is ignored and "
+                      f"the default takes its place", file=sys.stderr)
+                self.data[key] = ""
         stored_prompt = self.data["cleanup_prompt"].strip()
         if stored_prompt and _fingerprint(stored_prompt) in LEGACY_PROMPTS:
             self.data["cleanup_prompt"] = ""
@@ -1045,21 +1060,22 @@ class Config:
             self.data["file_cleanup_prompt"] = ""
         # Opt-in migration: an existing custom string means the user already
         # opted in; otherwise the flag stays off and defaults run.
-        try:
-            if "cleanup_custom_enabled" not in (stored or {}):
-                has_custom = bool(self.data.get("cleanup_prompt", "").strip()
-                                  or self.data.get("file_cleanup_prompt", "").strip())
-                self.data["cleanup_custom_enabled"] = bool(has_custom)
-            else:
-                self.data["cleanup_custom_enabled"] = bool(
-                    self.data.get("cleanup_custom_enabled", False))
-        except Exception:
+        # No handler here: `stored` is an object or None by now, and both prompts are text,
+        # so nothing in this branch can raise (the try that used to wrap it could only keep
+        # going in silence — the burn-down's job is to make that claim true instead).
+        if "cleanup_custom_enabled" not in (stored or {}):
+            has_custom = bool(self.data.get("cleanup_prompt", "").strip()
+                              or self.data.get("file_cleanup_prompt", "").strip())
+            self.data["cleanup_custom_enabled"] = bool(has_custom)
+        else:
             self.data["cleanup_custom_enabled"] = bool(
                 self.data.get("cleanup_custom_enabled", False))
         # Clamp the sole AI editing policy and coerce booleans.
         try:
             self.data["ai_edit_level"] = max(1, min(5, int(self.data.get("ai_edit_level", 3))))
-        except Exception:
+        except Exception as exc:
+            print(f"dikte: ai_edit_level was not a number, so the default is used ({exc})",
+                  file=sys.stderr)
             self.data["ai_edit_level"] = 3
         # Legacy files may carry the former independent shortening slider. It
         # has no runtime representation and is omitted on the next save.

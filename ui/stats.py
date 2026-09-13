@@ -55,12 +55,13 @@ def history_stats(limit=200):
     for r in rows:
         ts = _parse_ts(r.get("ts", ""))
         if ts:
-            try:
-                d = datetime.strptime(ts, "%Y-%m-%d").date()
-                if (today - d).days < 7 and (today - d).days >= 0:
-                    last_7d += 1
-            except Exception:
-                pass
+            # `_parse_ts` hands back either a date string it has already verified or None,
+            # so the defensive handler that used to sit here could never fire. Deleting it
+            # is the burn-down: an untestable claim is not a guard (see the `_parse_ts`
+            # contract test).
+            d = datetime.strptime(ts, "%Y-%m-%d").date()
+            if (today - d).days < 7 and (today - d).days >= 0:
+                last_7d += 1
         prov = (r.get("provider") or r.get("transcribe_provider") or "unknown").strip() or "unknown"
         # normalize empty
         if not prov:
@@ -107,12 +108,10 @@ def meetings_stats():
             pass
         ts = _parse_ts(r.get("ts", ""))
         if ts:
-            try:
-                d = datetime.strptime(ts, "%Y-%m-%d").date()
-                if (today - d).days < 30 and (today - d).days >= 0:
-                    last_30d += 1
-            except Exception:
-                pass
+            # Same contract, same deletion: `_parse_ts` verified it before returning it.
+            d = datetime.strptime(ts, "%Y-%m-%d").date()
+            if (today - d).days < 30 and (today - d).days >= 0:
+                last_30d += 1
     return {
         "total": total,
         "by_status": dict(by_status),

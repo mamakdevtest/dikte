@@ -12,6 +12,22 @@ from ui import stats
 
 
 class StatsTests(DikteTest):
+    def test_the_date_parser_promises_a_date_or_nothing(self):
+        """What makes the dashboard's counts safe without a defensive handler each.
+
+        `history_stats` and `meetings_stats` parse whatever `_parse_ts` hands back without a
+        try of their own: the handlers that used to sit there could never fire, because
+        `_parse_ts` verifies the string before returning it. This pins that promise — every
+        value it returns is a date, and every value it cannot read becomes None.
+        """
+        for value in ("2026-09-13 10:00:00", "2026-09-13T10:00:00", "2026-09-13",
+                      "2026-09-13 10:00:00.123456", "2026-09-13zzz", "2026-13-45",
+                      "not a date at all", "", None, 42, "13.09.2026", ["2026-09-13"]):
+            got = stats._parse_ts(value)
+            if got is None:
+                continue
+            datetime.datetime.strptime(got, "%Y-%m-%d")  # raises if the promise is broken
+
     def test_empty_history(self):
         self.assertEqual(stats.history_stats(limit=200)["total"], 0)
         self.assertEqual(stats.provider_usage(), {})

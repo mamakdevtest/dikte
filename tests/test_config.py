@@ -6,6 +6,8 @@ setting stored under its Turkish name, a prompt that used to be copied into the
 config and now shadows the default.
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -23,6 +25,45 @@ from tests.support import DikteTest
 
 
 class Loading(DikteTest):
+    def test_a_setting_that_cannot_be_read_is_repaired_out_loud(self):
+        """A repair at load changes what the user asked for, so it is not done in silence.
+
+        Both handlers below replace a stored value with a default. That is the right call,
+        and it is the one thing the user should hear about: afterwards their setting is not
+        what the file says.
+        """
+        self.write_config({"ai_edit_level": "abc", "cleanup_prompt": 1234})
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            conf = cfg.Config()
+        self.assertEqual(3, conf["ai_edit_level"])
+        self.assertFalse(conf["cleanup_custom_enabled"])
+        self.assertIn("ai_edit_level was not a number", err.getvalue())
+        self.assertIn("cleanup_prompt in the settings file is not text", err.getvalue())
+
+    def test_a_settings_file_that_is_not_an_object_says_so(self):
+        """The other half of the same story: `"key" in stored` raises on a list or a number."""
+        cfg.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        cfg.CONFIG_FILE.write_text("[1, 2]", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            conf = cfg.Config()
+        self.assertEqual(cfg.DEFAULTS["cleanup_model"], conf["cleanup_model"])
+        self.assertIn("holds list, not an object", err.getvalue())
+
+    def test_a_prompt_that_is_not_text_does_not_stop_the_application(self):
+        """Found by the burn-down's own test: this used to raise out of `load()`.
+
+        A number, a list or a dict in `cleanup_prompt` reached `.strip()` and took the whole
+        application down at startup — no window, no explanation, nothing to do about it. A
+        settings file that cannot be loaded is worse than a setting that is ignored.
+        """
+        for value in (1234, [1, 2], {"a": 1}, True):
+            self.write_config({"cleanup_prompt": value, "file_cleanup_prompt": value})
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                conf = cfg.Config()
+            self.assertEqual("", conf["cleanup_prompt"])
+            self.assertEqual("", conf["file_cleanup_prompt"])
+            self.assertIn("is not text, so it is ignored", err.getvalue())
+
     def test_nothing_stored_yet(self):
         conf = cfg.Config()
         self.assertEqual(conf["cleanup_model"], cfg.DEFAULTS["cleanup_model"])

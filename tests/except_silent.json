@@ -3,13 +3,13 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 284,
+  "count": 279,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
     "assistant.py:_ask_opencode_go._watch_abort": 1,
     "assistant.py:_ask_plain_http._watch_abort": 1,
-    "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 2,
+    "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 1,
     "chunked_session.py:ChunkedLiveRecorder._pump": 1,
     "chunked_session.py:ChunkedLiveRecorder.stop": 2,
     "cli.py:<module>": 1,
@@ -19,7 +19,6 @@
     "config.py:Config._clamped_ai_levels": 1,
     "config.py:Config._clamped_edit_level": 1,
     "config.py:Config.cleanup_prompt": 1,
-    "config.py:Config.load": 2,
     "dikte.py:<module>": 1,
     "dikte.py:Dikte.__init__": 3,
     "dikte.py:Dikte._apply_settings": 3,
@@ -169,8 +168,8 @@
     "ui/shell.py:AppShell.set_theme": 1,
     "ui/shell.py:_t": 1,
     "ui/stats.py:_parse_ts": 1,
-    "ui/stats.py:history_stats": 2,
-    "ui/stats.py:meetings_stats": 2,
+    "ui/stats.py:history_stats": 1,
+    "ui/stats.py:meetings_stats": 1,
     "ui/theme.py:_chevron_disabled_path": 2,
     "ui/theme.py:_chevron_path": 3,
     "ui/thinking.py:Spinner.paintEvent": 1,
@@ -197,7 +196,6 @@
       "worker that is gone": 1
     },
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": {
-      "value of the wrong shape": 1,
       "worker that is gone": 1
     },
     "chunked_session.py:ChunkedLiveRecorder._pump": {
@@ -227,9 +225,6 @@
     },
     "config.py:Config.cleanup_prompt": {
       "value of the wrong shape": 1
-    },
-    "config.py:Config.load": {
-      "value of the wrong shape": 2
     },
     "dikte.py:<module>": {
       "optional widget": 1
@@ -718,10 +713,10 @@
       "value of the wrong shape": 1
     },
     "ui/stats.py:history_stats": {
-      "value of the wrong shape": 2
+      "value of the wrong shape": 1
     },
     "ui/stats.py:meetings_stats": {
-      "value of the wrong shape": 2
+      "value of the wrong shape": 1
     },
     "ui/theme.py:_chevron_disabled_path": {
       "optional import": 2

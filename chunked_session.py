@@ -21,6 +21,7 @@ This module is intentionally small and does not change existing
 """
 
 import os
+import sys
 import threading
 import time
 import tempfile
@@ -257,8 +258,11 @@ class ChunkedLiveRecorder(QObject):
                 # still persist raw failure marker so gap is visible
                 try:
                     self._append_persist(index, "", f"[chunk {index} failed: {exc}]", start_off, error=str(exc))
-                except Exception:
-                    pass
+                except Exception as marker_exc:
+                    # The marker is what makes a gap in the transcript visible; if even that
+                    # cannot be written, the gap exists nowhere but this line.
+                    print(f"dikte: chunk {index} failed and the gap could not be recorded "
+                          f"({marker_exc})", file=sys.stderr)
             finally:
                 if wav_path:
                     try:
