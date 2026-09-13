@@ -834,3 +834,70 @@ class ReadyToRun(DikteTest):
         self.assertEqual(ggml.whisper.settings()["threads"], 4)
         self.assertFalse(ggml.whisper.settings()["gpu"])
         self.assertEqual(ggml.llm.settings()["context"], 4096)
+
+
+class MeddlingDict(dict):
+    """A dict that gains a key *while* it is being walked.
+
+    That is what a worker thread writing one setting looks like from inside the
+    encoder's loop: the walk is already under way when the shape changes, which is
+    the case CPython refuses. No thread and no timing involved, so the test says the
+    same thing on every machine — and it did refuse, before `save()` snapshotted:
+
+        File "json/encoder.py", line 361, in _iterencode_dict
+        RuntimeError: dictionary changed size during iteration
+    """
+
+    lateness = "added while the file was being written"
+
+    def items(self):
+        view = super().items()
+
+        def walk():
+            for index, pair in enumerate(view):
+                if index == 1 and "late_key" not in self:
+                    # the worker thread gets its turn here, mid-walk
+                    dict.__setitem__(self, "late_key", self.lateness)
+                yield pair
+
+        return walk()
+
+
+class ASaveDuringAWrite(DikteTest):
+    """The `Config.data` read race (docs/ai/ROADMAP.md T4.9).
+
+    The file was never at risk — `save()` writes a temporary file and replaces it
+    atomically — but the *save* was: the settings the user just changed were not
+    written at all, and the failure surfaced as "Could not save the settings".
+    """
+
+    def test_a_key_written_mid_save_does_not_lose_the_save(self):
+        conf = cfg.Config()
+        conf["max_seconds"] = 90
+        conf.data = MeddlingDict(conf.data)
+
+        conf.save()
+
+        written = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(90, written["max_seconds"],
+                         "the save must land even if the dict changed under it")
+
+    def test_two_saves_in_a_row_agree(self):
+        """Nothing about the file may depend on how many times it was opened."""
+        conf = cfg.Config()
+        conf["max_seconds"] = 45
+        conf.data = MeddlingDict(conf.data)
+        conf.save()
+        first = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8"))
+        conf.save()
+        second = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(first["max_seconds"], second["max_seconds"])
+        self.assertEqual(45, second["max_seconds"])
+
+    def test_a_failed_write_leaves_no_temporary_file_behind(self):
+        """The other half of the same promise: a failed save is not a half a file."""
+        conf = cfg.Config()
+        conf["max_seconds"] = 60
+        conf.save()
+        tmp = cfg.CONFIG_FILE.with_suffix(".json.tmp")
+        self.assertFalse(tmp.exists(), "a stray temporary file is a stray second config")

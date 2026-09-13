@@ -1103,10 +1103,16 @@ class Config:
     def save(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         tmp = CONFIG_FILE.with_suffix(".json.tmp")
+        # Snapshot before opening anything: `json.dump` walks the dict with the pure
+        # Python encoder (it is called with `indent`), and a worker thread writing one
+        # setting during that walk raises "dictionary changed size during iteration" —
+        # which loses the save. The file was never at risk, because of the temporary
+        # file and the atomic replace below; the save was. T4.9 names this race.
+        payload = dict(self.data)
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(self.data, fh, ensure_ascii=False, indent=2)
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
         except BaseException:
             try:
                 os.unlink(tmp)
