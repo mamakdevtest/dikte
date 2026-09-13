@@ -286,7 +286,7 @@ düğme metnini taşıyamıyor (N2); hiçbir şeyle eşleşmeyen bir stil kural�
 daha sessizce başarısız oluyor (N3); ve tur her sayfanın yalnızca üstünü
 fotoğraflıyordu (N4).
 
-### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 3'ü teslim edildi*
+### Faz 3 — Yüzey yüzey yeniden inşa (10–14 g) — *sürüyor: 7'nin 4'ü teslim edildi*
 
 Bu sırayla — en görünür önce ve her yüzeyin T0.5'ten gelen kendi doğrulama karesi
 var. Her bulgu, hiçbir şey değiştirilmeden önce koda ve güncel bir kareye karşı
@@ -299,8 +299,8 @@ ekran görüntülerinden yazılmıştı.
 | 1 | **bitti** | Kayıt pili + duraklatılmış/meşgul/uyarı/hata durumları | U10 iddia iddia kontrol edildi: zamanlayıcı kayıt bağlamını **taşıyor** (kırmızı nokta, zamanlayıcı ve Duraklat/Durdur tek bir kontrol olarak okunuyor), Duraklat ile Durdur **sıkışık değil**, ve "sürükleme tutamacı yok" belgelenmiş davranışa aykırı — `i18n.py:887` kullanıcıya göstergenin "sürüklenemez" olduğunu söylüyor ve onu Ayarlar köşeye göre yerleştiriyor. Tek gerçek kusur, canlı-yazı düğmesi ile Duraklat ve Durdur'un **hiçbir biçimde adı olmamasıydı**: pil tek bir elle çizilen widget ve yalnızca toplantı anahtarı hiç tooltip ya da erişilebilir açıklama kurmuştu. Düzeltildi; yeni bölge-adı sözleşmesi, bölge adı olmadan eklenen bir `_hover_*` bayrağında kırmızı oluyor. U11'in meşgul-pil karşılaştırması sıradaki yüzeyin işi, çünkü iki kareyi birden gerektiriyor. |
 | 2 | **bitti** | Sonuç overlay'i + canlı popup (içeriğe göre boyutlanma, boş durum) | U6'nın ilk yarısı tuttu — kart gerçekten 260 px sabit bir kutu ve içinde üç satır vardı — ve düzeltildi: artık metni kadar uzun, üç satır için 124 px; genişletilmiş hâli 24 satırlık bir transkripti 460×460'ta taşıyor. İkinci yarısı eskimişti: "boş durum yok" iddiası, metin alanının baştan beri taşıdığı placeholder'dan önceye ait. Kartı doğru boyutlandırmak, sabit yüksekliğin arkasına saklanmış iki kusuru ortaya çıkardı: kart her zaman kendi metninden bir satır kısaydı (uygulama stil sayfasının metin alanlarına verdiği 8 px dolgu, yalnızca kenar boşluklarından yapılan bir sayıma görünmez, bu yüzden son satır kartın hâlâ yeri varken kayıp gidiyordu) ve pasif genişletme oku etkin renginde çiziliyordu (Qt bir QToolButton'ın metnini QStyleSheetStyle üzerinden çözdüğü için palet rengi oraya ulaşmıyor). İkisi de düzeltildi ve korkuluk altında. |
 | 3 | **bitti** | Düşünme paneli — pille aynı görsel aile | U11'in ilk yarısı doğru ve bildirilenden kötüydü (hareket göstergesi çizecek bir şeyi olmayan bir QLabel'dı — N6b), ikinci yarısı desteklenemez (referans bir ayarlar referansı, gösterge hakkında hiçbir şey söylemiyor). Dosyayı okumak ayrıca panelin hiç i18n'i olmadığını ve gösterilmesinin arayüz dilini sıfırladığını (N7) buldu. |
-| 4 | sıradaki | Tepsi menüsü — ikonlar, ayırıcılar, açık/kapalı durumu | U12 |
-| 5 | | Kontrol paneli (istatistik anlamı, boş durumlar) | U4 |
+| 4 | **bitti** | Tepsi menüsü — ikonlar, ayırıcılar, açık/kapalı durumu | U12 iddia iddia kontrol edildi: 11 aksiyonun hepsi ikon taşıyor ve `tests/test_icon_contracts.py` o adları zaten koruyor; dört ayırıcı menüyü dikte / toplantılar / ayarlar+yeniden başlat / çık olarak grupluyor; durum etikette, ikon vurgusunda ve tooltip'te görünüyor — PAUSED bilerek RECORDING etiketini paylaşıyor, çünkü duraklatma overlay'in düğmesi. Gerçek kusur bildirilmemişti: iki soru tooltip'i sabit bir ajan adı söylüyordu — "recording for Claude", "talking to Claude" — ve bu, doğrusunu zaten bilen bir `display_name(self.conf)`'un hemen altındaydı; yani Codex ve yerel model kullanıcılarına mikrofonu yanlış programın tuttuğu söyleniyordu. Düzeltildi; seçim test edilebilir bir `ask_tray_state()`'e taşındı. |
+| 5 | sıradaki | Kontrol paneli (istatistik anlamı, boş durumlar) | U4 |
 | 6 | | Dokuz ayar sayfası | U2–U5, U9 |
 | 7 | | Native Wayland gösterge yolu ya da belgelenmiş, test edilmiş yedek | X2 |
 
@@ -649,6 +649,30 @@ Kontrol ederken bulunan, ikisi de bildirilmemiş iki kusur:
 Tur da panele artık İngilizce aşama literali vermiyor, böylece Türkçe kare bir Türkçe
 kullanıcının gördüğünü gösteriyor.
 
+### 2026-09-12 — Faz 3, yüzey 4 (tepsi menüsü)
+
+| Dosya | Değişiklik |
+|---|---|
+| `dikte.py` | `ask_tray_state(state, agent)` — ajanın mikrofonu tuttuğu sırada tepsi için (ikon, tooltip) seçimi. İki tooltip de sabit bir ajan yerine yapılandırılmış olanı adıyla söylüyor |
+| `i18n.py` | `"Dikte: recording for {name}"` ve `"Dikte: talking to {name}"`, kaynak dizisine "Claude" gömülü iki girdinin yerini aldı |
+| `tests/test_tray_menu.py` | tooltip yapılandırılmış olanı adıyla söylüyor (beş sağlayıcı), duraklatılmış ajan duraklatıldığını söylüyor, çalışan ajan çalışma ikonunu taşıyor, iki durum aynı ipucunu paylaşmıyor ve tooltipler ad korunarak çevriliyor |
+
+Bu dosya, menünün kendi içeriği için daha önce hiç teste sahip değildi — `tests/test_tray_menu.py`
+toplantı zaman damgalarını ve ipucu boyamasını kapsıyordu, menüyü değil.
+
+U12, iddia iddia:
+
+| U12 iddiası | Karar |
+|---|---|
+| ikonlar | 11 aksiyon, her birine bir ikon verilmiş; `tests/test_icon_contracts.py` ikon setinde olmayan bir adda zaten kırmızı oluyor |
+| ayırıcılar | 4 tane; menüyü dikte / toplantılar / ayarlar+yeniden başlat / çık olarak grupluyor |
+| açık/kapalı durumu | var ve katmanlı: etiket ("Start recording" → "Stop and transcribe" → "Working…"), ikon vurgusu (kaydederken yeşil kayıt noktası, ajan çalışırken kırmızı durdur, kayıp gidecek bir kayıt varken kırmızı çöp) ve tooltip. PAUSED bilerek RECORDING etiketini paylaşıyor — `dikte.py` duraklatmanın overlay'in düğmesi olduğunu ve ana anahtarın durdur olarak kaldığını söylüyor — yani menü ikisini ayırmıyor, tooltip ayırıyor. Kontrol edildi, dokunulmadı |
+| **kimsenin bildirmediği kusur** | iki soru tooltip'i **sabit** bir ajan söylüyordu: "Dikte: recording for Claude", "Dikte: talking to Claude"; bu, doğrusunu zaten hesaplamış ve üstte aksiyon etiketlerinde kullanılan bir `agent = assistant.display_name(self.conf)`'un iki satır altındaydı. Codex, Antigravity ya da yerel model kullanıcısına mikrofonu yanlış programın tuttuğu söyleniyordu. Türkçe girdiler adı sessizce bırakmıştı — "Dikte: ajan için kaydediyor" — ipucu da bu |
+
+Doğrulanamayan: menünün masaüstü tepsisinde çizildiği hali. Turda tepsi yok ve
+`QSystemTrayIcon`'un offscreen'de bağlanacağı bir şey yok; yani menünün boyaması ile
+içeriği ayrı ayrı kapsanıyor ama hiç birlikte değil.
+
 ### Bu belgede uygulama sırasında düzeltilenler
 
 Kaydediliyor, çünkü sessizce kendini düzelten bir plan, nerede yanıldığını
@@ -764,6 +788,17 @@ gösterenden daha kötüdür:
   `Config`'in serbestçe (boyama yollarında bile) kurulduğu bir kod tabanında onun bütün
   çağıranlarına dokunur. Not düşüldü ki dile duyarlı bir test yazan bir sonraki kişi bir
   saatini buna harcamasın.
+
+- **"`t()`'ye hiç ulaşmayan diziler" için statik bir denetim burada çalışmıyor ve ilk
+  çıktısı 182 yanlış pozitifti.** Tepsi tooltipleri çevrilmemiş literal gibi görünüyordu ve
+  değildi: çıkış noktası `self.tray.setToolTip(t(tip))`, yani `tip`'e atanan bir literal
+  orada çevriliyor. Tarama 182 dizi işaretledi; hepsi gezinme etiketleri, sağlayıcı adları,
+  köşe adları gibi **tablo girdileri** ve `t(<değişken>)` üzerinden ulaşılıyor — literal
+  taraması bunu takip edemiyor. Kayda değer, çünkü cazibe hiç bozuk olmayan 182 diziyi
+  "düzeltmek"ti; ve dürüst alternatif zaten var, maliyeti de az: yüzeyi iki dilde kur ve
+  gösterdiğini etiket etiket karşılaştır. Düşünme panelinin çevrilmemiş literallerini
+  yakalayan buydu ve tablo dolaylamasını, değişkene atamayı, statik taramanın göremediği
+  her şeyi yakalıyor.
 
 Faz 1 sırasında:
 

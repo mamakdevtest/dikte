@@ -282,7 +282,7 @@ cannot carry button text at any size the design uses (N2), a style rule that
 matches nothing fails silently in two more ways (N3), and the tour was photographing
 only the top of every page (N4).
 
-### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 3 of 7 delivered*
+### Phase 3 — Surface-by-surface rebuild (10–14 d) — *in progress: 4 of 7 delivered*
 
 Rebuild in this order — most-visible first, and each surface has its own
 verification frame from T0.5. Each finding is re-checked against the code and a
@@ -295,8 +295,8 @@ U10), and all three were written from the old screenshots.
 | 1 | **done** | Recording pill + paused/busy/warning/error states | U10 re-checked claim by claim: the timer *does* carry recording context (red dot, timer, Pause/Stop read as one control), Pause and Stop are *not* cramped, and the "missing drag affordance" contradicts documented behaviour — `i18n.py:887` tells the user the indicator "sürüklenemez", and Settings places it by corner. The one real defect was that the live-transcript button, Pause and Stop had **no name in any form**: the pill is a single custom-painted widget, only the meeting toggle ever set a tooltip or accessible description. Fixed, and the new region-name contract fails when a `_hover_*` flag is added without one. U11's busy-pill comparison is the next surface's job, since it needs both frames. |
 | 2 | **done** | Result overlay + live popup (content-sizing, empty state) | U6's first half held — the card really was a fixed 260 px box with three lines in it — and is fixed: it is now as tall as its text, 124 px for three lines, with the expanded state carrying a 24-line transcript at 460×460. Its second half was stale: the "no empty state" claim predates the placeholder the text area has always had. Sizing the card properly then exposed two defects that were hiding behind the fixed height: the card was a line short of its own text (the application stylesheet's 8 px padding on text areas was invisible to a margins-only count, so the last line scrolled out of sight while the card still had room), and the disabled expand arrow drew in the enabled colour (a palette colour does not reach a QToolButton whose text Qt resolves through QStyleSheetStyle). Both fixed and guarded. |
 | 3 | **done** | Thinking panel — same visual family as the pill | U11: first half true and worse than reported (the activity cue was a QLabel with nothing to draw — see N6b), second half unsupportable (the reference is a settings reference and says nothing about the indicator). Reading the file also found that the panel had no i18n at all and that showing it resets the interface language (N7). |
-| 4 | next | Tray menu — icons, separators, toggle state | U12 |
-| 5 | | Dashboard (stat semantics, empty states) | U4 |
+| 4 | **done** | Tray menu — icons, separators, toggle state | U12 re-checked claim by claim: 11 actions all carry an icon and `tests/test_icon_contracts.py` already guards those names; four separators group the menu into dictation / meetings / settings+restart / quit; state shows in the label, an icon accent and the tooltip, with PAUSED deliberately sharing RECORDING's label because pause is the overlay's button. The real defect was unreported: both ask tooltips named a fixed assistant — "recording for Claude", "talking to Claude" — under a `display_name(self.conf)` that already knew better, so Codex and local-model users were told the wrong program had the microphone. Fixed, with the choice moved into a testable `ask_tray_state()`. |
+| 5 | next | Dashboard (stat semantics, empty states) | U4 |
 | 6 | | The nine settings pages | U2–U5, U9 |
 | 7 | | Native Wayland indicator path, or a documented, tested fallback (X2) | X2 |
 
@@ -645,6 +645,30 @@ Two defects found while checking it, neither of them reported:
 The tour also stops handing the panel an English stage literal, so the Turkish frame
 shows what a Turkish user sees.
 
+### 2026-09-12 — Phase 3, surface 4 (the tray menu)
+
+| File | Change |
+|---|---|
+| `dikte.py` | `ask_tray_state(state, agent)` — the (icon, tooltip) choice for the tray while the assistant has the microphone. Both tooltips name the configured assistant instead of a fixed one |
+| `i18n.py` | `"Dikte: recording for {name}"` and `"Dikte: talking to {name}"` replace the two entries that had "Claude" baked into the source string |
+| `tests/test_tray_menu.py` | the tooltip names whoever is configured (five providers), a paused assistant says paused, a working one wears the working icon, the two states do not share a cue, and the tooltips are translated with the name intact |
+
+The tray menu had no test of its own contents before this — `tests/test_tray_menu.py`
+covered the meeting timestamps and the hint painting, not the menu.
+
+U12, claim by claim:
+
+| U12 claim | Verdict |
+|---|---|
+| icons | 11 actions, each given an icon; `tests/test_icon_contracts.py` already fails on a name the icon set does not have |
+| separators | 4, grouping the menu as dictation / meetings / settings+restart / quit |
+| toggle state | present and layered: the label ("Start recording" → "Stop and transcribe" → "Working…"), an icon accent (green record dot while capturing, red stop while the agent runs, red discard while a recording stands to be lost) and the tooltip. PAUSED deliberately shares RECORDING's label — `dikte.py` says pause is the overlay's button and the main toggle stays stop — so the menu does not separate them and the tooltip does. Checked, left alone |
+| **the defect nobody reported** | both ask tooltips named a **fixed** assistant: "Dikte: recording for Claude", "Dikte: talking to Claude", two lines under an `agent = assistant.display_name(self.conf)` that had already worked out the right one and was being used for the action labels above them. A Codex, Antigravity or local-model user was told the wrong program had their microphone. The Turkish entries had quietly dropped the name — "Dikte: ajan için kaydediyor" — which is the tell |
+
+What could not be verified: the menu as a desktop tray draws it. The tour has no tray and
+`QSystemTrayIcon` has nothing to attach to offscreen, so the menu's painting and its
+contents are covered separately but never together.
+
 ### Corrections made to this document while executing it
 
 Recorded because a plan that quietly edits itself is worse than one that shows
@@ -758,6 +782,17 @@ where it was wrong:
   that actually change the language, and that touches every caller of `Config` in a codebase
   where `Config` is constructed freely, including on paint paths. Recorded so that the next
   person who writes a language-sensitive test does not spend an hour on it.
+
+- **A static check for "strings that never reach `t()`" cannot work here, and its first
+  output was 182 false positives.** The tray tooltips looked like untranslated literals and
+  were not: the sink is `self.tray.setToolTip(t(tip))`, so a literal assigned to `tip` is
+  translated there. The scan flagged 182 strings that are all *table entries* — navigation
+  labels, provider names, corner names — reached through `t(<variable>)`, which a literal
+  scan cannot follow. It is worth recording because the temptation was to "fix" 182 strings
+  that were never broken, and because the honest alternative already exists and costs little:
+  build the surface in two languages and compare what it shows, one label at a time. That is
+  what caught the thinking panel's untranslated literals, and it catches table indirection,
+  variable assignment, and anything else the static scan cannot see.
 
 And during Phase 1:
 
