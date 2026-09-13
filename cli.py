@@ -55,7 +55,7 @@ NOT_RUNNING = 3
 
 # Verbs that start the application when none is running, which is what the KDE
 # shortcut has always relied on: press the key on a fresh login and Dikte comes
-GUI_VERBS = {"", "settings", "dashboard", "toggle", "ask", "meeting"}
+GUI_VERBS = {"", "settings", "dashboard", "setup", "toggle", "ask", "meeting"}
 
 # Asking a process that is not there to stop, cancel or quit is not a failure;
 # it is already in the state that was asked for.
@@ -1360,6 +1360,7 @@ def build_parser():
     leaf(subs, "status", "what it is doing right now").set_defaults(func=cmd_status)
     for name, help_text in (("dashboard", "open the dashboard"),
                             ("settings", "open the dashboard (alias)"),
+                            ("setup", "set it up: microphone, engine, one real dictation"),
                             ("restart", "reload the running instance"),
                             ("quit", "shut it down")):
         leaf(subs, name, help_text).set_defaults(func=cmd_plain)

@@ -80,8 +80,22 @@ class StatusChip(QFrame):
         layout.setSpacing(5)
         if self.dot:
             layout.addWidget(self.dot)
-        label = QLabel(text)
-        layout.addWidget(label)
+        self.label = QLabel(text)
+        layout.addWidget(self.label)
+
+    def text(self):
+        return self.label.text()
+
+    def setText(self, text):
+        """A chip whose state cannot change is a decoration (see ui/welcome.py)."""
+        self.label.setText(text)
+
+    def setVariant(self, variant):
+        """chip-sage / chip-tan / chip-red … — re-polished, or the sheet never sees it."""
+        self.setProperty("chip", variant)
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
 
 
 class InfoNote(QLabel):

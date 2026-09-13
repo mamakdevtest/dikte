@@ -792,6 +792,12 @@ da senin soracağın soruya verilecek bir yanıt yok.
 DEFAULTS = {
     "ui_theme": "dark",              # light | dark
     "ui_language": "auto",          # auto | tr | en
+    # First run (see ui/welcome.py). Two flags, because "asked once" and "finished" are
+    # different facts: `setup_offered` is written the first time the wizard is shown, so a
+    # skipped or abandoned wizard does not return on every launch, and `setup_done` is
+    # written only when the user walks it to the end.
+    "setup_offered": False,
+    "setup_done": False,
     # User-created OpenAI-compatible gateways; the built-ins stay in their
     # flat <name>_api_key / <name>_base_url settings. See providers.py.
     "providers": [],

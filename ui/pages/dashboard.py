@@ -201,6 +201,12 @@ def _quick_actions(window, outer):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.clicked.connect(_make_handler(window, slot_name))
             actions.addWidget(b)
+        setup = QPushButton(t("Set up"))
+        setup.setProperty("variant", "ghost")
+        setup.setToolTip(t("Microphone, engine, and one real dictation."))
+        setup.setCursor(Qt.CursorShape.PointingHandCursor)
+        setup.clicked.connect(_make_handler(window, "open_setup"))
+        actions.addWidget(setup)
         actions.addStretch(1)
         outer.addLayout(actions)
     except Exception:

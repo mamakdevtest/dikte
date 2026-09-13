@@ -777,6 +777,7 @@ class Dikte:
                 "meeting-cancel": self.cancel_meeting,
                 "settings": self.open_dashboard,
                 "dashboard": self.open_dashboard,
+                "setup": self.open_setup,
                 "reload": self.reload_settings,
                 "restart": self.restart,
                 "quit": self.app.quit,
@@ -1745,6 +1746,54 @@ class Dikte:
         self.dashboard_window.show()
         self.dashboard_window.raise_()
         self.dashboard_window.activateWindow()
+        self._offer_setup()
+
+    def _offer_setup(self):
+        """The first run meets the wizard once — and only once.
+
+        `setup_offered` is written when the wizard is shown (in `open_setup`, so every door
+        to it counts): a user who closes it, or whose machine restarts mid-wizard, should
+        not be asked again on every start. It stays reachable — the dashboard has a button
+        for it, and `dikte setup` asks the running instance to bring it back.
+        """
+        try:
+            if self.conf.get("setup_offered"):
+                return
+        except Exception as exc:
+            # An unreadable flag is a reason to skip offering, not to offer every launch:
+            # the wizard is one button away either way.
+            print(f"dikte: could not read whether setup was offered ({exc})", file=sys.stderr)
+            return
+        self.open_setup()
+
+    def open_setup(self):
+        """Open the first-run wizard: microphone, engine, and one real dictation."""
+        self.conf.data["setup_offered"] = True
+        try:
+            self.conf.save()
+        except Exception as exc:
+            print(f"dikte: could not record that setup was offered ({exc})", file=sys.stderr)
+        try:
+            from ui.welcome import WelcomeWizard
+            wizard = WelcomeWizard(self.conf, parent=self.dashboard_window)
+            wizard.finished.connect(self._setup_closed)
+            # Kept on the instance because Qt collects a parentless dialog the moment the
+            # local name goes out of scope, and a wizard that vanishes is a bug.
+            self.setup_wizard = wizard
+            wizard.show()
+            wizard.raise_()
+            wizard.activateWindow()
+        except Exception as exc:
+            print(f"dikte: the setup wizard could not be opened ({exc})", file=sys.stderr)
+
+    def _setup_closed(self, result):
+        """Take up whatever the wizard changed, instead of waiting for a restart."""
+        print(f"dikte: setup {'finished' if result else 'closed'}", file=sys.stderr)
+        try:
+            self._apply_settings()
+        except Exception as exc:
+            print(f"dikte: the wizard's settings could not be applied yet ({exc})",
+                  file=sys.stderr)
 
     def _dashboard_closed(self, *_):
         QTimer.singleShot(0, lambda: setattr(self, "dashboard_window", None))
