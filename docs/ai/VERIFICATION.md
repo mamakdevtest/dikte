@@ -1,3 +1,25 @@
+# VERIFICATION — N9: the message has somewhere to go
+
+The frozen bundle started the way a desktop entry starts it — stdout and stderr to
+`/dev/null`, no terminal at all — in a sandbox:
+
+    log exists before: False
+    log exists while running: True
+    log size: 119
+    log contents: dikte: no terminal; writing to <sandbox>/data/dikte/dikte.log |
+                  dikte: no system tray found, running anyway
+
+That second line is the one that used to vanish. `dikte.keep_a_log()` tees both streams
+into `DATA_DIR/dikte.log` when there is no terminal (not only when frozen: `install.sh`'s
+desktop entry runs a checkout with the same problem), restarts the file past 1 MB, reports
+the path in its own first line, and `dikte doctor` prints it too. Six tests cover it — a
+terminal is left alone, a no-terminal process writes both places, the path is announced, a
+grown log is restarted, an unopenable path does not break the app, and a real subprocess
+with no tty ends up with the file — which is what `tests.test_reliability`'s count went
+from 2 to 8 for.
+
+---
+
 # VERIFICATION — Phase 5 begins: the frozen bundle (T5.1, T5.2)
 
 Date of record: 2026-09-13 (UTC+03) | Linux 7.2.2-1-cachyos, Python 3.14.7, PyQt6,

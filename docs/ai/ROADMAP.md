@@ -324,7 +324,7 @@ Close the pass that is already open, in its own dependency order:
 | **T4.5 ✅** | F1/R6 | History/Minutes recovery details, explicit deletion, retry UX — *verified, and the recovery card was fixed in Phase 3 surface 5 (it rendered in every state, including when there was nothing to recover)* |
 | **T4.6 ✅** | F1/R7 | Editing-level migration completion + EN/TR parity — *verified: the retired slider survives only in the `pop` that removes it, the untranslated set is empty, and Phase 3 closed the last parity gap (the thinking panel had no i18n at all)* |
 | **T4.7 ✅** | F1/R8 | Deterministic regression coverage for every defect above — *verified: the guards added in Phases 0–3, each proved red before it was trusted green* |
-| **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 26 report, 286 report nothing**, and every one of the 286 is now recorded **with a reason derived from its own guarded body**: 108 "optional widget", 62 "value of the wrong shape", 17 "presentation that may not resolve", 17 "view refreshed after the fact", 11 "worker that is gone", 10 "lookup that is not there", 8 "absent file or row", 3 "teardown that is already done", 2 "platform path not taken here" — and **48 `unclassified`, which are the sites still owing one and may only shrink**. The ratchet fails when a site's code no longer implies its recorded reason, when a reason is not a sanctioned one, and when the pending set grows. Two data-path slices are in (`config.py`'s locks, the dashboard's cards). What is left: the 48* |
+| **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 27 report, 285 report nothing**, and every one of the 285 is recorded **with a reason derived from its own guarded body**: 108 "optional widget", 61 "value of the wrong shape", 17 "presentation that may not resolve", 17 "view refreshed after the fact", 11 "worker that is gone", 10 "lookup that is not there", 8 "absent file or row", 3 "teardown that is already done", 2 "platform path not taken here" — and **48 `unclassified`, the sites still owing one, which may only shrink**. The ratchet fails when a site's code no longer implies its recorded reason, when a reason is not a sanctioned one, and when the pending set grows. **The counter's blind spot was widened twice, and the second time is worth recording**: it first counted a handler that reported through a *function* as silent (four `ui/stats.py` sites), then one that reported through a *method* (`dikte.py:Tee.write`) — so 286 → 285 is the counter, not work. What is left: the 38 pending sites* |
 | **T4.9 ◐** | F3 | `OverlayCoordinator.update` trigger; close the `Config.data` read race; decide on cross-process locking — *the trigger is verified by running all three overlay widgets against a spy coordinator; the read race is **reproduced and fixed** (`json.dump` walked the dict while a worker could add a key, and the save was lost — the file was never at risk); the locking decision is made below* |
 
 **Verification:** `docs/ai/TASKS.md` R1–R8 all `[x]`; a fresh reviewer on the
@@ -395,8 +395,8 @@ probe is a missing nicety.
 | T5.3 | Linux: AppImage + Flatpak (+ `.desktop`, icons, PipeWire/portal permissions) |
 | T5.4 | Windows: ship the frozen app through the existing `install.ps1`; optional portable zip |
 | T5.5 | macOS: `.app`/`.dmg`, signing + notarisation, `NSMicrophoneUsageDescription`, and an explicit Accessibility-permission flow — the hotkey path needs it and nothing documents it today |
-| T5.6 | A written, per-OS manual verification protocol (checklist) so a macOS/Windows claim has evidence behind it, not hope |
-| T5.7 | Add a macOS CI runner so the macOS code paths are executed at all |
+| **T5.6 ✅** | A written, per-OS manual verification protocol (checklist) so a macOS/Windows claim has evidence behind it, not hope — *`docs/ai/MANUAL-CHECKS.md` (+ its Turkish twin): twelve rows of gesture → expected observation → why automation cannot do it, and what to write down for each. Rows 1–10 were run on Linux against the frozen bundle; 3, 5, 7, 11 and 12 need a desktop session, a microphone or a package, and say so* |
+| **T5.7 ✅** | Add a macOS CI runner so the macOS code paths are executed at all — *already there in two places: `tests.yml`'s `test-macos` runs the full suite across 3.11–3.14, and `build.yml` builds and starts the frozen artifact on macOS. Both verdicts wait on a push* |
 
 **Verification:** a downloaded artifact from each OS starts, records, transcribes,
 pastes and quits; each run recorded in `docs/ai/VERIFICATION.md` with the OS and
@@ -418,8 +418,14 @@ version it was observed on.
   `PYTHONUNBUFFERED=1` did not change it, so a check that read the pipe waited for a line
   that only arrives when the process exits. It matters beyond the check: the bundle is
   started from a desktop entry with no terminal, so **anything the application prints on
-  failure goes nowhere the user can look**. That is packaging's problem to answer in T5.4–
-  T5.5 (a log file, or `dikte doctor` in the UI), and it is a reason `doctor` exists.
+  failure goes nowhere the user can look**. *Answered 2026-09-13:* `dikte.keep_a_log()`
+  tees stdout and stderr into `DATA_DIR/dikte.log` (one file, restarted when it passes
+  1 MB) whenever there is **no terminal** — not "when frozen", because `install.sh`'s
+  desktop entry runs a source checkout with the same problem — and `dikte doctor` reports
+  the path so it can be found. Proven on the frozen bundle started with stdout and stderr
+  going to `/dev/null`, exactly like a desktop entry: the log appeared with both lines in
+  it. The tee writes to the stream *and* the file, so a terminal user sees what they
+  always saw.
 
 ### Phase 6 — Product depth (optional, ranked)
 

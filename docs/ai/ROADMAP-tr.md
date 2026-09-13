@@ -327,7 +327,7 @@ Zaten açık olan turu kendi bağımlılık sırasıyla kapat:
 | **T4.5 ✅** | F1/R6 | Geçmiş/Tutanak kurtarma detayları, açık silme, yeniden deneme arayüzü — *doğrulandı; kurtarma kartı Faz 3 yüzey 5'te düzeltildi (kurtarılacak bir şey yokken de çiziliyordu)* |
 | **T4.6 ✅** | F1/R7 | Düzenleme seviyesi göçünün tamamlanması + EN/TR eşitliği — *doğrulandı: emekli kaydırıcı yalnızca onu silen `pop`'ta yaşıyor, çevrilmemiş küme boş, ve Faz 3 son eşitlik açığını kapattı (düşünme panelinin hiç i18n'i yoktu)* |
 | **T4.7 ✅** | F1/R8 | Yukarıdaki her kusur için deterministik regresyon kapsamı — *doğrulandı: Faz 0–3'te eklenen korkulaklar, her biri yeşile güvenilmeden önce kırmızı kanıtlandı* |
-| **T4.8 ◐** | F2 | `except Exception` listesini temizle: kalan her yer ya başarısızlığını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 26'sı bildiriyor, 286'sı hiçbir şey söylemiyor** ve bu 286'nın her biri artık **kendi korunan gövdesinden türetilmiş bir gerekçeyle** kayıtlı: 108 "opsiyonel widget", 62 "yanlış şekildeki değer", 17 "çözülemeyebilecek sunum", 17 "sonradan tazelenen görünüm", 11 "gitmiş worker", 10 "orada olmayan arama", 8 "gitmiş dosya ya da satır", 3 "zaten yapılmış söküm", 2 "burada izlenmeyen platform yolu" — ve **48 `unclassified`, yani hâlâ gerekçe borçlu olan ve yalnızca küçülebilecek olanlar**. Mandal; bir yerin kodu artık kayıtlı gerekçesini ima etmediğinde, bir gerekçe izinli kümeden olmadığında ve bekleyen küme büyüdüğünde kırmızı oluyor. Veri yolundan iki dilim indi (`config.py`'nin kilitleri, kontrol panelinin kartları). Kalan: o 48* |
+| **T4.8 ◐** | F2 | `except Exception` listesini temizle: kalan her yer ya başarısızlığını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 27'si bildiriyor, 285'i hiçbir şey söylemiyor** ve bu 285'in her biri **kendi korunan gövdesinden türetilmiş bir gerekçeyle** kayıtlı: 108 "opsiyonel widget", 61 "yanlış şekildeki değer", 17 "çözülemeyebilecek sunum", 17 "sonradan tazelenen görünüm", 11 "gitmiş worker", 10 "orada olmayan arama", 8 "gitmiş dosya ya da satır", 3 "zaten yapılmış söküm", 2 "burada izlenmeyen platform yolu" — ve **48 `unclassified`, yani gerekçe borçlu olan ve yalnızca küçülebilecek yerler**. Mandal; bir yerin kodu artık kayıtlı gerekçesini ima etmediğinde, bir gerekçe izinli kümeden olmadığında ve bekleyen küme büyüdüğünde kırmızı oluyor. **Sayacın kör noktası iki kez genişletildi ve ikincisi kayda değer**: önce raporlamayı bir *fonksiyona* devreden handler'ı sessiz saydı (`ui/stats.py`'de dört yer), sonra bir *metoda* devredeni (`dikte.py:Tee.write`) — yani 286 → 285 iş değil, sayaç. Kalan: 38 bekleyen yer* |
 | **T4.9 ◐** | F3 | `OverlayCoordinator.update` tetikleyicisi; `Config.data` okuma yarışını kapat; süreçler arası kilide karar ver — *tetikleyici, üç overlay widget'ı casus bir koordinatöre karşı koşturularak doğrulandı; okuma yarışı **yeniden üretildi ve düzeltildi** (`json.dump` sözlüğü dolaşırken bir worker anahtar ekleyebiliyordu ve kaydetme kayboluyordu — dosya hiç risk altında değildi); kilit kararı aşağıda verildi* |
 
 **Doğrulama:** `docs/ai/TASKS.md` R1–R8 işaretli; son diff üzerinde taze bir
@@ -397,8 +397,8 @@ söylenmiş bir yalandır, yutulan bir Qt öznitelik yoklaması ise eksik bir in
 | T5.3 | Linux: AppImage + Flatpak (+ `.desktop`, ikonlar, PipeWire/portal izinleri) |
 | T5.4 | Windows: donmuş uygulamayı mevcut `install.ps1` üzerinden dağıt; isteğe bağlı taşınabilir zip |
 | T5.5 | macOS: `.app`/`.dmg`, imzalama + notarization, `NSMicrophoneUsageDescription` ve açık bir Erişilebilirlik-izni akışı — kısayol yolu buna ihtiyaç duyuyor ve bugün hiçbir yerde yazılı değil |
-| T5.6 | İşletim sistemi başına yazılı, elle doğrulama protokolü (kontrol listesi); böylece bir macOS/Windows iddiasının arkasında umut değil kanıt olur |
-| T5.7 | macOS kod yollarının hiç değilse çalıştırılması için bir macOS CI koşucusu ekle |
+| T5.6 ✅ | İşletim sistemi başına yazılı, elle doğrulama protokolü (kontrol listesi); böylece bir macOS/Windows iddiasının arkasında umut değil kanıt olur — *`docs/ai/MANUAL-CHECKS.md` (+ Türkçe eşi): on iki satır, her biri jest → beklenen gözlem → otomasyonun neden yapamadığı ve neyin yazılacağı. 1–10. satırlar Linux'ta dondurulmuş pakete karşı koşuldu; 3, 5, 7, 11 ve 12 masaüstü oturumu, mikrofon ya da bir paket istiyor ve bunu söylüyor* |
+| T5.7 ✅ | macOS kod yollarının hiç değilse çalıştırılması için bir macOS CI koşucusu ekle — *zaten iki yerde var: `tests.yml`'in `test-macos` işi tam takımı 3.11–3.14'te koşuyor, `build.yml` de macOS'ta dondurulmuş paketi kurup başlatıyor. İki hüküm de push bekliyor* |
 
 **Doğrulama:** her işletim sisteminden indirilen bir yapı açılır, kaydeder,
 yazıya çevirir, yapıştırır ve kapanır; her koşu gözlemlendiği işletim sistemi ve
@@ -420,9 +420,14 @@ sürümüyle `docs/ai/VERIFICATION.md`'ye yazılır.
   bunu değiştirmedi; yani borudan okuyan bir kontrol, ancak süreç çıkarken gelen bir satırı
   bekledi. Önemi kontrolün ötesinde: paket, terminali olmayan bir masaüstü girdisinden
   başlatılıyor, dolayısıyla **uygulamanın başarısızlıkta bastığı her şey kullanıcının
-  bakabileceği bir yere gitmiyor**. Bu, paketlemenin T5.4–T5.5'te cevaplaması gereken bir
-  sorun (bir günlük dosyası ya da arayüzde `dikte doctor`) ve `doctor`'ın var olma
-  sebeplerinden biri.
+  bakabileceği bir yere gitmiyor**. *13.09.2026'da cevaplandı:* `dikte.keep_a_log()`,
+  **terminal yokken** stdout ve stderr'i `DATA_DIR/dikte.log`'a çift yazıyor (tek dosya,
+  1 MB'ı geçince baştan başlar) — "dondurulmuşsa" değil, çünkü `install.sh`'in masaüstü
+  girdisi kaynak bir depoyu aynı sorunla çalıştırıyor — ve `dikte doctor` yolu bildiriyor,
+  böylece bulunabiliyor. Dondurulmuş pakette, stdout ve stderr `/dev/null`'a giderken
+  (tam bir masaüstü girdisi gibi) kanıtlandı: günlük iki satırla birlikte belirdi. Çift
+  yazıcı hem akışa hem dosyaya yazıyor, yani terminalden başlatan kişi eskiden gördüğünü
+  görmeye devam ediyor.
 
 ### Faz 6 — Ürün derinliği (isteğe bağlı, sıralı)
 
