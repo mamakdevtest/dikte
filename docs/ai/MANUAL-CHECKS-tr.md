@@ -51,7 +51,8 @@ Bir adım başarısız olduysa, bastığı çıktıyla birlikte tabloda kalır �
   (X2) bir Wayland oturumu olduğunda buraya giren Linux'a özel bir satırdır.
 - **macOS**: hiçbir şey koşulmadı. `.app` paketi spec ile kuruluyor ve içinde mikrofon
   kullanım metni var (`NSMicrophoneUsageDescription`), ama hiçbir izin penceresi
-  görülmedi. İmzalama ve notarization başlamadı ve bir Apple Developer hesabı istiyor (Q4).
+  görülmedi. İmzalama ve notarization yapılmayacak (13.09.2026, kullanıcı kararı); yani imajı
+  üretmeyen bir makinede Gatekeeper'ın reddettiği şey, hedeflenen teslim.
 - **Windows**: hiçbir şey koşulmadı. T5.4 indi: `packaging/dikte.spec` `dikte.exe`'nin
   yanında konsolsuz bir `diktew.exe` ikizi üretiyor ve `install.ps1`, `dist\dikte\` içinde
   dondurulmuş bir paket varsa onu tercih ediyor (yorumlayıcı keşfini, sürüm kontrolünü ve

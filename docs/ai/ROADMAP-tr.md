@@ -1103,17 +1103,17 @@ gösterenden daha kötüdür:
   hiç ulaşmıyor). Ders N4'ün tersi: yanlış bir boy başka kusurları saklıyor, yani
   birini düzeltmek onun üzerinden çizilen her şeye yeniden bakmaya değer.
 
-- **N7 — bir ayar değerini okumak, arayüz dilini tüm sürece yeniden uyguluyor.**
-  `Config.__init__` sonunda `i18n.set_language(self.data["ui_language"])` çağırıyor, yani bir
-  `Config` *kurmak* okuma değil: global bir yan etki. `ThinkingPopup._reposition()`
-  `overlay_corner`'a bakmak için bir tane kuruyor; bu da paneli göstermenin, dili sessizce
-  kayıtlı olana sıfırladığı anlamına geliyor. Çalışan uygulamada görünürde yanlış bir şey
-  yok — kayıtlı dil ile uygulanan dil zaten aynı — ve tam da bu yüzden, bir test dili
-  kaydetmeden ayarlayıp panel göründüğü anda geri döndüğünü görene kadar fark edilmedi.
-  Bilerek düzeltilmedi: çözüm, çağrıyı dili gerçekten değiştiren iki yere taşımak ve bu,
-  `Config`'in serbestçe (boyama yollarında bile) kurulduğu bir kod tabanında onun bütün
-  çağıranlarına dokunur. Not düşüldü ki dile duyarlı bir test yazan bir sonraki kişi bir
-  saatini buna harcamasın.
+- **N7 — bir ayar değerini okumak, arayüz dilini tüm sürece yeniden uyguluyor.
+  Düzeltildi (13.09.2026).** `Config.__init__` sonunda
+  `i18n.set_language(self.data["ui_language"])` çağırıyor, yani bir `Config` *kurmak* okuma
+  değil: global bir yan etki. `ThinkingPopup._reposition()` `overlay_corner`'a bakmak için
+  bir tane kuruyordu. Bu not eskiden bunu "çalışan uygulamada zararsız, çünkü kayıtlı dil ile
+  uygulanan dil zaten aynı" diye geçiştiriyordu; değil: ayar penceresi açıkken seçilmiş ama
+  henüz kaydedilmemiş bir dil varken panelin görünmesi kayıtlı olanı geri koyuyor.
+  Düzeltme `Config`'e dokunmuyor — yan etkisine bütün çağıranlar (testler ve CLI dahil)
+  dayanıyor: panel, sürecin zaten tuttuğu `conf`'u alıyor ve köşeyi oradan okuyor.
+  `tests/test_thinking.py`'de iki test: biri koruma için, diğeri onu gerekli kılan
+  mekanizmayı çiviliyor — bir okuma dili uygulamayı bırakırsa ikincisi bunu söyler.
 
 - **"`t()`'ye hiç ulaşmayan diziler" için statik bir denetim burada çalışmıyor ve ilk
   çıktısı 182 yanlış pozitifti.** Tepsi tooltipleri çevrilmemiş literal gibi görünüyordu ve

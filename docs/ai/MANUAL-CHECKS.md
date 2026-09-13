@@ -51,8 +51,9 @@ which quietly edits itself is worse than one that shows where it was wrong.
   (X2) is a Linux-only row that belongs here once a Wayland session is available.
 - **macOS**: nothing has been run. The `.app` bundle is built by the spec and the
   microphone usage string is in it (`NSMicrophoneUsageDescription`), but no permission
-  dialog has ever been seen. Signing and notarisation are unstarted and need an Apple
-  Developer account (Q4).
+  dialog has ever been seen. Signing and notarisation are not pursued (2026-09-13,
+  the user's call), so the image Gatekeeper refuses on a machine that did not build it is
+  the intended deliverable.
 - **Windows**: nothing has been run. T5.4 is in: `packaging/dikte.spec` produces a
   console-less `diktew.exe` twin next to `dikte.exe`, and `install.ps1` prefers the frozen
   bundle in `dist\dikte\` when one is there (skipping the interpreter discovery, the version

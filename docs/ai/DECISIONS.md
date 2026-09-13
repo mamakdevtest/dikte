@@ -18,6 +18,22 @@
   terms and Dikte's now agree.
 - **Where it was written down** — `pyproject.toml:11`, `README.md:248`, `README.tr.md:239`.
 
+## macOS signing: not pursued (2026-09-13 — the user's call)
+
+- **Decision** — Apple Developer signing and notarisation are dropped from Phase 5. The macOS
+  deliverable stays what it is today: the `.app` that `packaging/dikte.spec` builds, packaged
+  by `packaging/build.py --dmg` into a disk image, mounted and inspected by the same CI job
+  that writes it.
+- **What it means for a user** — the image is real and installs, and Gatekeeper refuses it on
+  a machine that did not build it. Both READMEs say so, next to the per-flow steps.
+- **What is unaffected** — `NSMicrophoneUsageDescription` (T5.1), the Accessibility permission
+  flow the READMEs document, and the `.dmg` packaging all stay in. Only the purchase and the
+  credential handling leave the scope.
+- **Consequence for the gates** — the Apple Developer account stops being a blocker for
+  anything, and Q4 narrows to the Linux (AppImage/Flatpak) and Windows (installer and portable
+  zip) shapes.
+
+
 ## Reliability Remediation (2026-08-30)
 
 - **Activity ownership** — activities are per successful logical run, not
