@@ -100,6 +100,8 @@ Findings below are from the 60 captured frames, reviewed surface by surface.
 | H3 | S3 | `settings_ui.py` (3,239 lines) and `overlay.py` (2,086 lines) are at the size where every change carries collateral risk. | `wc -l` |
 | H4 | S2 | **One third of the swallowed failures sit in one file.** `settings_ui.py` holds **102 of the 313** broad handlers; `dikte.py` holds 41. The two monoliths are where the "honest failure UX" rule (§F2) is least enforceable, and they are also the two files every interface change has to touch. | `python tools/except_audit.py` |
 | H5 | S2 | **The dashboard page bypasses the shell's own page API.** `DashboardWindow.__init__` inserts its tab straight into the `QTabWidget` and then hand-builds the navigation button, reaching into `shell._nav_layout`, `shell._nav` and `shell._nav_titles` and rewiring every existing button's `clicked` signal. It duplicates `AppShell.add_page()` instead of calling it, which is why the page count cannot be derived from `add_page` calls alone and why the icon contract (T0.4) does not cover it. | `ui/app_window.py:23-53` |
+| H6 | S3 | **`ui/components.py` is dead code that shadows the live one.** It defines a `Button` and a `Dropdown` duplicating `ui/widgets.py`, and no source file, test or document imports it. Its `Button` was a copy of `btn()`'s height logic rather than a call to it, so it would have drifted from the rhythm unnoticed. Recorded rather than deleted: removing a module is its own reviewable change. | `grep -rn "components" --include=*.py .` finds nothing outside the file |
+| H7 | S3 | **Long copy is duplicated across five page modules.** The same help string appears twice each in `audiofile.py` (×3), `cleanup.py`, `general.py` and `history.py`. Most are almost certainly the two branches of an if/else rather than two live elements — but the `cleanup.py` one was rendering together, confirmed on a frame, and is fixed. The rest need judging against what actually renders, which is the surface pass. | a scan over `t("…")` literals longer than 40 chars per page module |
 
 ## 3. Technology decision
 
@@ -256,12 +258,12 @@ id, a provider id, a fixture's meeting title), not interface text.
 |---|---|---|
 | T2.1 | **done** | The documented warm direction is now the only one. `ui/tokens.py` carries a warm-stone `LIGHT` and a warm-charcoal `DARK` and nothing else. **The six saturated colour rooms are retired.** They were a charcoal base mixed with one accent each — which is why all six read as the same dark interface with a differently coloured button, and why the app never looked like the design it claimed to follow. `RETIRED_THEMES` keeps the names so `normalize()` can be explicit about what replaced them instead of pretending they are still themes. |
 | T2.2 | **done** | `light` and `dark` map to themselves; the light theme is reachable for the first time. The default moves from `blue` to `dark` (`config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py`). The picker offers the two themes and its swatches carry a selection ring in palette ink, so a light swatch on a light sidebar no longer dissolves. |
-| T2.3 | **colour half done** | Every text pairing measured, not estimated: `fg` 12.5–14.6:1, `fg2` 6.5–7.5:1, `fg3` 4.7–4.8:1, status colours 4.6–5.2:1 on the tint of themselves they are drawn on, filled button 14.5–16.6:1. `tests/test_theme.py` pins all of it as a contract, so a later palette edit cannot quietly undo it. **Still open:** the enabled / hover / focus / disabled distinctness review beyond buttons. |
-| T2.4 | open | Control-height and spacing rhythm (U5). |
-| T2.5 | open | Button hierarchy per page (U2) — *started*: the Save button is finally a primary action. |
+| T2.3 | **colour half done** | Every text pairing measured, not estimated: `fg` 12.2–12.7:1, `fg2` 7.5:1, `fg3` 5.5–5.6:1 at worst, status colours 4.6–6.5:1, filled button 14.5–17.0:1. `tests/test_theme.py` pins all of it as a contract, so a later palette edit cannot quietly undo it. **Still open:** the enabled / hover / focus / disabled distinctness review beyond buttons. |
+| T2.4 | **done** | The rhythm is declared once in `ui/tokens.py` (`CONTROL`, `ROW_HEIGHT`, `CELL`, `INDICATOR`) and nothing else picks its own height. Fields, combos, buttons, the segmented control and the sidebar rows all move to `CONTROL["md"]`, so a control and its neighbour line up by construction rather than by luck. Guarded: no literal `min-height` above 1px or `height` above 14px in the sheet, no `setFixedHeight` above 14 in code, both proven red before they were green. |
+| T2.5 | **mostly open** | Button hierarchy per page (U2) — *started*: the Save button is finally a primary action, and it is the only filled one. |
 | T2.6 | open | State coupling: a control whose master toggle is off is disabled (U8). |
 
-**Verification, as delivered:** `unittest discover` 1492 tests OK in 77 s;
+**Verification, as delivered:** `unittest discover` 1498 tests OK in 79 s;
 `tools/quick_tests.py` 1361 in 14 s; `shoot_ui.py --check` drawn 60 frames across
 2 themes × 1 language with the surface manifest intact; the two themes proven
 distinct by pixel, not by filename.
@@ -519,6 +521,32 @@ The canvas and sidebar pixel counts are identical across the two themes
 (20645 / 14204) — one layout, two palettes, which is the property the colour
 contract promised. The measured palette is now the one the design reference
 describes, and the two themes differ by SHA, not just by name.
+
+### 2026-09-12 — Phase 2, second delivery (T2.4, and the palette re-solved)
+
+| File | Change |
+|---|---|
+| `ui/tokens.py` | the palette deepened so the warmth and the planes read; `CONTROL` / `CONTROL_PAD` / `ROW_HEIGHT` / `ROW_PAD` / `CELL` / `INDICATOR`; `CHIP_TINT` / `NOTE_TINT` / `SAGE_CHIP_TINT` |
+| `ui/qss.py` | every control height taken from the rhythm; chip and note tints from the tokens; no bare colour left |
+| `ui/widgets.py`, `ui/components.py` | the five hardcoded button heights now read `CONTROL` |
+| `ui/shell.py` | the engine card is a `QFrame`, so `QFrame#card` actually styles it |
+| `ui/pages/cleanup.py`, `i18n.py` | the page subtitle no longer repeats the tab's help text |
+| `tests/test_style_contracts.py` | **new**: objectName/style matching, the exemption lists, and the control rhythm |
+| `tests/test_theme.py` | tier targets per tier, surface2 and field in the background set, line visibility, chip and note tints |
+
+Two measurements worth keeping:
+
+```
+engine card surface in the sidebar        before: 0 px        after: 19 371 px
+the tour, light vs dark, same surface     before: identical sha=4d78bde6b7f4
+                                          after:  light 4d78bde6…  dark f34094f4…
+```
+
+The card is the clearest one. "The status line is too faint" had been treated as a
+contrast problem through two palette revisions, and no palette can fix it, because
+there was no card: the widget was built as a `QWidget` while the sheet styles cards
+as `QFrame#card`, so Qt matched nothing and drew nothing. The text was not faint,
+it was sitting on the bare sidebar.
 
 ### Corrections made to this document while executing it
 

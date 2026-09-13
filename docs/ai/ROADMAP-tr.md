@@ -100,6 +100,8 @@ Aşağıdaki bulgular alınan 60 kareden, yüzey yüzey incelenerek çıkarıld�
 | H3 | S3 | `settings_ui.py` (3.239 satır) ve `overlay.py` (2.086 satır) her değişikliğin yan etki riski taşıdığı boyutta. | `wc -l` |
 | H4 | S2 | **Yutulan hataların üçte biri tek dosyada.** `settings_ui.py` **313 yerin 102'sini** barındırıyor; `dikte.py` 41. "Dürüst hata arayüzü" kuralının (§F2) en uygulanamaz olduğu yer bu iki monolit, üstelik her arayüz değişikliğinin dokunmak zorunda olduğu iki dosya da bunlar. | `python tools/except_audit.py` |
 | H5 | S2 | **Kontrol paneli sayfası kabuğun kendi sayfa API'sini atlıyor.** `DashboardWindow.__init__` sekmesini doğrudan `QTabWidget`'e ekliyor, sonra menü düğmesini elle kurup `shell._nav_layout`, `shell._nav` ve `shell._nav_titles` özel alanlarına uzanıyor ve var olan tüm düğmelerin `clicked` sinyalini yeniden bağlıyor. `AppShell.add_page()`'i çağırmak yerine onu kopyalıyor; sayfa sayısının yalnızca `add_page` çağrılarından türetilememesinin ve ikon sözleşmesinin (T0.4) onu kapsamamasının sebebi bu. | `ui/app_window.py:23-53` |
+| H6 | S3 | **`ui/components.py` ölü kod ve canlı olanı gölgeliyor.** `ui/widgets.py`'yi kopyalayan bir `Button` ve `Dropdown` tanımlıyor; hiçbir kaynak dosya, test ya da belge onu import etmiyor. `Button`'ı `btn()`'in yükseklik mantığının kopyasıydı, çağrısı değil — yani ritimden habersizce sapabilirdi. Silinmedi, kaydedildi: bir modülü kaldırmak kendi incelemesi olan ayrı bir değişiklik. | `grep -rn "components" --include=*.py .` dosyanın kendisi dışında hiçbir şey bulmuyor |
+| H7 | S3 | **Uzun metin beş sayfa modülünde kopyalanmış.** Aynı yardım metni `audiofile.py` (×3), `cleanup.py`, `general.py` ve `history.py`'de ikişer kez geçiyor. Çoğu neredeyse kesinlikle bir if/else'in iki dalı, iki canlı öğe değil — ama `cleanup.py`'deki birlikte çiziliyordu, kare üzerinde doğrulandı ve düzeltildi. Kalanlar gerçekte neyin çizildiğine göre yargılanmalı; o iş yüzey turunun. | her sayfa modülünde 40 karakterden uzun `t("…")` literalleri üzerinde bir tarama |
 
 ## 3. Teknoloji kararı
 
@@ -260,12 +262,12 @@ kimliği, bir sağlayıcı kimliği, fixture'ın kendi toplantı başlığı).
 |---|---|---|
 | T2.1 | **bitti** | Belgelenen sıcak yön artık tek yön. `ui/tokens.py` bir sıcak-taş `LIGHT` ve bir sıcak-kömür `DARK` taşıyor, başka hiçbir şey yok. **Altı doygun renk odası emekliye ayrıldı.** Her biri bir kömür tabanın tek bir vurguyla karışımıydı — altısının da "aynı koyu arayüz, farklı renkli düğme" olarak okunmasının ve uygulamanın takip ettiğini iddia ettiği tasarıma hiç benzememesinin sebebi buydu. `RETIRED_THEMES` adlarını saklıyor, böylece `normalize()` hâlâ tema sanmak yerine yerlerine ne geçtiğini açıkça söyleyebiliyor. |
 | T2.2 | **bitti** | `light` ve `dark` kendine eşleniyor; açık tema ilk kez erişilebilir. Varsayılan `blue`'dan `dark`'a taşındı (`config.py`, `settings_ui.py`, `dikte.py`, `ui/shell.py`). Seçici iki temayı sunuyor ve dairelerin seçim halkası paletin mürekkebinden geliyor; böylece açık bir daire açık kenar çubuğunda artık kaybolmuyor. |
-| T2.3 | **renk yarısı bitti** | Her metin eşleşmesi tahmin değil ölçüm: `fg` 12,5–14,6:1, `fg2` 6,5–7,5:1, `fg3` 4,7–4,8:1, durum renkleri üzerlerine çizildikleri kendi tonlarında 4,6–5,2:1, dolgulu düğme 14,5–16,6:1. `tests/test_theme.py` bunların hepsini sözleşme olarak sabitliyor, yani sonraki bir palet düzenlemesi sessizce geri alamaz. **Hâlâ açık:** düğmelerin ötesinde etkin / hover / odak / pasif ayrışma gözden geçirmesi. |
-| T2.4 | açık | Kontrol yüksekliği ve boşluk ritmi (U5). |
-| T2.5 | açık | Sayfa başına buton hiyerarşisi (U2) — *başlandı*: Kaydet düğmesi nihayet bir birincil eylem. |
+| T2.3 | **renk yarısı bitti** | Her metin eşleşmesi tahmin değil ölçüm: `fg` 12,2–12,7:1, `fg2` 7,5:1, `fg3` en kötü 5,5–5,6:1, durum renkleri 4,6–6,5:1, dolgulu düğme 14,5–17,0:1. `tests/test_theme.py` bunların hepsini sözleşme olarak sabitliyor, yani sonraki bir palet düzenlemesi sessizce geri alamaz. **Hâlâ açık:** düğmelerin ötesinde etkin / hover / odak / pasif ayrışma gözden geçirmesi. |
+| T2.4 | **bitti** | Ritim `ui/tokens.py`'de bir kez bildiriliyor (`CONTROL`, `ROW_HEIGHT`, `CELL`, `INDICATOR`) ve başka hiçbir yer kendi yüksekliğini seçemiyor. Alanlar, açılır kutular, düğmeler, segment kontrolü ve kenar çubuğu satırları `CONTROL["md"]`'ye taşındı; böylece bir kontrol ile komşusu şansa değil kuruluma göre hizalanıyor. Korkuluk altında: sheet'te 1px üstü literal `min-height`, 14px üstü literal `height` yok; kodda 14 üstü `setFixedHeight` yok — ikisi de yeşile dönmeden önce kırmızı kanıtlandı. |
+| T2.5 | **büyük ölçüde açık** | Sayfa başına buton hiyerarşisi (U2) — *başlandı*: Kaydet düğmesi nihayet bir birincil eylem ve tek dolgulu düğme o. |
 | T2.6 | açık | Durum bağlama: ana anahtarı kapalı bir kontrol devre dışı olur (U8). |
 
-**Teslim edildiği hâliyle doğrulama:** `unittest discover` 1492 test OK, 77 sn;
+**Teslim edildiği hâliyle doğrulama:** `unittest discover` 1498 test OK, 79 sn;
 `tools/quick_tests.py` 1361 test, 14 sn; `shoot_ui.py --check` 2 tema × 1 dil
 boyunca 60 kare çizdi ve yüzey manifestosu bozulmadı; iki temanın farklı olduğu
 dosya adıyla değil **pikselle** kanıtlandı.
@@ -523,6 +525,32 @@ Zemin ve kenar çubuğu piksel sayıları iki temada birebir aynı (20645 / 1420
 tek düzen, iki palet; renk sözleşmesinin vaat ettiği özellik tam da bu. Ölçülen
 palet artık tasarım referansının tarif ettiği palet ve iki tema adıyla değil
 SHA'sıyla ayrışıyor.
+
+### 2026-09-12 — Faz 2, ikinci teslim (T2.4 ve paletin yeniden çözülmesi)
+
+| Dosya | Değişiklik |
+|---|---|
+| `ui/tokens.py` | sıcaklığın ve düzlemlerin gerçekten okunması için palet derinleştirildi; `CONTROL` / `CONTROL_PAD` / `ROW_HEIGHT` / `ROW_PAD` / `CELL` / `INDICATOR`; `CHIP_TINT` / `NOTE_TINT` / `SAGE_CHIP_TINT` |
+| `ui/qss.py` | her kontrol yüksekliği ritimden; çip ve not tonları token'lardan; çıplak renk kalmadı |
+| `ui/widgets.py`, `ui/components.py` | elle yazılmış beş düğme yüksekliği artık `CONTROL` okuyor |
+| `ui/shell.py` | motor kartı bir `QFrame`, böylece `QFrame#card` onu gerçekten biçimlendiriyor |
+| `ui/pages/cleanup.py`, `i18n.py` | sayfa alt başlığı sekmenin yardım metnini artık tekrarlamıyor |
+| `tests/test_style_contracts.py` | **yeni**: objectName/stil eşleşmesi, muafiyet listeleri ve kontrol ritmi |
+| `tests/test_theme.py` | katman başına hedef, arka plan kümesine surface2 ve field, çizgi görünürlüğü, çip ve not tonları |
+
+Saklanmaya değer iki ölçüm:
+
+```
+kenar çubuğundaki motor kartı yüzeyi     önce: 0 px        sonra: 19 371 px
+tur, light vs dark, aynı yüzey           önce: aynı sha=4d78bde6b7f4
+                                         sonra: light 4d78bde6…  dark f34094f4…
+```
+
+En net olan kart. "Durum satırı çok soluk" iki palet revizyonu boyunca bir kontrast
+sorunu olarak ele alındı ve hiçbir palet bunu çözemez, çünkü ortada kart yoktu:
+widget düz bir `QWidget` olarak kuruluyordu, sheet ise kartları `QFrame#card` diye
+biçimlendiriyor — Qt hiçbir şeyle eşleştirmedi ve hiçbir şey çizmedi. Yazı soluk
+değildi, çıplak kenar çubuğunun üstünde oturuyordu.
 
 ### Bu belgede uygulama sırasında düzeltilenler
 
