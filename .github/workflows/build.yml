@@ -51,7 +51,16 @@ jobs:
       # Builds, then checks: --help, doctor --json, and a window that reaches its event
       # loop offscreen. Exits non-zero with the failing check's own output.
       - name: Build the frozen application and prove it starts
+        if: runner.os != 'macOS'
         run: python packaging/build.py
+
+      # macOS additionally gets the disk image a user downloads, and the image is
+      # *mounted* before it is believed: an unsigned .dmg that will not attach is a
+      # download that fails at the door. Signing and notarisation are not here — they need
+      # an Apple Developer identity, which is T5.5's open half.
+      - name: Build the frozen application, prove it starts, and package the disk image
+        if: runner.os == 'macOS'
+        run: python packaging/build.py --dmg
 
       # T5.4, and the reason this job exists at all: PowerShell cannot be checked from
       # Linux, so the runner is where the installer gets looked at. A throwaway machine,

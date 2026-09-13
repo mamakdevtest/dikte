@@ -59,6 +59,20 @@ dinleyici orada mekanizmanın kendisi, dolayısıyla kurulacak bir şey de yok:
 `brew install ffmpeg`, `pip install PyQt6`, sonra `python dikte.py`. Toplantı
 için BlackHole ya da Loopback gerekiyor, hoparlörden çıkanı kimse vermiyor.
 
+macOS iki izin istiyor ve Dikte ikisinin de etrafından dolaşamıyor:
+
+- **Mikrofon** — ilk kayıt pencereyi açar. Bir kez reddedildiyse geri açılacağı yer
+  **Sistem Ayarları → Gizlilik ve Güvenlik → Mikrofon**.
+- **Erişilebilirlik** — yapıştırma tuşlara senin yerine basıyor, macOS bunu yalnızca
+  güvendiği bir uygulamaya yaptırıyor. Onaylanacak bir pencere yok: ilk yapıştırma
+  **Sistem Ayarları → Gizlilik ve Güvenlik → Erişilebilirlik**'i bir kez açar, sonuç
+  penceresinde bunu söyler ve Dikte o listede açılana kadar başarısız olmaya devam eder.
+  Kusursuz yazıya çevrilip hiçbir şey yapıştırmayan bir dikte, neredeyse her zaman budur.
+
+İki izin de Python'a değil **uygulamaya** ait; yani bir yapı ile `python dikte.py`
+deposu macOS için iki ayrı şeydir — birine izin vermek öbürüne izin vermek değildir.
+Kurulacak bir yapının olmasının sebeplerinden biri de bu.
+
 Windows'ta kayıt doğrudan sistem mikrofonundan alınır (WinMM, ek sürücü
 gerekmez), yapıştırma ise `SendInput` ile çalışır; tek gereken Python 3.11+
 ve ffmpeg (`winget install Gyan.FFmpeg`). Kurucu PowerShell: `dikte` komutunu,

@@ -61,6 +61,20 @@ that catches the keys is the mechanism there and there is nothing to run:
 needs BlackHole or Loopback, because nothing else offers what the speakers are
 playing.
 
+macOS asks for two permissions, and Dikte cannot work around either of them:
+
+- **Microphone** — the first recording triggers the prompt. If it was refused once,
+  the switch back is in **System Settings → Privacy & Security → Microphone**.
+- **Accessibility** — pasting presses the keys for you, and macOS only allows that from
+  an application it trusts. There is no dialog to accept: the first paste opens
+  **System Settings → Privacy & Security → Accessibility** once, says so in the result
+  window, and keeps failing until Dikte is switched on in that list. A dictation that
+  transcribes perfectly and pastes nothing is this, nearly every time.
+
+Both permissions belong to the **application**, not to Python, so a build and a
+`python dikte.py` checkout are two different things to macOS — granting one does not
+grant the other. That is one of the reasons there is a build to install.
+
 On Windows, recording uses the system microphone directly (WinMM, no extra
 driver) and paste runs through `SendInput`, so the only prerequisites are
 Python 3.11+ and ffmpeg (`winget install Gyan.FFmpeg`). The installer is

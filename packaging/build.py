@@ -89,6 +89,47 @@ def build():
     return DIST
 
 
+def make_dmg(app_path, out=None):
+    """A disk image holding the `.app` — what a macOS user actually downloads.
+
+    `hdiutil` is macOS's own tool, so this is the one step that leans on a platform
+    command rather than on PyInstaller. The image is *not* signed: signing and
+    notarisation need an Apple Developer identity and credentials a build machine should
+    not hold by default, and that half of T5.5 is still open. An unsigned image installs
+    and then Gatekeeper refuses to open it on a machine that did not build it — a fact
+    about the artifact, not a bug in this step.
+    """
+    app = pathlib.Path(app_path)
+    if not app.exists():
+        raise SystemExit(f"no .app to package at {app}")
+    staging = pathlib.Path(tempfile.mkdtemp(prefix="dikte-dmg-"))
+    # The convention every macOS user knows: drag the app onto the folder beside it.
+    (staging / "Applications").symlink_to("/Applications")
+    subprocess.run(["cp", "-R", str(app), str(staging / app.name)], check=True)
+    image = pathlib.Path(out) if out else DIST / "dikte.dmg"
+    image.unlink(missing_ok=True)
+    subprocess.run(["hdiutil", "create", "-volname", "Dikte", "-srcfolder", str(staging),
+                    "-ov", "-format", "UDZO", str(image)],
+                   check=True, capture_output=True)
+    return image
+
+
+def check_dmg(image):
+    """Mount it, look inside, detach. An image that will not mount is not a download."""
+    mount = pathlib.Path(tempfile.mkdtemp(prefix="dikte-mnt-"))
+    result = subprocess.run(["hdiutil", "attach", str(image), "-nobrowse", "-readonly",
+                             "-mountpoint", str(mount)], capture_output=True, text=True)
+    try:
+        if result.returncode != 0:
+            return False, f"hdiutil attach failed: {(result.stderr or result.stdout)[:300]}"
+        contents = sorted(p.name for p in mount.iterdir())
+        if not (mount / "dikte.app").exists():
+            return False, f"the image mounted but holds no dikte.app: {contents}"
+        return True, f"mounts and holds {contents}"
+    finally:
+        subprocess.run(["hdiutil", "detach", str(mount), "-quiet"], capture_output=True)
+
+
 def check_help(exe):
     """The bundle can run at all, and its argument parser came along."""
     result = subprocess.run([str(exe), "--help"], capture_output=True, text=True,
@@ -187,6 +228,9 @@ def main(argv=None):
         description="Build the frozen application and prove it runs.")
     parser.add_argument("--check", action="store_true",
                         help="verify the existing dist/ instead of building it")
+    parser.add_argument("--dmg", action="store_true",
+                        help="macOS only: package dist/dikte.app into a disk image and "
+                             "prove it mounts")
     args = parser.parse_args(argv)
 
     if not args.check:
@@ -211,6 +255,12 @@ def main(argv=None):
         else:
             failures.append("diktew.exe")
             print("  FAIL  diktew.exe: the bundle has no console-less twin")
+    if args.dmg:
+        if sys.platform != "darwin":
+            raise SystemExit("--dmg is a macOS step: hdiutil is the only tool that writes a disk image")
+        image = make_dmg(DIST / "dikte.app")
+        print(f"disk image: {image} ({image.stat().st_size / 1e6:.1f} MB)")
+        checks.append(("dmg", lambda _e: check_dmg(image)))
     for name, check in checks:
         ok, detail = check(exe)
         print(f"  {'ok  ' if ok else 'FAIL'}  {name}: {detail}")
