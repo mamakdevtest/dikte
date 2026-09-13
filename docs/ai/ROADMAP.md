@@ -422,6 +422,25 @@ probe is a missing nicety.
 pastes and quits; each run recorded in `docs/ai/VERIFICATION.md` with the OS and
 version it was observed on.
 
+**Q4 — what each first-run shape would cost (for the decision, 2026-09-13).** Both per-user
+scripts already install the frozen bundle with no Python on the machine (`install.sh`,
+`install.ps1`), and CI builds that bundle on all three runners. What is not decided is which
+*shippable artifact* a stranger downloads:
+
+| shape | what it adds | what it costs to keep | how it can be checked |
+|---|---|---|---|
+| **tarball/zip + the script already written** | nothing: `tar` and `Compress-Archive` are on every runner | a README line ("unpack, run `./install.sh`") | `packaging/build.py` can write it; MANUAL-CHECKS row 1/2 is the install |
+| **portable zip (Windows)** | nothing | nothing | unpack on a clean machine, run `diktew.exe` (row 11) |
+| **AppImage** | `appimagetool` at build time — a downloaded binary, not a Python package | a CI step, and a `.desktop`/icon layout inside the AppDir | the AppDir is a directory: it can be inspected without a desktop |
+| **Flatpak** | `flatpak-builder` + a manifest (data, not code) | a manifest to maintain, and a **portal-permission review**: a sandbox changes what the hotkey can see | `flatpak-builder --build-only` in CI, then the manual rows in a real session |
+| **Windows `.exe` installer** | Inno Setup or NSIS at build time | a `.iss`/`.nsi` to keep | it would wrap what `install.ps1` already does |
+
+The two cheapest are the two the project can already produce, and neither adds a third-party
+*build-time* tool — which is the constraint `AGENTS.md` sets. The other three each buy a stranger
+a nicer first ten minutes and cost a build dependency the project then has to keep alive. Whether
+that is worth it, and on which platforms, is Q4; this table exists so the answer does not need a
+day of research first.
+
 **Two findings from T5.1's first bundle, both mine to fix and both recorded:**
 
 - **N8 — a second launch stole the running instance's socket.** `QLocalServer` needs

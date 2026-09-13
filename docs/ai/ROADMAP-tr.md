@@ -421,6 +421,25 @@ söylenmiş bir yalandır, yutulan bir Qt öznitelik yoklaması ise eksik bir in
 yazıya çevirir, yapıştırır ve kapanır; her koşu gözlemlendiği işletim sistemi ve
 sürümüyle `docs/ai/VERIFICATION.md`'ye yazılır.
 
+**Q4 — her ilk-çalıştırma şeklinin maliyeti (karar için, 13.09.2026).** Her iki kullanıcı-başına
+betik, dondurulmuş paketi makinede Python olmadan kuruyor (`install.sh`, `install.ps1`) ve CI o
+paketi üç koşucuda da üretiyor. Kararlaştırılmamış olan, bir yabancının **hangi teslimi**
+indirdiği:
+
+| şekil | ne ekliyor | neyi yaşatmayı gerektiriyor | nasıl denetlenir |
+|---|---|---|---|
+| **tarball/zip + yazılmış betik** | hiçbir şey: `tar` ve `Compress-Archive` her koşucuda var | README'de bir satır ("aç, `./install.sh` çalıştır") | `packaging/build.py` yazabilir; MANUAL-CHECKS 1/2. satır kurulumun kendisi |
+| **taşınabilir zip (Windows)** | hiçbir şey | hiçbir şey | temiz bir makinede aç, `diktew.exe` çalıştır (11. satır) |
+| **AppImage** | derleme anında `appimagetool` — indirilen bir ikili, Python paketi değil | bir CI adımı ve AppDir içinde `.desktop`/ikon yerleşimi | AppDir bir dizindir: masaüstü olmadan incelenebilir |
+| **Flatpak** | `flatpak-builder` + bir manifest (kod değil, veri) | yaşatılacak bir manifest ve bir **portal-izni incelemesi**: sandbox, kısayolun ne gördüğünü değiştirir | CI'da `flatpak-builder --build-only`, sonra gerçek oturumda elle satırlar |
+| **Windows `.exe` kurucusu** | derleme anında Inno Setup veya NSIS | yaşatılacak bir `.iss`/`.nsi` | `install.ps1`'in zaten yaptığını sarardı |
+
+En ucuz ikisi, projenin bugün üretebildiği ikisi ✓ ve ikisi de üçüncü taraf bir **derleme-anı**
+aracı eklemiyor — `AGENTS.md`'nin koyduğu kısıt bu ✓. Diğer üçü, bir yabancıya daha hoş bir ilk
+on dakika satın alıp karşılığında yaşatılması gereken bir derleme bağımlılığı istiyor. Buna
+değer mi ve hangi platformlarda — Q4 bu; bu tablo, cevabın önce bir günlük araştırma
+gerektirmemesi için var.
+
 **T5.1'in ilk paketinden çıkan iki bulgu — ikisi de düzeltilecek ve ikisi de kayıtlı:**
 
 - **N8 — ikinci başlatma, çalışan örneğin soketini çalıyordu.** `QLocalServer`, bir
