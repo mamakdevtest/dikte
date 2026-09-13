@@ -1,3 +1,47 @@
+# VERIFICATION — T4.8's seventh slice: the prompt that was never kept
+
+## The number
+
+    247 silent handlers -> 245. Two left the record; four stayed on purpose, and why is below.
+
+## The defect
+
+`_open_prompt_creator`'s save path:
+
+    self.conf["meeting_custom_prompts"] = custom
+    try:
+        self.conf.save()
+    except Exception:
+        pass
+
+The dialog closes either way, so a failed write meant the user believed their prompt was kept
+and found the built-in one back the next time they opened the editor — the silent loss of
+something the user typed, which is the class this project cares most about. It prints now.
+
+And the same shape in the dictation path: `worker.py`'s history row, when
+`conf.transcribe_target()` could not be read, wrote the **configured** provider into the row —
+a row claiming a provider that was never resolved. It says so now.
+
+## The four that stayed in the record, on purpose
+
+`_load_audio_devices`'s four lookups now collect their failures and print **one** line naming
+each:
+
+    dikte: the sound server could not be asked for its devices (microphones: …; the default
+    input: …)
+
+With no sound server all four fail at once, and four lines about one machine's missing `pactl`
+is noise. The ratchet counts handlers whose *body* says nothing, and these bodies still say
+nothing — the report is one line for the batch, just outside them. That is the honest
+difference between "this failure is swallowed" and "this failure is reported somewhere the
+reader can find it", and the record is a floor rather than a verdict: all four are still in
+it, with their reason.
+
+## What this slice did not add
+
+No new guard. Every change here is a report line, not a check that can go red, so there is no
+red proof to show — and saying that is better than dressing one up.
+
 # VERIFICATION — the state of the tree at the end of T4.8's run (2026-09-13)
 
 One pass over everything the verification contract asks for, run in order, with the real
