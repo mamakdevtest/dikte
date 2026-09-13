@@ -52,7 +52,7 @@ jobs:
       - name: Render every interface surface
         run: |
           python tools/shoot_ui.py --out /tmp/dikte-shots \
-            --themes blue --langs en,tr --check
+            --themes light,dark --langs en,tr --check
 
       - name: Check for whitespace errors
         run: git diff --check

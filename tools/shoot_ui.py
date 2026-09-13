@@ -4,7 +4,7 @@ Builds every visible surface once per theme x language, freezes timers, and
 saves one PNG per screen under --out as <theme>_<lang>_<screen>.png.
 
     python tools/shoot_ui.py --out /tmp/dikte-shots \\
-        --themes blue,orange --langs en,tr
+        --themes light,dark --langs en,tr
     python tools/shoot_ui.py --out /tmp/dikte-shots --check   # and assert it
 
 `--check` is the half that makes this a test rather than a gallery: every
@@ -305,7 +305,7 @@ def build_prompt_creator(parent):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
-    parser.add_argument("--themes", default="blue,orange")
+    parser.add_argument("--themes", default="light,dark")
     parser.add_argument("--langs", default="en,tr")
     parser.add_argument("--check", action="store_true",
                         help="assert every expected surface was drawn, and "
@@ -380,6 +380,12 @@ def main():
 
         count = 0
         for thm in themes:
+            # The settings window applies the *saved* theme as it opens, so the
+            # tour has to present itself as a user who picked this theme.
+            # Applying it here alone is not enough — the window would override it
+            # with the config default, and every run would render the same
+            # palette while the file names claimed otherwise.
+            conf["ui_theme"] = thm
             for lang in langs:
                 theme.apply(thm)
                 i18n.set_language(lang)
