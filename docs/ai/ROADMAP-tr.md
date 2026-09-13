@@ -477,7 +477,10 @@ Her faz için pazarlıksız, `ai/workflows.md`'den devralınmış:
   (`tools/shoot_ui.py --check`) ve Qt API sözleşmesi (`tests/test_qt_api_contract.py` —
   ürünün andığı her `Qt.<ad>` ve her `Q<Sınıf>.<ad>` koştuğu PyQt6'da var olmalı, takma adlı
   import'lar dahil; `Qt.UniqueConnection`'ı yakalayacak olan korkulak, ki o hata
-  `settings_ui`'ye hiç çalışmamış bir kaydedilmemiş-değişiklik korumasına mal oldu).
+  `settings_ui`'ye hiç çalışmamış bir kaydedilmemiş-değişiklik korumasına mal oldu). Aynı
+  ilke ayarlara da uzanıyor: `Config.__getitem__` bulamadığı anahtarı sessizce `None`
+  döndürmek yerine adıyla söylüyor — ürün genelinde 96 literal anahtar okunuyor ve hepsi
+  tanımlı, yani o satır bir sonraki yazım hatası için tuzak olarak duruyor.
 - Ekran turu yeniden alınır ve incelenir; varsayılmaz.
   - İki README sekiz kare gömüyor — ayar penceresinin sayfaları ve ilk-kurulum
     sihirbazı — ve bunlar **üretiliyor, elle yapılmıyor**:

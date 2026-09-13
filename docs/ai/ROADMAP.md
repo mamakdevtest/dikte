@@ -476,7 +476,9 @@ Non-negotiable for every phase, inherited from `ai/workflows.md`:
   (`tests/test_qt_api_contract.py` — every `Qt.<name>` and every `Q<Class>.<name>` the product
   names must exist in the PyQt6 it runs on, aliased imports included; the guard that would
   have caught `Qt.UniqueConnection`, which cost `settings_ui` an unsaved-edits guard that had
-  never run).
+  never run). The same principle reaches the settings: `Config.__getitem__` names a key it
+  cannot find instead of returning `None` in silence — 96 literal keys are read across the
+  product and all of them are declared, so the line exists as a trap for the next typo.
 - The screenshot tour is re-captured and reviewed, not assumed.
   - The two READMEs embed eight frames — the settings window's pages and the first-run
     wizard — and they are **generated,

@@ -1,3 +1,24 @@
+# VERIFICATION — the settings read that stopped pretending to know
+
+## The mechanism, and the measurement
+
+`Config.__getitem__` was `self.data.get(key, DEFAULTS.get(key))`. A key declared in neither
+place — a typo, or a setting written by a fork — came back as `None` in silence, which is how
+a control ends up doing nothing with nothing said. It now names the key on stderr.
+
+The measurement that makes this a guard rather than a guess, taken by letting the new line
+speak through the whole suite:
+
+    $ python3.14 -m unittest discover 2>&1 | grep -c "no setting is called"
+    1
+    $ ... | grep "no setting is called"
+    dikte: no setting is called 'no_such_setting'; the caller gets None
+
+96 literal setting keys are read across the product and exactly one is undeclared — and that
+one is the test that deliberately asks for a key that is not there. So there is no typo today,
+and the next one will say its own name. Two tests now hold both directions: an unknown key is
+`None` **and** is reported; a declared key is read without a word.
+
 # VERIFICATION — T4.8's sixth slice: the guard that had never run
 
 ## The number
