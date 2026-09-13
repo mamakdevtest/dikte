@@ -2102,8 +2102,10 @@ class SettingsWindow(QDialog):
             self.conf["meeting_custom_prompts"] = custom
             try:
                 self.conf.save()
-            except Exception:
-                pass
+            except Exception as exc:
+                # The dialog closes either way, so without this line the user believes their
+                # prompt was kept and finds the built-in one back the next time they look.
+                print(f"dikte: the meeting prompts were not saved ({exc})", file=sys.stderr)
 
     def _on_minutes_progress(self, _base, message):
         self.minutes_status.setText(message)
@@ -2980,22 +2982,32 @@ class SettingsWindow(QDialog):
     def _load_audio_devices(self):
         """Enumerate microphones/monitors off the GUI thread."""
         def work():
+            problems = []
             try:
                 sources = audio.cached_list_sources()
-            except Exception:
+            except Exception as exc:
+                problems.append(f"microphones: {exc}")
                 sources = []
             try:
                 monitors = audio.cached_list_monitors()
-            except Exception:
+            except Exception as exc:
+                problems.append(f"system audio: {exc}")
                 monitors = []
             try:
                 mic_default = audio.default_input()
-            except Exception:
+            except Exception as exc:
+                problems.append(f"the default input: {exc}")
                 mic_default = ""
             try:
                 out_default = audio.default_monitor()
-            except Exception:
+            except Exception as exc:
+                problems.append(f"the default output: {exc}")
                 out_default = ""
+            if problems:
+                # One line for the lot: with no sound server all four fail together, and the
+                # page then shows an empty device list with nothing to explain it.
+                print(f"dikte: the sound server could not be asked for its devices "
+                      f"({'; '.join(problems)})", file=sys.stderr)
             try:
                 self._audio_sources_loaded.emit(sources)
                 self._audio_monitors_loaded.emit(monitors)

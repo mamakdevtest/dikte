@@ -3,7 +3,7 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 247,
+  "count": 245,
   "silent": {
     "assistant.py:_ask_antigravity": 2,
     "assistant.py:_ask_opencode_go": 1,
@@ -82,7 +82,6 @@
     "settings_ui.py:SettingsWindow._on_sidebar_compact_toggled": 2,
     "settings_ui.py:SettingsWindow._on_tab_change_requested": 1,
     "settings_ui.py:SettingsWindow._on_transcribe_models_loaded": 1,
-    "settings_ui.py:SettingsWindow._open_prompt_creator": 1,
     "settings_ui.py:SettingsWindow._polish_minutes": 2,
     "settings_ui.py:SettingsWindow._provider_changed": 1,
     "settings_ui.py:SettingsWindow._refresh_engine_card": 3,
@@ -161,7 +160,7 @@
     "ui/widgets.py:SettingRow.setNarrow": 1,
     "worker.py:Pipeline._discard": 1,
     "worker.py:Pipeline._retry_cleanup_only": 3,
-    "worker.py:Pipeline._work": 4
+    "worker.py:Pipeline._work": 3
   },
   "reasons": {
     "assistant.py:_ask_antigravity": {
@@ -409,9 +408,6 @@
     },
     "settings_ui.py:SettingsWindow._on_transcribe_models_loaded": {
       "value of the wrong shape": 1
-    },
-    "settings_ui.py:SettingsWindow._open_prompt_creator": {
-      "absent file or row": 1
     },
     "settings_ui.py:SettingsWindow._polish_minutes": {
       "unclassified": 1,
@@ -673,8 +669,7 @@
     },
     "worker.py:Pipeline._work": {
       "optional widget": 1,
-      "clipboard restore that is best effort": 2,
-      "a target the settings may not have": 1
+      "clipboard restore that is best effort": 2
     }
   }
 }

@@ -677,7 +677,13 @@ class Pipeline(QObject):
             if target is None:
                 try:
                     target = conf.transcribe_target()
-                except Exception:
+                except Exception as exc:
+                    # The history row below then has no target to name, and it used to write
+                    # the *configured* provider into it — a row claiming a provider that was
+                    # never resolved.
+                    print(f"dikte: the transcription target could not be read, so this run's "
+                          f"history row names the configured provider instead ({exc})",
+                          file=sys.stderr)
                     target = None
             cfg.append_history({
                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
