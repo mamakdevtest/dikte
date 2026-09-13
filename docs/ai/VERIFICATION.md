@@ -1,4 +1,58 @@
-# VERIFICATION — T4.8's tenth slice: the buttons that did nothing
+# VERIFICATION — T4.8's eleventh slice: the numbers that omitted rows
+
+## The number
+
+    232 silent handlers -> 228, plus two whose report sits just outside them (see below).
+
+## The averages and totals
+
+    try:
+        dur = float(r.get("duration", 0) or 0)
+        if dur > 0:
+            durations.append(dur)
+    except Exception:
+        pass
+
+A row whose duration will not parse is left out of the average — correct, since a string is not
+a number — but it was left out in silence, so the dashboard's "average duration" described fewer
+recordings than the count printed beside it. Same in `meetings_stats`, where the omission makes
+the *total* smaller than the truth.
+
+Both now count what they skipped and say so once, after the loop:
+
+    dikte: 2 history row(s) have a duration that could not be read, so the average leaves them out
+
+A test pins both halves: the row is still excluded from the average (`10.0` over a readable `10.0`
+and an unreadable row, with `total == 2`), and the omission is reported.
+
+**Why the two handlers are still in the record.** The report is one line for the batch, after the
+loop — so the handler *bodies* still say nothing, and the ratchet, which reads bodies, still
+counts them. That is the same line already drawn for the device list: the record counts handlers
+whose body is silent, not failures that go unreported, and it is a floor rather than a verdict.
+
+## The unsaved-changes guard's own blind spot
+
+`_snapshot_settings` reads the editing level for the dirty check, and swallowed a failure with a
+one-line `try: … except Exception: pass`. A widget the snapshot cannot read is a change in that
+widget the guard cannot see, which is a lost edit of exactly the kind the guard exists to prevent
+— and the guard only started working one slice ago. Both places now report, and the one-liners
+became three-line blocks to fit the message.
+
+## The setting that quietly rewrites itself
+
+`_load` clamps the saved editing level with `edit_level = 3` as its fallback. The page is then
+built around level 3, and *saving writes the widget's value* — so a level that could not be read
+silently becomes the user's new setting. It says so now, and the message names that consequence
+rather than the exception alone.
+
+## The discard that keeps the audio
+
+`worker.Pipeline._discard` decides whether a recording may be deleted. Its fallback keeps the
+durable file, which is the safe direction — the opposite of the `prune_audio` defect that started
+this burn-down — but the user asked for a discard, and a request that silently is not honoured is
+worth a line.
+
+1628 tests + 1, `git diff --check` clean.
 
 ## The number
 
