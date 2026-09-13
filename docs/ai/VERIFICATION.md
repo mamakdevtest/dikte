@@ -235,6 +235,23 @@ OK
 98 commits since 047f4a6
 ```
 
+And the artifact itself, rebuilt and re-checked after the last UI change of the run:
+
+```
+frozen application: /home/emirhanmamak/_Work/Tools/dikte/dist/dikte/dikte
+bundle size: 315.3 MB
+  ok    --help: usage printed, 4/4 verbs present
+  ok    doctor: doctor reported ok, 7/7 programs found
+  ok    window: listening as itself on dikte-1000, still running
+
+all checks passed: the bundle starts, diagnoses and runs
+```
+
+That is the strongest evidence available without pushing: the same build the CI job runs,
+exercised by the same three checks, against a frozen application that contains every change of
+this run — including six UI files touched in the last slice. A missing import in the bundle is
+T5.1's defect class, and it would have shown up here.
+
 The record behind the ratchet, measured out of the commits rather than remembered:
 
 | slice | commit | silent handlers | sites |
