@@ -1,3 +1,36 @@
+# VERIFICATION — T4.8's eighth slice: the Stop that could not be checked
+
+## The number
+
+    245 silent handlers -> 237. Eight out, all by reporting.
+
+## What was wrong
+
+Five handlers in `assistant.py` watched for a stop request — `should_stop()`, the `Cancelled`
+exception, `abort` — and swallowed the failure to check, so a stop that could not be *read*
+looked exactly like a stop that had not been asked for. The agent run then kept waiting or kept
+working while the user had already pressed Stop. It is the mirror image of the device probe
+three slices ago: there, a failed *measurement* was reported as a fact about the hardware; here,
+a failed *check* is reported as "no request".
+
+Three in `dikte.py`: `_current_seconds()` returns 0.0 when the elapsed time cannot be read, and
+that number goes into the history row — a recording that claims to have lasted zero seconds.
+`stop` and `stop_ask` swallow the same read.
+
+## The wrapping, done properly this time
+
+The first scripted wrapper in this run produced "has noon-screen" (the seam lost its space) and
+the second produced "no on- screen" (`textwrap` breaks on hyphens by default). Both were caught
+by reading the diff, not by a test, because a message is data. This slice's prints are wrapped
+with `break_on_hyphens=False` and a trailing space at each seam, straight into the style the
+codebase already uses — and the diff was read line by line before the commit, which is the only
+reason to trust a script that writes prose.
+
+## What this slice did not add
+
+No new guard; eight report lines. The message shape is the only thing that varies between slices
+like this, and it is checked by eye.
+
 # VERIFICATION — T4.8's seventh slice: the prompt that was never kept
 
 ## The number
