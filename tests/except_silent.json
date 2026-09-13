@@ -3,12 +3,8 @@
   "why_reasons": "Each site is also listed with its reason, derived from the calls its guarded body made (REASONS in tests/test_except_ratchet.py) rather than written by hand: 286 comments would be 286 chances to write a plausible one. `unclassified` should stay empty; when it is not, the reason set needs a decision, not a label.",
   "burn_down": "docs/ai/ROADMAP.md T4.8",
   "recorded": "2026-09-13",
-  "count": 245,
+  "count": 237,
   "silent": {
-    "assistant.py:_ask_antigravity": 2,
-    "assistant.py:_ask_opencode_go": 1,
-    "assistant.py:_ask_opencode_go._watch_abort": 1,
-    "assistant.py:_ask_plain_http._watch_abort": 1,
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": 1,
     "chunked_session.py:ChunkedLiveRecorder._pump": 1,
     "chunked_session.py:ChunkedLiveRecorder.stop": 1,
@@ -19,7 +15,6 @@
     "dikte.py:Dikte.__init__": 1,
     "dikte.py:Dikte._apply_settings": 3,
     "dikte.py:Dikte._build_tray": 3,
-    "dikte.py:Dikte._current_seconds": 1,
     "dikte.py:Dikte._on_error": 1,
     "dikte.py:Dikte._on_finished": 1,
     "dikte.py:Dikte._on_live_transcript": 1,
@@ -29,8 +24,6 @@
     "dikte.py:Dikte._tray_icon": 1,
     "dikte.py:Dikte.open_settings": 1,
     "dikte.py:Dikte.restart": 1,
-    "dikte.py:Dikte.stop": 1,
-    "dikte.py:Dikte.stop_ask": 1,
     "dikte.py:HintMenu.paintEvent": 1,
     "dikte.py:HintMenu.sizeHint": 1,
     "dikte.py:_win32_message_box": 1,
@@ -163,18 +156,6 @@
     "worker.py:Pipeline._work": 3
   },
   "reasons": {
-    "assistant.py:_ask_antigravity": {
-      "worker that is gone": 2
-    },
-    "assistant.py:_ask_opencode_go": {
-      "worker that is gone": 1
-    },
-    "assistant.py:_ask_opencode_go._watch_abort": {
-      "worker that is gone": 1
-    },
-    "assistant.py:_ask_plain_http._watch_abort": {
-      "worker that is gone": 1
-    },
     "chunked_session.py:ChunkedLiveRecorder._emit_chunk.work": {
       "worker that is gone": 1
     },
@@ -208,9 +189,6 @@
       "optional widget": 1,
       "teardown that is already done": 1
     },
-    "dikte.py:Dikte._current_seconds": {
-      "worker that is gone": 1
-    },
     "dikte.py:Dikte._on_error": {
       "unclassified": 1
     },
@@ -237,12 +215,6 @@
     },
     "dikte.py:Dikte.restart": {
       "optional widget": 1
-    },
-    "dikte.py:Dikte.stop": {
-      "worker that is gone": 1
-    },
-    "dikte.py:Dikte.stop_ask": {
-      "worker that is gone": 1
     },
     "dikte.py:HintMenu.paintEvent": {
       "optional import": 1

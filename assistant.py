@@ -449,8 +449,9 @@ def _ask_antigravity(prompt, conf, on_stage, should_stop=None):
                 raise Cancelled()
         except Cancelled:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"dikte: the agent run could not check whether it was stopped, "
+                  f"so it may keep going after Stop ({exc})", file=sys.stderr)
     body = f"{conf.assistant_prompt()}\n\n---\n\n{prompt}"
     cmd = [
         _resolved("antigravity", conf), "--print", body,
@@ -488,8 +489,9 @@ def _ask_antigravity(prompt, conf, on_stage, should_stop=None):
                 raise Cancelled()
         except Cancelled:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"dikte: the agent run could not check whether it was stopped, "
+                  f"so it may keep going after Stop ({exc})", file=sys.stderr)
     return answer, ""
 
 
@@ -531,7 +533,9 @@ def _ask_plain_http(name, prompt, conf, on_stage, should_stop=None):
                     if should_stop():
                         aborter.abort()
                         return
-                except Exception:
+                except Exception as exc:
+                    print(f"dikte: the stop request could not be checked, so the "
+                          f"wait continues ({exc})", file=sys.stderr)
                     return
                 if aborter.aborted:
                     return
@@ -572,8 +576,9 @@ def _ask_opencode_go(prompt, conf, on_stage, should_stop=None):
                 raise Cancelled()
         except Cancelled:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"dikte: the agent run could not check whether it was stopped, "
+                  f"so it may keep going after Stop ({exc})", file=sys.stderr)
     who = providers.provider(conf, "opencode-go")
     if who is None:
         raise AssistantError(t("Unknown provider."))
@@ -591,7 +596,9 @@ def _ask_opencode_go(prompt, conf, on_stage, should_stop=None):
                     if should_stop():
                         aborter.abort()
                         return
-                except Exception:
+                except Exception as exc:
+                    print(f"dikte: the stop request could not be checked, so the "
+                          f"wait continues ({exc})", file=sys.stderr)
                     return
                 if aborter.aborted:
                     return

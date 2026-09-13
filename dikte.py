@@ -1225,7 +1225,9 @@ class Dikte:
             # fallback to elapsed for initial
             try:
                 return self.elapsed.elapsed() / 1000.0
-            except Exception:
+            except Exception as exc:
+                print(f"dikte: the elapsed time could not be read, so this "
+                      f"recording's duration is recorded as zero ({exc})", file=sys.stderr)
                 return 0.0
 
     def stop(self):
@@ -1235,8 +1237,9 @@ class Dikte:
         if self.state == RECORDING:
             try:
                 self._accumulated_ms += self._segment_clock.elapsed()
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"dikte: the elapsed time could not be read while "
+                      f"stopping, so the saved duration may be wrong ({exc})", file=sys.stderr)
         self.ticker.stop()
         self._set_state(BUSY)
         self.overlay.show_busy(t("Transcribing…"))
@@ -1248,8 +1251,9 @@ class Dikte:
         if self.ask_state == RECORDING:
             try:
                 self._accumulated_ms += self._segment_clock.elapsed()
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"dikte: the elapsed time could not be read while "
+                      f"stopping, so the saved duration may be wrong ({exc})", file=sys.stderr)
         self.ticker.stop()
         self._set_ask_state(BUSY)
         self.ask_overlay.show_busy(t("Transcribing…"))
