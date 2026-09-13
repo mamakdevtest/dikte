@@ -1,3 +1,54 @@
+# VERIFICATION — T4.8's sixth slice: the guard that had never run
+
+## The number
+
+    251 silent handlers -> 247, and the guard below is the reason the burn-down exists.
+
+## The defect: a protection that had never protected anything
+
+The fifth slice added a report to `settings_ui`'s tab-change guard:
+
+    try:
+        self.tabs.currentChanged.connect(self._on_tab_change_requested, Qt.UniqueConnection)
+    except Exception as exc:
+        print(f"dikte: the settings tabs are not guarded against unsaved changes ({exc})", ...)
+
+The next full suite printed that line **for every settings window it built** — dozens of them:
+
+    dikte: the settings tabs are not guarded against unsaved changes
+           (type object 'Qt' has no attribute 'UniqueConnection')
+
+    $ python3.14 -c "from PyQt6.QtCore import Qt; print(hasattr(Qt, 'UniqueConnection'))"
+    False
+    $ ... print(hasattr(Qt.ConnectionType, 'UniqueConnection'))
+    True
+
+`Qt.UniqueConnection` does not exist in PyQt6; the attribute lives on `Qt.ConnectionType`.
+So that `connect` raised **every time a settings window was ever opened**, `except: pass`
+swallowed it, and `_on_tab_change_requested` was never connected: the unsaved-edits question
+was never asked, and an edit could be lost in silence — the exact thing the code was written
+to prevent. Both the report and the fix are now in place, and `tests/test_ui.py` changes a tab
+with a dirty window and asserts the question was asked and that "cancel" keeps the user where
+they were.
+
+Worth saying plainly: **no test caught this, and none could have** — the guard is about a
+dialog no test opens. The only reason it is known now is that the failure was made to speak
+one slice earlier. That is the burn-down's whole case: not tidiness, but finding the things
+that have been quietly broken for as long as they have existed.
+
+## The other four
+
+- `chunked_session`'s chunk timer: a timer that will not stop keeps firing after the session
+  ends, so the recording can carry on past the point the user stopped it.
+- `_provider_changed`'s engine card: a card that could not be refreshed keeps describing the
+  provider the user has moved away from — the same class as the README bug where one model
+  had three answers on one page.
+- Both `_baseline` refreshes (tab change and window close): the baseline is the guard's
+  memory, so a stale one makes the next unsaved-changes question answer itself wrongly. Had
+  the connection above been live, these two would have mattered.
+- Left alone on purpose: the same `_refresh_engine_card` call during `__init__`, where the
+  card's widgets genuinely do not exist yet — it now says so in a comment instead.
+
 # VERIFICATION — T4.8's fifth slice: a feature that vanished without a word
 
 ## The number
