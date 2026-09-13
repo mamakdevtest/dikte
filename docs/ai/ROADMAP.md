@@ -316,7 +316,7 @@ Close the pass that is already open, in its own dependency order:
 | **T4.5 ✅** | F1/R6 | History/Minutes recovery details, explicit deletion, retry UX — *verified, and the recovery card was fixed in Phase 3 surface 5 (it rendered in every state, including when there was nothing to recover)* |
 | **T4.6 ✅** | F1/R7 | Editing-level migration completion + EN/TR parity — *verified: the retired slider survives only in the `pop` that removes it, the untranslated set is empty, and Phase 3 closed the last parity gap (the thinking panel had no i18n at all)* |
 | **T4.7 ✅** | F1/R8 | Deterministic regression coverage for every defect above — *verified: the guards added in Phases 0–3, each proved red before it was trusted green* |
-| **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 18 report, 293 report nothing** (174 a bare `pass`, 63 assigning a fallback, 32 returning; 96 in `settings_ui.py`, 37 in `dikte.py`, 15 in `overlay.py`). The ratchet exists and is proved red in both directions; the first three data-path sites are fixed. A per-site *reason* for the remaining 293 is still owed — see below* |
+| **T4.8 ◐** | F2 | Burn down the `except Exception` allowlist: each remaining site either reports its failure or is explicitly listed with a reason — *measured: **312 broad handlers, 26 report, 286 report nothing** (96 in `settings_ui.py`, 37 in `dikte.py`, 15 in `overlay.py`). The ratchet exists and is proved red in both directions, and two slices of data-path work are in (`config.py`'s locks, the dashboard's cards). **The counter itself had a blind spot** — four `ui/stats.py` sites were reporting through a helper and were counted as silent; that is fixed, so 291 → 286 is not all work. A per-site *reason* for the remaining 286 is still owed — see below* |
 | **T4.9 ◐** | F3 | `OverlayCoordinator.update` trigger; close the `Config.data` read race; decide on cross-process locking — *the trigger is verified by running all three overlay widgets against a spy coordinator; the read race is **reproduced and fixed** (`json.dump` walked the dict while a worker could add a key, and the save was lost — the file was never at risk); the locking decision is made below* |
 
 **Verification:** `docs/ai/TASKS.md` R1–R8 all `[x]`; a fresh reviewer on the
@@ -867,6 +867,49 @@ reload would fix it and is wrong — it would silently discard the user's unsave
 The honest fix is a UI affordance ("these settings changed outside this window"), which
 is a product decision rather than a reliability one, so it is recorded here instead of
 being invented in a reliability task.
+
+### 2026-09-12 — Phase 4, T4.8's burn-down, two slices
+
+Both slices were taken from the data path outwards. That is the order that matters: a
+swallowed failure on a write path is a lie to the user, while a swallowed failure while
+probing for an optional widget is a missing nicety. The two are worth different money
+and the order should say so.
+
+**`config.py` — the locks are locks, not optional extras (293 → 291).** `_history_lock`
+and `_meetings_lock` were built inside a `try` that left them `None` when it failed, and
+every write site carried a second, unlocked copy of its own body for that case — eight
+sites, eight duplicated bodies. `threading` cannot be absent from a running interpreter,
+so the guard could never have helped; what it could do is let the safety net evaporate
+silently, and let the unlocked copy drift from the tested one.
+
+**The dashboard — an unreadable history is not an empty one.** All four read-failure
+handlers in `ui/stats.py` fell back to "no rows", so the cards printed `0 dictations`
+for a history that could not be read. The two that feed the cards now say `unreadable`,
+and the cards print `—` with "history could not be read" instead of a zero that reads
+like a fact about the user's data. The two that feed the chart and the provider list
+cannot carry a flag (an empty chart is the honest drawing of no bars; an `unreadable` key
+in a count map arrives as a provider called "unreadable"), so they report to the terminal
+only — a deliberate difference, written down where it is made.
+
+**The counter had a blind spot, and finding it is part of the result.** `_reports` looked
+for `print`/`warn` in the handler body and nothing else, so a handler that handed its
+message to a helper counted as silent — four of the sites above were already reporting,
+and the burn-down was measuring four sites too many. This is the same failure as the
+static i18n scan's 182 false positives: a check that only sees the shape it was written
+for. `_reports` now resolves the module's own reporting helpers; the audit calls the test
+module's `silent_handlers()`, so both moved together, and the record afterwards is the
+honest 286.
+
+The number and the work are worth keeping apart: **293 → 291 was work, 291 → 286 was
+sites that were never silent.** The correction landed before the record was rewritten,
+so every future diff is measured against a counter that can see a helper.
+
+**What is still owed, exactly.** The remaining 286 are *listed with a shape, not with a
+per-site reason*. Most fall into two patterns — "read an optional widget, fall back if it
+is not there" and "best-effort cleanup where absence is the normal case" — and the
+honest way to close the row is a small set of reviewed reasons that each site is assigned
+to, not 286 hand-written comments. Until that exists, the row is `◐` and this paragraph
+is why.
 
 ### Corrections made to this document while executing it
 

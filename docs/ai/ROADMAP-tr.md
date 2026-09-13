@@ -320,7 +320,7 @@ Zaten açık olan turu kendi bağımlılık sırasıyla kapat:
 | **T4.5 ✅** | F1/R6 | Geçmiş/Tutanak kurtarma detayları, açık silme, yeniden deneme arayüzü — *doğrulandı; kurtarma kartı Faz 3 yüzey 5'te düzeltildi (kurtarılacak bir şey yokken de çiziliyordu)* |
 | **T4.6 ✅** | F1/R7 | Düzenleme seviyesi göçünün tamamlanması + EN/TR eşitliği — *doğrulandı: emekli kaydırıcı yalnızca onu silen `pop`'ta yaşıyor, çevrilmemiş küme boş, ve Faz 3 son eşitlik açığını kapattı (düşünme panelinin hiç i18n'i yoktu)* |
 | **T4.7 ✅** | F1/R8 | Yukarıdaki her kusur için deterministik regresyon kapsamı — *doğrulandı: Faz 0–3'te eklenen korkulaklar, her biri yeşile güvenilmeden önce kırmızı kanıtlandı* |
-| **T4.8 ◐** | F2 | `except Exception` istisna listesini yak: kalan her yer ya hatasını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 18'i bildiriyor, 293'ü hiçbir şey söylemiyor** (174'ü çıplak `pass`, 63'ü yedek değer atıyor, 32'si `return`; 96'sı `settings_ui.py`, 37'si `dikte.py`, 15'i `overlay.py`). Mandal var ve iki yönde de kırmızı kanıtlandı; veri yolundaki ilk üç yer düzeltildi. Kalan 293 için yer başına *gerekçe* hâlâ borç — aşağıya bak* |
+| **T4.8 ◐** | F2 | `except Exception` listesini temizle: kalan her yer ya başarısızlığını bildirir ya da gerekçesiyle açıkça listelenir — *ölçüldü: **312 geniş handler, 26'sı bildiriyor, 286'sı hiçbir şey söylemiyor** (96'sı `settings_ui.py`, 37'si `dikte.py`, 15'i `overlay.py`). Mandal var ve iki yönde kırmızı kanıtlandı; veri yolundan iki dilim indi (`config.py`'nin kilitleri, kontrol panelinin kartları). **Sayacın kendisinde bir kör nokta vardı** — `ui/stats.py`'de dört yer raporlamayı bir yardımcıya devrediyordu ve sessiz sayılıyordu; bu düzeltildi, yani 291 → 286'nın tamamı iş değil. Kalan 286 için yer başına *gerekçe* hâlâ borçlu — aşağıya bak* |
 | **T4.9 ◐** | F3 | `OverlayCoordinator.update` tetikleyicisi; `Config.data` okuma yarışını kapat; süreçler arası kilide karar ver — *tetikleyici, üç overlay widget'ı casus bir koordinatöre karşı koşturularak doğrulandı; okuma yarışı **yeniden üretildi ve düzeltildi** (`json.dump` sözlüğü dolaşırken bir worker anahtar ekleyebiliyordu ve kaydetme kayboluyordu — dosya hiç risk altında değildi); kilit kararı aşağıda verildi* |
 
 **Doğrulama:** `docs/ai/TASKS.md` R1–R8 işaretli; son diff üzerinde taze bir
@@ -869,6 +869,47 @@ pencerenin widget'larını tazelemek bunu düzeltirdi ve yanlış olurdu — kul
 kaydedilmemiş düzenlemelerini sessizce atardı. Dürüst çözüm bir arayüz imkânı ("bu
 ayarlar bu pencerenin dışında değişti"), ki bu bir güvenilirlik değil ürün kararı; bu
 yüzden bir güvenilirlik görevinde icat edilmek yerine buraya kaydedildi.
+
+### 2026-09-12 — Faz 4, T4.8 temizliği, iki dilim
+
+İki dilim de veri yolundan dışa doğru alındı. Doğru sıra bu: bir yazma yolunda yutulan
+başarısızlık kullanıcıya söylenmiş bir yalan, opsiyonel bir widget'ı yoklarken yutulan
+başarısızlık ise eksik bir incelik. İkisinin değeri ayrı ve sıra bunu söylemeli.
+
+**`config.py` — kilitler kilit, opsiyonel ek değil (293 → 291).** `_history_lock` ve
+`_meetings_lock`, başarısız olduğunda onları `None` bırakan bir `try` içinde kuruluyordu
+ve her yazma yeri o durum için **kendi gövdesinin kilitli olmayan ikinci bir kopyasını**
+taşıyordu — sekiz yer, sekiz kopya gövde. `threading` çalışan bir yorumlayıcıdan eksik
+olamaz; yani koruma hiçbir zaman yardımcı olamazdı. Yapabildiği şey güvenlik ağını
+sessizce buharlaştırmak ve kilitli olmayan kopyanın test edilen kopyadan sapmasına izin
+vermekti.
+
+**Kontrol paneli — okunamayan geçmiş, boş geçmiş değildir.** `ui/stats.py`'deki dört
+okuma-hatası handler'ının hepsi "satır yok"a düşüyordu, yani kartlar okunamayan bir
+geçmiş için `0 dikte` basıyordu. Kartları besleyen ikisi artık `unreadable` diyor ve
+kartlar, kullanıcının verisi hakkında bir olgu gibi okunan sıfır yerine `—` ve "geçmiş
+okunamadı" gösteriyor. Grafiği ve sağlayıcı listesini besleyen ikisi bayrak taşıyamaz
+(boş bir grafik, çubuğu olmayan grafiğin dürüst çizimidir; sayım haritasındaki
+`unreadable` anahtarı "unreadable" adlı bir sağlayıcı olarak gelirdi), bu yüzden yalnız
+terminale bildiriyorlar — bilinçli bir fark, yapıldığı yerde yazılı.
+
+**Sayacın bir kör noktası vardı ve onu bulmak sonucun parçası.** `_reports` handler
+gövdesinde yalnızca `print`/`warn` arıyordu, bu yüzden mesajını bir yardımcıya devreden
+handler sessiz sayılıyordu — yukarıdaki yerlerin dördü zaten raporluyordu ve temizlik
+dört yeri fazla ölçüyordu. Bu, statik i18n taramasının 182 yanlış pozitifiyle aynı
+arıza: yalnızca yazıldığı şekli gören bir denetim. `_reports` artık modülün kendi
+raporlama yardımcılarını çözüyor; araç test modülünün `silent_handlers()`'ını çağırdığı
+için ikisi birlikte hareket etti ve sonrasındaki kayıt dürüst 286.
+
+Sayıyı işten ayrı tutmak gerek: **293 → 291 işti, 291 → 286 hiç sessiz olmamış yerlerdi.**
+Düzeltme, kayıt yeniden yazılmadan önce indi; yani bundan sonraki her fark, bir yardımcıyı
+görebilen bir sayaca göre ölçülüyor.
+
+**Hâlâ borçlu olunan, tam olarak şu.** Kalan 286, *şekille listeli ama yer başına
+gerekçeyle değil*. Çoğu iki kalıba düşüyor — "opsiyonel widget'ı oku, yoksa yedeğe düş" ve
+"varlığı zaten normal olan yerde elden geldiğince temizle" — ve satırı kapatmanın dürüst
+yolu, her yerin atandığı küçük bir gözden geçirilmiş gerekçe kümesi; 286 elle yazılmış
+yorum değil. O gelene kadar satır `◐` ve bu paragraf nedenini söylüyor.
 
 ### Bu belgede uygulama sırasında düzeltilenler
 
