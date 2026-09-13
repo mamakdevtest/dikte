@@ -44,6 +44,7 @@ import assistant
 import audio
 import cleanup
 import config as cfg
+import diagnostics
 import filetranscribe
 import hotkey
 import ipc
@@ -1093,7 +1094,17 @@ def cmd_doctor(opts):
         f"{'✓' if checks['running'] else '·'} application "
         + ("running" if checks["running"] else "not running"))
     lines.append(f"· log, written when there is no terminal: {cfg.log_path()}")
-    return out(opts, {"ok": True, **checks}, "\n".join(lines))
+    payload = {"ok": True, **checks}
+    if getattr(opts, "bundle", ""):
+        try:
+            target, sizes = diagnostics.bundle(conf, opts.bundle, checks)
+            payload["bundle"] = str(target)
+            lines.append(f"✓ bundle, {target} ({sum(sizes.values())} bytes: "
+                         f"{', '.join(sorted(sizes))}) — no keys, no audio, no transcripts")
+        except OSError as exc:
+            payload["bundle_error"] = str(exc)
+            lines.append(f"✗ bundle, could not be written: {exc}")
+    return out(opts, payload, "\n".join(lines))
 
 
 # --- the command line -------------------------------------------------------
@@ -1338,7 +1349,11 @@ def build_parser():
     test.add_argument("which", nargs="?", default="all",
                       choices=("all", *cfg.TRANSCRIBERS))
     test.set_defaults(func=cmd_test_key)
-    leaf(subs, "doctor", "keys, programs, and what is missing").set_defaults(func=cmd_doctor)
+    doctor = leaf(subs, "doctor", "keys, programs, and what is missing")
+    doctor.add_argument("--bundle", metavar="PATH", default="",
+                        help="also write everything a bug report needs into a zip; no keys, "
+                             "no audio, no transcripts")
+    doctor.set_defaults(func=cmd_doctor)
 
     shortcut = leaf(subs, "shortcut", "the desktop's global shortcuts")
     inner = shortcut.add_subparsers(dest="shortcut", metavar="")
