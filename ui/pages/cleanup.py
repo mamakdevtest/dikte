@@ -8,7 +8,7 @@ import config as cfg
 from i18n import t
 
 from ..widgets import (
-    InfoNote, SectionCard, SegmentedControl, SettingRow, ToggleSwitch,
+    InfoNote, SectionCard, SegmentedControl, SettingRow, ToggleSwitch, gate,
 )
 from . import page, scrolled
 
@@ -80,11 +80,11 @@ def build(window):
         cfg.default_file_cleanup_prompt,
     )
     outer.addWidget(inner, 1)
-    inner.setEnabled(window.cleanup_custom_enabled.isChecked())
-    try:
-        window.cleanup_custom_enabled.toggled.connect(inner.setEnabled)
-    except Exception:
-        pass
+    # The shared helper, not a hand-rolled copy: this was `setEnabled` plus a
+    # `toggled.connect` inside `except Exception: pass`, so a failed connect
+    # would have left the gate silently dead — the prompts editable while the
+    # toggle above them said the default correction was running.
+    gate(window.cleanup_custom_enabled, [inner])
 
     glossary = SectionCard(t("Names and terms"))
     outer.addWidget(glossary)

@@ -66,6 +66,12 @@ QTabBar {{ background: transparent; }}
 QTabBar::tab {{ background: transparent; padding: 6px 12px; color: {c["fg2"]}; }}
 QTabBar::tab:selected {{ color: {c["fg"]}; border-bottom: 2px solid {sage_dark}; }}
 QTabBar::tab:hover {{ color: {c["fg"]}; }}
+/* A disabled tab group has to look disabled, or the prompt editors read as
+   editable while the toggle above them says their prompts are not in use. The
+   selected tab is named too: `::tab:selected` sets the colour on its own, so
+   dimming only the unselected tabs left the one on screen looking active. */
+QTabBar::tab:disabled {{ color: {c["fg3"]}; }}
+QTabBar::tab:selected:disabled {{ color: {c["fg3"]}; border-bottom-color: {c["border"]}; }}
 QScrollArea {{ border: none; background: transparent; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 
