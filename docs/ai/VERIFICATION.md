@@ -1,3 +1,70 @@
+# VERIFICATION — T4.8's long tail, and the defect the burn-down found
+
+## The number
+
+    $ python3.14 tools/except_audit.py --silent
+    284 broad handlers report nothing at all.
+    $ python3.14 tools/except_audit.py --reasons
+      95  optional widget                          10  worker that is gone
+      55  optional import                           4  clipboard restore that is best effort
+      54  value of the wrong shape                   4  device list the machine may not offer
+      22  unclassified                               3  absent file or row
+      17  view refreshed after the fact               3  lookup that is not there
+      10  presentation that may not resolve           3  teardown that is already done
+                                                      2  a target the settings may not have
+                                                      2  platform path not taken here
+
+All 22 of the unclassified handlers now carry a hand-written `# reason:` above their
+statement — including the 2 the counters above cannot separate (`settings_ui.py` appears
+once, `ui/app_window.py:DashboardWindow.__init__` twice).
+
+Two reasons were added because the code showed the shape, not because the number needed
+moving: **`optional import`** (a guarded `import` *is* the shape — the module may not be
+importable here) and the three marker sets for a **device list**, a **clipboard restore**
+and a **transcription target**. That took the derived coverage from 238 to 262 handlers.
+
+## The defect the burn-down found
+
+`meeting.prune_audio` builds the set of recordings that must never be pruned — the only
+recovery source for a meeting that is not finished — from `read_meetings()`. On a read
+failure it fell back to `recoverable = set()`, which is not "protect nothing", it is **the
+guard switched off**: every recording past the retention went, including the ones its own
+docstring promises never to touch. A transient read error became data loss, silently.
+
+    $ # with the fix reverted, tests/test_meeting.py:
+    AssertionError: 0 != 1          # the old code pruned one file; the fixed code, none
+
+It now prunes nothing while the question cannot be answered, and says why on stderr
+(`tests/test_meeting.py::test_an_unreadable_meeting_list_prunes_nothing`). Only one such
+fail-open site exists in the tree — checked by hand across the other `unlink` paths.
+
+## The two contracts, and why they are two
+
+*Derived*: the reason comes from the calls the guarded body makes, so it fails when the code
+changes shape. It covers what repeats — 262 handlers.
+*Hand-written*: 22 one-offs where a marker list keyed on `get` or `y` would classify by
+accident rather than by understanding. Each was read; each says why, on the line a reader
+looks at. `tests/test_except_ratchet.py` checks both, and a temp-tree test proves the
+checker notices a missing reason (a guard nobody has watched fail is a guess).
+
+## Mistakes made on the way, reported as such
+
+1. The first writer keyed its targets by **bare file name**. `overlay.py` and
+   `ui/pages/overlay.py` are different files with the same name: the mapping pointed at the
+   page, so it wrote root `meeting.py`'s parse into the wrong shape of file, and created
+   `app_window.py` and `live_popup.py` at the repository root. Recovered with
+   `git checkout -- meeting.py` plus deleting the two strays, then re-verified. The ratchet
+   itself always keyed by relative path — the bug was entirely in my one-off script, which
+   now refuses to write a file it did not read, and refuses to write when the line count has
+   moved under the parse.
+2. The second run did not see the comment the first had written (it compared the line
+   *above* the statement, which after an insertion is the block's own last line, not the
+   marker), so it wrote all 22 blocks twice. Removed by a dedupe pass over adjacent
+   identical blocks; the final state is 22 blocks in 12 files, reviewed in the diff.
+3. A red-proof by deleting a real reason out of a product file was **refused by the
+   approval prompt** and not retried. The replacement is better: the checker is now proven
+   against a throwaway tree, which is a permanent guard rather than a one-off demonstration.
+
 # VERIFICATION — N9: the message has somewhere to go
 
 The frozen bundle started the way a desktop entry starts it — stdout and stderr to
