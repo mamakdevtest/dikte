@@ -25,8 +25,10 @@ def _padded(widget):
 def build(window):
     body, outer = page(
         t("Cleanup rules"),
-        t("System instruction given to the cleanup model. This is where you "
-          "decide how much it may touch your words."),
+        # Not the tab's help text again: this sentence and the Dictation tab's
+        # help were the same string, so the page said the same thing twice at
+        # once in both languages.
+        t("The instruction the cleanup model receives, one source at a time."),
     )
 
     # --- Custom-prompt opt-in: single gate for both editors ---

@@ -309,10 +309,15 @@ TR = {
         "Kendi ayarlarında adı geçen model yok; mevcut liste aynen duruyor.",
 
     # --- settings: prompt ------------------------------------------------
+    # The page subtitle used to be the same string as the tab's help text below
+    # it, so the page said this twice at once. It describes the page now; this
+    # entry is the Dictation tab's help, which is where the sentence belongs.
     "System instruction given to the cleanup model. This is where you decide "
     "how much it may touch your words.":
         "Temizleme modeline verilen sistem talimatı. Ne kadar müdahale edeceğini "
         "burada belirlersin.",
+    "The instruction the cleanup model receives, one source at a time.":
+        "Temizleme modelinin aldığı talimat, her kaynak için ayrı ayrı.",
     "Dictation": "Dikte",
     "Used instead when an audio or video file is cleaned up. It is written for "
     "subtitles: lines stay where they are, nothing is shortened, and misheard "
